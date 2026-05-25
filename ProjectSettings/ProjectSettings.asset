@@ -1,0 +1,517 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!129 &1
+PlayerSettings:
+  m_ObjectHideFlags: 0
+  serializedVersion: 26
+  productGUID: 024d8e4e9e3fa4c4c8c7f1b9c8d4a5e2
+  AndroidProfiler: 0
+  AndroidFilterTouchesWhenObscured: 0
+  AndroidEnableSustainedPerformanceMode: 0
+  defaultScreenOrientation: 4
+  targetDevice: 2
+  useOnDemandResources: 0
+  accelerometerFrequency: 60
+  companyName: DefaultCompany
+  productName: JianGame
+  defaultCursor: {fileID: 0}
+  cursorHotspot: {x: 0, y: 0}
+  m_SplashScreenBackgroundColor: {r: 0.13725491, g: 0.12156863, b: 0.1254902, a: 1}
+  m_ShowUnitySplashScreen: 1
+  m_ShowUnitySplashLogo: 1
+  m_SplashScreenOverlayOpacity: 1
+  m_SplashScreenAnimation: 1
+  m_SplashScreenLogoStyle: 1
+  m_SplashScreenDrawMode: 0
+  m_SplashScreenBackgroundAnimationZoom: 1
+  m_SplashScreenLogoAnimationZoom: 1
+  m_SplashScreenBackgroundLandscapeAspect: 1
+  m_SplashScreenBackgroundPortraitAspect: 1
+  m_SplashScreenBackgroundLandscapeUvs:
+    serializedVersion: 2
+    x: 0
+    y: 0
+    width: 1
+    height: 1
+  m_SplashScreenBackgroundPortraitUvs:
+    serializedVersion: 2
+    x: 0
+    y: 0
+    width: 1
+    height: 1
+  m_SplashScreenLogos: []
+  m_VirtualRealitySplashScreen: {fileID: 0}
+  m_HolographicTrackingLossScreen: {fileID: 0}
+  defaultScreenWidth: 720
+  defaultScreenHeight: 1280
+  defaultScreenWidthWeb: 960
+  defaultScreenHeightWeb: 600
+  m_StereoRenderingPath: 0
+  m_ActiveColorSpace: 0
+  unsupportedMSAAFallback: 0
+  m_SpriteAtlasPadding: 4
+  m_MTRendering: 1
+  m_StripUnusedMeshComponents: 1
+  m_VertexChannelCompressionMask: 4054
+  m_iOSMetalForceHardShadows: 0
+  m_Allow2DGammaSpace: 1
+  m_BuildTargetEnableVuforiaSettings: []
+  m_BuildTargetEnableClothSettings: []
+  m_BuildTargetEnableCodeCoverageSettings: []
+  m_BuildTargetEnableInputSystemSettings: []
+  m_BuildTargetEnableXRSettings: []
+  m_BuildTargetEnableGraphicsAPIs: []
+  m_OpenGLForceBlit: 0
+  m_ResolutionDialogBanner: {fileID: 0}
+  m_VREnabled: 0
+  m_Enable360StereoCapture: 0
+  m_EnableNewInputSystem: 1
+  m_LegacyClampBlendShapeWeights: 0
+  m_TangoEnableMango: 0
+  m_MultiGPU: 0
+  m_TargetEnableGPU: 0
+  m_EnableFrameTimingStats: 0
+  m_StripEngineCode: 0
+  m_EnableTango: 0
+  m_EnableCustomTimingStats: 0
+  m_GPUProfiling: 0
+  m_EnableFullscreenMouse: 0
+  m_LogTiming: 0
+  m_ScriptDebuggingEnabled: 0
+  m_EnableSRPBatcher: 1
+  m_EnableDynamicBatching: 1
+  m_MixedLighting: 1
+  m_Calulated: 0
+  m_EnableFullscreen: 1
+  m_ResizableWindow: 0
+  m_DefaultIsFullscreen: 1
+  m_DefaultIsNativeResolution: 1
+  m_CaptureStartupAllocation: 0
+  m_RetinaSupport: 1
+  m_RenderingPath: 1
+  m_MobileRenderingPath: 1
+  m_BuildTargetGroupGraphicsAPIs: []
+  m_ColorGamuts: 00000000
+  m_TargetGraphicsAPIs: []
+  m_ActiveSubsystem: 0
+  m_ActiveInputHandler: 1
+  m_CloudProjectId:
+  m_CloudEnabled: 0
+  m_CloudProjectName:
+  m_CloudServicesEnabled: 0
+  m_AnalyzeProjectName: 0
+  m_LoadStoreOptimization: 0
+  m_XboxPIX: 0
+  m_EnableOpenGL: 0
+  m_BuildLocationUsageMode: 0
+  logOBJ: 0
+  useExplicitComponents: 0
+  useExplicitOpt: 0
+  useSRGB: 1
+  useExternalCrashHandler: 0
+  useGles32: 0
+  useMetal: 1
+  useTessellation: 0
+  useOpenGL: 0
+  useD3D11: 1
+  useVulkan: 0
+  useD3D12: 0
+  useD3D9: 0
+  m_SupportedAspects: 000000000000000001010000000000000000
+  m_Il2CppCompatibilityLevel: 0
+  m_DefaultCodeRepresentation: 0
+  m_FogStripping: 1
+  m_StaticBatching: 1
+  m_PlayerPixelRaycast: 1
+  m_SpriteAtlasMaxSize: 2048
+  m_SpriteAtlasAtlasSizeIsMultiOfFour: 1
+  m_Icon: {fileID: 0}
+  firstStreamedLevelWithResources: 0
+  m_ResolutionDialogActive: 1
+  m_ResetResolutionOnWindowResize: 0
+  m_NotifiedResolutionScalingUnsupported: 0
+  m_NotifiedSceneCreation: 0
+  m_NotifiedDeprecatedHDRP: 0
+  m_UserCreatedML-Agents: 0
+  m_NotifiedDiscreteGPU: 0
+  m_ScriptingDefineSymbols: {}
+  m_AdditionalCompilerArguments: {}
+  m_PlatformAdditionalCompilerArguments: {}
+  m_AllowExplicitAllocation: 0
+  m_EnableInternalProfiler: 0
+  m_VerboseLog: 0
+  m_AllowSceneActivation: 0
+  m_RunInBackground: 1
+  m_CaptureSingleScreen: 0
+  m_StackTraceTypes: 010000000100000001000000010000000100000001000000
+  m_Il2CppCompilerConfiguration: 0
+  apiCompatibilityLevel: 6
+  webGLInputSupport: 1
+  webGLTemplate: APPLICATION:Default
+  webGLAnalyze: 0
+  webGLUseEmbeddedResources: 0
+  webGLCompressionFormat: 0
+  webGLCodeOptimization: 0
+  webGLExceptionSupport: 1
+  webGLDataCaching: 1
+  webGLDebugSymbols: 0
+  webGLParallel: 0
+  webGLEnableWebAssembly: 1
+  webGLMemorySize: 32
+  webGLLinkerTarget: 0
+  webGLThreadsSupport: 0
+  webGLWasmStreaming: 1
+  webGLDecompressionFallback: 0
+  webGLPowerPreference: 2
+  scriptingDefineSymbols: {}
+  additionalCompilerArguments: {}
+  platformArchitecture: {}
+  scriptingBackend: {}
+  il2CppCompilerConfiguration: {}
+  il2CppCodeGeneration: {}
+  managedStrippingLevel: {}
+  incrementalIl2CppBuild: {}
+  suppressCommonWarnings: 1
+  allowUnsafeCode: 0
+  useMarshal: 0
+  additionalIl2CppArgs:
+  scriptingRuntimeVersion: 1
+  gcIncremental: 1
+  AssemblyVersionValidation: 1
+  gcWBarrierValidation: 0
+  apiCompatibilityLevelPerPlatform: {}
+  m_RenderingPath: 1
+  m_MobileRenderingPath: 1
+  m_ShaderSettings: {useScreenSpaceShadows: 0, useRealtimeReflectionProbes: 0}
+  m_StackTraceTypes: 010000000100000001000000010000000100000001000000
+  m_MonoCompile: 0
+  m_XboxOneX: 0
+  m_EnableXboxOneX: 0
+  m_IsXboxOneX: 0
+  m_IsXboxOneS: 0
+  m_XboxOneMono: 0
+  m_XboxOneResolution: 0
+  m_XboxOneXTitleMemory: 8
+  m_XboxOneSPlatform: 0
+  m_XboxOneXPlatform: 0
+  m_XboxOneDisabled: 0
+  m_XboxOneEnable: 0
+  m_XboxOneLogLevel: 0
+  m_XboxOneLogToConsole: 0
+  m_XboxOnePresentImmediateThreshold: 0
+  xboxOneDisableKinectGpuReservation: 0
+  xboxOneEnable7thCore: 1
+  xboxOneEnableHeadOrientation: 0
+  vrSettings:
+    cardboardDepthFormat: 0
+    enable360StereoCapture: 0
+    virtualRealitySplashScreen: {fileID: 0}
+  isWsaPlayer: 0
+  isWsaFast: 0
+  wsaSubplatform: 0
+  wsaUWPBuildType: 0
+  wsaEnableUnityVerboseLogs: 0
+  wsaUWPLandscape: 0
+  wsaUWPBuildOutput: 0
+  wsaUseIl2Cpp: 0
+  wsaUWPSDK: 0
+  wsaMinUWPSDK: 0
+  wsaTargetDevice: 0
+  wsaMinNetVersion: 0
+  wsaCapabilities: []
+  wsaCertificate:
+  tizenProductDescription:
+  tizenSigningProfileName:
+  tizenMicrophonePermission: 0
+  tizenCameraPermission: 0
+  tizenLocationPermission: 0
+  tizenMinOSVersion: 0
+  tizenTargetOSVersion: 0
+  n3dsDisableStereoscopicView: 0
+  n3dsEnableSharedListOpt: 1
+  n3dsEnableVSync: 0
+  n3dsMemorySize: 128
+  n3dsDisableSpaceHeating: 0
+  stvDeviceAddress:
+  stvProductDescription:
+  stvProductAuthor:
+  stvProductAuthorEmail:
+  stvProductLink:
+  stvProductCategory: 0
+  facebookUpload: 0
+  facebookCookies: 1
+  facebookLogging: 1
+  facebookStatus: 1
+  facebookXfbml: 0
+  facebookFrictionlessRequests: 1
+  apiCompatibilityLevel: 6
+  cloudProjectId:
+  framebufferDepthAlpha: 0
+  projectName:
+  organizationId:
+  cloudEnabled: 0
+  enableNativePlatformBackendsForNewInputSystem: 0
+  disableOldInputManagerSupport: 0
+  legacyClampBlendShapeWeights: 0
+  hmiUseInternalProfiler: 0
+  hmiClearVRAM: 0
+  hmiLogGPS: 0
+  platformSettings: {}
+  AndroidMinification: 0
+  AndroidGamepadSupportLevel: 0
+  AndroidValidateAppBundleSize: 1
+  AndroidEnableArmv9SecurityFeatures: 0
+  AndroidReportAppBundleSize: 1
+  AndroidRetainAppBundleSize: 0
+  AndroidOptimizedFramePacing: 0
+  AndroidTargetArchitectures: 0000000000000000000000000000000000000000
+  rendererFeatures: 0000000000000000000000000000000000000000
+  showUnityLogo: 1
+  CameraUsageDescription:
+  LocationUsageDescription:
+  MicrophoneUsageDescription:
+  muteOtherAudioSources: 0
+  PrepareForRecording: 0
+  ForceIOS speakers when recording: 0
+  EnableBluetooth: 0
+  BluetoothUsageDescription:
+  requiresPersistence: 0
+  allowHTTP: 0
+  muteOtherApps: 0
+  PrepareiOSForRecording: 0
+  ForceiOSSpeakersWhenRecording: 0
+  audioSpatialExperience: 0
+  HideHomeButton: 0
+  iPhoneBundleVersion: 1.0
+  iPhoneShortBundleVersion: 1.0
+  iPhoneSplashScreen: {fileID: 0}
+  iPhoneHighResolution: 0
+  iPhoneLargeImage: 0
+  iPhoneFullscreen: 0
+  iPhoneFullscreenSplash: 0
+  iPadFullscreenSplash: 0
+  iOSAppInBackgroundBehavior: 0
+  iOSAllowHTTPDownload: 0
+  iOSLaunchScreeniPadFill: 0
+  iOSLaunchScreeniPadImage: {fileID: 0}
+  iOSLaunchScreenaiPhoneImage: {fileID: 0}
+  iOSLaunchScreeniPhoneFill: 0
+  iOSLaunchScreenSize: 0
+  iOSLaunchScreenCustomXibPath:
+  iOSDeviceRequirements: []
+  iOSURLSchemes: []
+  iOSApplicationDisplayName:
+  iOSUseCustomAppBundle: 0
+  iOSPauseOnAppSwitch: 1
+  iOSSplashScreenDelay: 0
+  iOSExitOnSuspend: 0
+  iOSLaunchScreenImage: {fileID: 0}
+  iOSLaunchScreenFill: 0
+  iOSLaunchScreenSize: 0
+  iOSLaunchScreenCustomXibPath:
+  iOSAppInBackgroundBehavior: 0
+  iOSAllowHTTPDownload: 1
+  iOSDeviceRequirements: []
+  iOSURLSchemes: []
+  iOSBackgroundModes: 0
+  MetalForceHardShadows: 0
+  MetalFramebufferOnly: 0
+  MetalAcceleration: 1
+  Metal API Validation: 0
+  metalForceHardShadows: 0
+  OpenGLForceBlit: 0
+  OpenGLCoreMSAAFallback: 0
+  tvOSSmallIconLayers: []
+  tvOSLargeIconLayers: []
+  tvOSTopShelfImageLayers: []
+  tvOSBundleVersion: 1.0
+  tvOSShortBundleVersion: 1.0
+  tvOSSmallIconLayers2x: []
+  tvOSLargeIconLayers2x: []
+  tvOSTopShelfImageLayers2x: []
+  tvOSSmallIconLayers1080p: []
+  tvOSLargeIconLayers1080p: []
+  tvOSTopShelfImageLayers1080p: []
+  AndroidTargetSdkVersion: 0
+  AndroidMinSdkVersion: 0
+  AndroidPreferredInstallLocation: 0
+  AndroidEnableSplit: 0
+  AndroidIsGame: 1
+  AndroidVisibleInBatch: 1
+  AndroidForceInternetPermission: 0
+  AndroidForceSDCardPermission: 0
+  AndroidUse24BitDepth: 0
+  androidPackageName: com.DefaultCompany.JianGame
+  AndroidKeyaliasName:
+  AndroidKeyaliasPass:
+  AndroidKeystorePass:
+  AndroidKeystoreName:
+  AndroidKeyaliasUser:
+  AndroidKeyaliasPass:
+  AndroidTVCompatibility: 0
+  AndroidEnableGooglePlay: 0
+  AndroidEnableOBB: 0
+  AndroidUseAPKExpansionFiles: 0
+  androidProfile: 0
+  AndroidBlitType: 0
+  AndroidSupportedAspectRatio: 000000000000000001010000000000000000
+  defaultIsNativeResolution: 1
+  macRetinaSupport: 1
+  runInBackground: 1
+  captureSingleScreen: 0
+  usePlayerLog: 1
+  useMacAppStoreValidation: 0
+  macAppStoreCategory: public.app-category.games
+  xboxOneDisableKinectGpuReservation: 0
+  xboxOneEnable7thCore: 1
+  xboxOneEnableHeadOrientation: 0
+  XboxOneLogLevel: 0
+  XboxOnePresentImmediateThreshold: 0
+  XboxOneXTitleMemory: 8
+  XboxOneSPlatform: 0
+  XboxOneXPlatform: 0
+  XboxOneDisabled: 0
+  XboxOneEnable: 0
+  isWsaPlayer: 0
+  WSAApplicationId:
+  wsaSubplatform: 0
+  wsaUWPBuildType: 0
+  wsaUWPLandscape: 0
+  WSADefaultTileSize: 1
+  WSADefaultTileAspect: 1
+  wsaCapabilities: []
+  wsaCertificate:
+  MetroApplicationDescription:
+  MetroPackageName:
+  MetroPackageVersion: 1.0.0.0
+  MetroPackageAuthor:
+  MetroPackagePublisher:
+  MetroPackagePublisherDisplayName:
+  MetroPackageLogo:
+  MetroPackageSmallLogo:
+  MetroPackageStoreLogo:
+  MetroPackageWideLogo:
+  MetroPackageSplashScreen:
+  MetroPackagePhoneSplashScreen:
+  MetroMediumTile:
+  MetroWideTile:
+  MetroSmallTile:
+  WSAEnableTilePrelaunch: 0
+  WSATileBackgroundColor: {r: 0, g: 0, b: 0, a: 1}
+  WSATileForegroundText: 0
+  wsaEnableUnityVerboseLogs: 0
+  wsaMinUWPSDK: 0
+  wsaTargetDevice: 0
+  WSAInputSource: 0
+  WSADisplayName:
+  hololensPublishInfo: {}
+  luminVersion:
+    m_EditorVersion: 0
+    m_EditorVersionWithRevision: 0
+    m_EditorVersionControl: 0
+  luminSDKVersion: 0
+  luminMinAPILevel: 0
+  luminMinOSVersion: 0
+  luminPrivileges:
+  luminVisibleInBatch: 0
+  luminStartupLocale:
+  luminAppName:
+  luminAppIcon: {fileID: 0}
+  luminAppModel: {fileID: 0}
+  luminAppPackage: {fileID: 0}
+  luminAppSignature: {fileID: 0}
+  luminAppCertificate: {fileID: 0}
+  luminSplashScreen: {fileID: 0}
+  luminScreenShots: []
+  luminAppNotes:
+  luminSwitchInput: 0
+  luminVoiceInput: 0
+  luminFps: 30
+  luminDisableML: 0
+  luminEnableVerboseLogs: 0
+  luminUseVulkan: 0
+  luminUseMLAudio: 1
+  luminUseMLWebView: 1
+  luminUseMLController: 1
+  luminScreens: 0
+  sa:
+  useCustomLauncherGradleManifest: 0
+  useCustomBaseGradleTemplate: 0
+  useCustomGradlePropertiesTemplate: 0
+  useCustomProguardFile: 0
+  AndroidTargetDevices: 0
+  AndroidTargetArchitectures: 0000000000000000000000000000000000000000000000000000000000000000
+  AndroidBuildSystem: 0
+  AndroidBuildApkPerCpuArchitecture: 0
+  AndroidUseLowPrecisionMesh: 0
+  AndroidUseHighPrecisionMesh: 0
+  AndroidEnableTango: 0
+  AndroidEnableGlass: 0
+  AndroidEnableDaydream: 0
+  AndroidEnableCardboard: 0
+  AndroidEnableVuforia: 0
+  AndroidEnableMega: 0
+  AndroidTagETC2: 0
+  androidEnableBundle: 0
+  AndroidBundleVersion: 1
+  AndroidBundleVersionCode: 1
+  AndroidEnableSplitAppBinary: 0
+  webGLMemorySize: 32
+  WebGLDebugSymbols: 0
+  WebGLExceptionSupport: 1
+  WebGLDataCaching: 1
+  WebGLLinkerTarget: 0
+  WebGLThreadsSupport: 0
+  WebGLWasmStreaming: 1
+  WebGLPowerPreference: 2
+  webGLCodeOptimization: 0
+  WebGLDecompressionFallback: 0
+  WebGLEnableWebAssembly: 1
+  WebGLCompressionFormat: 0
+  WebGLTemplate: APPLICATION:Default
+  webGLUseEmbeddedResources: 0
+  WebGLEnableExceptions: 1
+  WebGLName:
+  WebGLSupport: 1
+  OpenHarmonyTargetArchitectures: 0000000000000000000000000000000000000000000000000000000000000000
+  OpenHarmonyBundleVersion: 1
+  OpenHarmonyBundleVersionCode: 1
+  OpenHarmonyMinSdkVersion: 0
+  OpenHarmonyTargetSdkVersion: 0
+  OpenHarmonyPackageName: com.DefaultCompany.JianGame
+  OpenHarmonyVisibleInBatch: 1
+  OpenHarmonyIsGame: 1
+  OpenHarmonyUseLowPrecisionMesh: 0
+  OpenHarmonyUseHighPrecisionMesh: 0
+  OpenHarmonyScreenOrientation: 0
+  OpenHarmonyBlitType: 0
+  OpenHarmonyResizableWindow: 0
+  OpenHarmonyEnableTango: 0
+  OpenHarmonyEnableGlass: 0
+  OpenHarmonyEnableDaydream: 0
+  OpenHarmonyEnableCardboard: 0
+  OpenHarmonyEnableVuforia: 0
+  spatialCoordination: 0
+  m_UnitySplashScreen: {fileID: 0}
+  m_UnitySplashScreenStyle: 0
+  m_UnitySplashScreenBackgroundColor: {r: 0.13725491, g: 0.12156863, b: 0.1254902, a: 1}
+  m_UnitySplashScreenDrawMode: 0
+  m_UnitySplashScreenBackgroundAnimationZoom: 1
+  m_UnitySplashScreenLogoAnimationZoom: 1
+  m_UnitySplashScreenAnimation: 1
+  m_UnitySplashScreenOverlayOpacity: 1
+  m_UnitySplashScreenBackgroundLandscapeAspect: 1
+  m_UnitySplashScreenBackgroundPortraitAspect: 1
+  m_UnitySplashScreenLogos: []
+  m_VirtualRealitySplashScreen: {fileID: 0}
+  m_HolographicTrackingLossScreen: {fileID: 0}
+  m_ShowUnitySplashScreen: 1
+  m_ShowUnitySplashLogo: 1
+  m_ActiveColorSpace: 0
+  m_StackTraceTypes: 010000000100000001000000010000000100000001000000
+  m_Il2CppCompilerConfiguration: 0
+  m_Il2CppCodeGeneration: {}
+  m_AdditionalIl2CppArgs:
+  m_Cloned: 0
+  m_Predicted: 0
+  m_Notified: 1

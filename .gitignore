@@ -1,0 +1,54 @@
+# ==================== Unity ====================
+# Unity 生成的临时目录，每次打开项目都会重建
+/[Ll]ibrary/
+/[Tt]emp/
+/[Oo]bj/
+/[Bb]uild/
+/[Bb]uilds/
+/[Ll]ogs/
+/[Uu]ser[Ss]ettings/
+
+# Unity 内存映射文件
+*.mem
+
+# Unity 皮肤文件
+*.cmake
+
+# ==================== 构建产物 ====================
+*.apk
+*.aab
+*.ipa
+*.exe
+*.dll
+*.so
+
+# ==================== IDE ====================
+.idea/
+.vscode/
+.vs/
+*.suo
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+
+# ==================== OS ====================
+.DS_Store
+Thumbs.db
+
+# ==================== 项目 ====================
+# 日志
+logs/
+
+# 环境变量
+.env
+.env.local
+
+# NuGet / 包还原
+*[Pp]ackages/*
+!/[Pp]ackages/manifest.json
+!/[Pp]ackages/packages-lock.json
+
+# 允许 Plugins 目录下的 DLL（第三方插件需要入库）
+!/[Aa]ssets/[Pp]lugins/*.dll

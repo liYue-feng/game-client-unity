@@ -1,0 +1,34 @@
+{
+  "env": {
+    "ANTHROPIC_AUTH_TOKEN": "ark-fa2f8867-fe9c-4708-a26a-1cbf5af6f000-937fe",
+    "ANTHROPIC_BASE_URL": "https://ark.cn-beijing.volces.com/api/coding",
+    "ANTHROPIC_MODEL": "Doubao-Seed-2.0-Code"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(git init *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git remote *)",
+      "Bash(gh repo *)",
+      "Bash(mkdir *)",
+      "Bash(ls *)",
+      "Bash(cp *)",
+      "Bash(cat *)",
+      "Bash(find *)",
+      "Bash(git *)",
+      "Read(//c/Program Files/Unity/Hub/**)",
+      "Read(//c/Program Files/**)",
+      "Read(//d//**)",
+      "Bash(where unity *)",
+      "WebFetch(domain:github.com)",
+      "Bash(curl -sL \"https://github.com/sta/websocket-sharp/releases\")",
+      "Bash(curl -sL \"https://api.github.com/repos/sta/websocket-sharp/releases/latest\")",
+      "Bash(curl -sL \"https://api.github.com/repos/sta/websocket-sharp/tags\")",
+      "Bash(curl -sL -o \"F:/Own_project/game-client-unity/Assets/Plugins/websocket-sharp.dll\" \"https://www.nuget.org/api/v2/package/WebSocketSharp/1.0.3-rc11\")",
+      "WebFetch(domain:www.npmjs.com)",
+      "WebSearch",
+      "WebFetch(domain:raw.githubusercontent.com)"
+    ]
+  }
+}

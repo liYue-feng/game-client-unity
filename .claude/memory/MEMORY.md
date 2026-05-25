@@ -1,0 +1,4 @@
+- [项目概览](project-overview.md) — Unity游戏客户端，代号：剑
+- [代码注释风格](feedback-code-style.md) — 注释要写好，新手需要参考学习
+- [记录所有对话](record-all-conversations.md) — 每次对话都要保存到项目记忆
+- [提交规范](commit-after-changes.md) — 每次变动都要提交并写清楚注释
