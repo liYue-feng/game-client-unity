@@ -21,7 +21,7 @@ public class InputHandler : MonoBehaviour
     public KeyCode parryKey = KeyCode.K;
     [Tooltip("冲刺键")]
     public KeyCode dashKey = KeyCode.L;
-    [Tooltip("重击键"]
+    [Tooltip("重击键")]
     public KeyCode heavyAttackKey = KeyCode.I;
 
     [Header("重击判定")]

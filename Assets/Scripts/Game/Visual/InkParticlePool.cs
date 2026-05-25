@@ -26,7 +26,7 @@ public class InkParticlePool : MonoBehaviour
     [Tooltip("池大小")]
     public int poolSize = 50;
 
-    [Tooltip("粒子存活时间（秒）"]
+    [Tooltip("粒子存活时间（秒）")]
     public float particleLifetime = 0.3f;
 
     private Queue<GameObject> _available = new Queue<GameObject>();
