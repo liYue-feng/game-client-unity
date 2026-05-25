@@ -16,11 +16,11 @@ public class BattleSceneSetup : MonoBehaviour
     [Header("场景参数")]
     [Tooltip("地面宽度")]
     public float groundWidth = 30f;
-    [Tooltip="地面厚度"]
+    [Tooltip("地面厚度")]
     public float groundHeight = 1f;
-    [Tooltip="玩家出生位置")]
+    [Tooltip("玩家出生位置")]
     public Vector3 playerSpawnPos = new Vector3(0f, 1f, 0f);
-    [Tooltip="敌人出生位置")]
+    [Tooltip("敌人出生位置")]
     public Vector3 enemySpawnPos = new Vector3(5f, 1f, 0f);
 
     // 运行时引用
@@ -148,7 +148,7 @@ public class BattleSceneSetup : MonoBehaviour
         _player.AddComponent<CharacterStats>();
         var stateMachine = _player.AddComponent<PlayerStateMachine>();
         _player.AddComponent<StaminaController>();
-        _player.AddComponent<NewInputHandler>(); // 新输入系统
+        _player.AddComponent<InputHandler>(); // 用旧输入系统，更稳定
         _player.AddComponent<InputMediator>();
         _player.AddComponent<PlayerInputBridge>();
         var controller = _player.AddComponent<PlayerController>();

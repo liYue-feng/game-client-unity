@@ -94,7 +94,7 @@ PlayerSettings:
   m_ColorGamuts: 00000000
   m_TargetGraphicsAPIs: []
   m_ActiveSubsystem: 0
-  m_ActiveInputHandler: 1
+  m_ActiveInputHandler: 0
   m_CloudProjectId:
   m_CloudEnabled: 0
   m_CloudProjectName:
