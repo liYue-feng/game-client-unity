@@ -465,22 +465,4 @@ public class BattleSceneSetup : MonoBehaviour
             TalentManager.Instance.ApplyToPlayer(stats);
         }
     }
-
-    private void CreatePauseMenu()
-    {
-        var pauseObj = new GameObject("[PauseMenu]");
-        DontDestroyOnLoad(pauseObj);
-        var pauseMenu = pauseObj.AddComponent<PauseMenuUI>();
-        pauseMenu.OnBackToMenu += () =>
-        {
-            LoadingScreen.Instance.Show();
-            SceneTransitionManager.Instance.GoToMainMenu();
-        };
-        pauseMenu.OnSettings += () =>
-        {
-            var settingsObj = new GameObject("SettingsUI");
-            var settings = settingsObj.AddComponent<SettingsUI>();
-            settings.OnClose += () => Destroy(settingsObj);
-        };
-    }
 }

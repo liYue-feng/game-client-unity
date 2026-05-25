@@ -1,34 +1,22 @@
 using UnityEngine;
 using System;
-using System.Collections;
+using Game.Network;
 
 /// <summary>
-/// 心跳保活管理器 — 定时发送Ping，超时判定断线
+/// 心跳保活管理器 — 监控NetworkClient连接状态
 /// </summary>
 public class HeartbeatManager : MonoBehaviour
 {
     public static HeartbeatManager Instance { get; private set; }
 
-    [Header("心跳配置")]
-    public float pingInterval = 10f;       // 心跳间隔
-    public float pingTimeout = 5f;         // 单次超时
-    public int maxRetries = 3;             // 最大重试次数
-
     /// <summary> 网络状态变化事件 </summary>
     public event Action<NetworkStatus> OnStatusChanged;
     /// <summary> 断线事件 </summary>
     public event Action OnDisconnected;
-    /// <summary> RTT 变化（毫秒） </summary>
-    public event Action<long> OnRTTUpdated;
 
-    private NetworkClient _client;
-    private Coroutine _heartbeatRoutine;
-    private int _retryCount;
     private NetworkStatus _status = NetworkStatus.Disconnected;
-    private long _lastRTT;
 
     public NetworkStatus Status => _status;
-    public long LastRTT => _lastRTT;
 
     void Awake()
     {
@@ -37,80 +25,34 @@ public class HeartbeatManager : MonoBehaviour
         DontDestroyOnLoad(gameObject);
     }
 
-    /// <summary> 开始心跳（连接成功后调用） </summary>
-    public void StartHeartbeat(NetworkClient client)
+    void Start()
     {
-        _client = client;
-        _retryCount = 0;
-        _heartbeatRoutine = StartCoroutine(HeartbeatLoop());
-    }
-
-    /// <summary> 停止心跳（断开时调用） </summary>
-    public void StopHeartbeat()
-    {
-        if (_heartbeatRoutine != null)
+        // 监听NetworkClient事件
+        if (NetworkClient.Instance != null)
         {
-            StopCoroutine(_heartbeatRoutine);
-            _heartbeatRoutine = null;
+            NetworkClient.Instance.OnConnected += OnConnected;
+            NetworkClient.Instance.OnDisconnected += OnDisconnectedHandler;
         }
     }
 
-    IEnumerator HeartbeatLoop()
+    void OnDestroy()
     {
-        while (_client != null && _client.IsConnected)
+        if (NetworkClient.Instance != null)
         {
-            yield return new WaitForSeconds(pingInterval);
-            yield return StartCoroutine(SendPing());
+            NetworkClient.Instance.OnConnected -= OnConnected;
+            NetworkClient.Instance.OnDisconnected -= OnDisconnectedHandler;
         }
     }
 
-    IEnumerator SendPing()
+    private void OnConnected()
     {
-        var startTime = DateTime.UtcNow;
-        var received = false;
+        SetStatus(NetworkStatus.Connected);
+    }
 
-        void OnPong()
-        {
-            received = true;
-            _lastRTT = (long)(DateTime.UtcNow - startTime).TotalMilliseconds;
-            OnRTTUpdated?.Invoke(_lastRTT);
-        }
-
-        // 注册Pong回调
-        _client.OnPongReceived += OnPong;
-
-        // 发送Ping
-        _client.SendPing();
-
-        // 等待响应
-        var elapsed = 0f;
-        while (!received && elapsed < pingTimeout)
-        {
-            elapsed += Time.deltaTime;
-            yield return null;
-        }
-
-        _client.OnPongReceived -= OnPong;
-
-        if (received)
-        {
-            _retryCount = 0;
-            SetStatus(NetworkStatus.Connected);
-        }
-        else
-        {
-            _retryCount++;
-            if (_retryCount >= maxRetries)
-            {
-                SetStatus(NetworkStatus.Disconnected);
-                OnDisconnected?.Invoke();
-                StopHeartbeat();
-            }
-            else
-            {
-                SetStatus(NetworkStatus.Unstable);
-            }
-        }
+    private void OnDisconnectedHandler()
+    {
+        SetStatus(NetworkStatus.Disconnected);
+        OnDisconnected?.Invoke();
     }
 
     void SetStatus(NetworkStatus newStatus)
@@ -123,10 +65,9 @@ public class HeartbeatManager : MonoBehaviour
         }
     }
 
-    void OnDestroy()
-    {
-        StopHeartbeat();
-    }
+    // 这些方法保持空实现以兼容现有代码
+    public void StartHeartbeat(NetworkClient client) { }
+    public void StopHeartbeat() { }
 }
 
 public enum NetworkStatus

@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.UI;
+using Game.Managers;
 
 /// <summary>
 /// 水墨风格登录界面 — 登录/注册/游客三种模式

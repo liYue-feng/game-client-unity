@@ -117,8 +117,8 @@ public class GestureInput : MonoBehaviour
                     {
                         // 点击 = 攻击 或 弹反
                         // 如果在弹反窗口内，视为弹反
-                        var parryCtrl = FindObjectOfType<ParryController>();
-                        if (parryCtrl != null && parryCtrl.IsInCounterWindow)
+                        var stateMachine = FindObjectOfType<PlayerStateMachine>();
+                        if (stateMachine != null && stateMachine.IsInParryWindow)
                         {
                             _parryPressed = true;
                         }

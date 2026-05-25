@@ -1,8 +1,11 @@
 fileFormatVersion: 2
 guid: 39947a24bbd9eea44b24ba7ebdae9b5f
-NativeFormatImporter:
+InputActionImporter:
   externalObjects: {}
-  mainObjectFileID: 0
   userData:
   assetBundleName:
   assetBundleVariant:
+  generateCSharpWrapper: 1
+  csharpNamespace:
+  csharpPath: Assets/Scripts/Game/Input/GameInput.cs
+  csharpClassName: GameInput

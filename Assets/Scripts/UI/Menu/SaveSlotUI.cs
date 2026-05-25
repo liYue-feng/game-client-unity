@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.UI;
 using System;
+using Game.Managers;
 
 /// <summary>
 /// 存档管理面板 — 显示存档槽位，支持加载/删除

@@ -15,7 +15,7 @@ public class ParryHitbox : MonoBehaviour
     [Tooltip("弹反判定范围大小")]
     public Vector2 size = new Vector2(1.0f, 1.2f);
 
-    private ParryController _parryController;
+    private PlayerStateMachine _stateMachine;
     private BoxCollider2D _collider;
 
     /// <summary>标记为弹反区域，供 Hitbox 识别</summary>
@@ -23,7 +23,7 @@ public class ParryHitbox : MonoBehaviour
 
     private void Awake()
     {
-        _parryController = GetComponentInParent<ParryController>();
+        _stateMachine = GetComponentInParent<PlayerStateMachine>();
         _collider = gameObject.AddComponent<BoxCollider2D>();
         _collider.isTrigger = true;
         _collider.offset = offset;
@@ -37,7 +37,7 @@ public class ParryHitbox : MonoBehaviour
     private void Update()
     {
         // 只在弹反窗口内启用
-        _collider.enabled = _parryController != null && _parryController.IsInParryWindow;
+        _collider.enabled = _stateMachine != null && _stateMachine.IsInParryWindow;
     }
 
     private void OnTriggerEnter2D(Collider2D other)
@@ -45,9 +45,9 @@ public class ParryHitbox : MonoBehaviour
         // 只响应敌方 Hitbox
         Hitbox hitbox = other.GetComponent<Hitbox>();
         if (hitbox == null) return;
-        if (hitbox.isParryable && _parryController != null && _parryController.IsInParryWindow)
+        if (hitbox.isParryable && _stateMachine != null && _stateMachine.IsInParryWindow)
         {
-            _parryController.OnParrySuccess();
+            _stateMachine.OnParrySuccess();
             // 禁用敌方 hitbox，防止穿透
             hitbox.DisableHitbox();
         }

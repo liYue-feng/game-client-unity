@@ -12,13 +12,11 @@ public class PlayerInputBridge : MonoBehaviour
 {
     private InputMediator _input;
     private PlayerStateMachine _stateMachine;
-    private ParryController _parryController;
 
     private void Awake()
     {
         _input = GetComponent<InputMediator>();
         _stateMachine = GetComponent<PlayerStateMachine>();
-        _parryController = GetComponent<ParryController>();
     }
 
     private void Update()
@@ -39,10 +37,6 @@ public class PlayerInputBridge : MonoBehaviour
         if (_input.ParryPressed)
         {
             _stateMachine.RequestParry();
-            if (_parryController != null && _stateMachine.CurrentState == PlayerState.Parry)
-            {
-                _parryController.EnterParry();
-            }
         }
 
         // 冲刺
