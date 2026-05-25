@@ -7,7 +7,7 @@ using UnityEngine;
 public class MinimapUI : MonoBehaviour
 {
     [Tooltip("小地图渲染器")]
-    public MinimapRenderer renderer;
+    public MinimapRenderer minimapRenderer;
 
     private void Start()
     {
@@ -25,7 +25,7 @@ public class MinimapUI : MonoBehaviour
     {
         if (renderer != null)
         {
-            renderer.Initialize(grid);
+            minimapRenderer.Initialize(grid);
         }
     }
 
@@ -33,7 +33,7 @@ public class MinimapUI : MonoBehaviour
     {
         if (renderer != null)
         {
-            renderer.UpdateDisplay();
+            minimapRenderer.UpdateDisplay();
         }
     }
 }
