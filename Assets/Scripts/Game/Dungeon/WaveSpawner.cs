@@ -83,27 +83,27 @@ public class WaveSpawner : MonoBehaviour
         switch (enemyType)
         {
             case "grunt":
-                sr.sprite = PlaceholderSpriteFactory.GruntSprite();
+                sr.sprite = AiSpriteLoader.GruntSprite();
                 enemyBase = obj.AddComponent<Grunt>();
                 enemyBase.expValue = 1;
                 break;
             case "archer":
-                sr.sprite = PlaceholderSpriteFactory.ArcherSprite();
+                sr.sprite = AiSpriteLoader.ArcherSprite();
                 enemyBase = obj.AddComponent<Archer>();
                 enemyBase.expValue = 2;
                 break;
             case "elite":
-                sr.sprite = PlaceholderSpriteFactory.EliteSprite();
+                sr.sprite = AiSpriteLoader.EliteSprite();
                 enemyBase = obj.AddComponent<Elite>();
                 enemyBase.expValue = 5;
                 break;
             case "boss":
-                sr.sprite = PlaceholderSpriteFactory.BossSprite();
+                sr.sprite = AiSpriteLoader.BossSprite();
                 enemyBase = obj.AddComponent<Boss>();
                 enemyBase.expValue = 20;
                 break;
             default:
-                sr.sprite = PlaceholderSpriteFactory.EnemySprite();
+                sr.sprite = AiSpriteLoader.EnemySprite();
                 enemyBase = obj.AddComponent<Grunt>();
                 enemyBase.expValue = 1;
                 break;

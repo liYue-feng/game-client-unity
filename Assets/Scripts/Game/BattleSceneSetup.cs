@@ -41,6 +41,7 @@ public class BattleSceneSetup : MonoBehaviour
         _startTime = Time.time;
 
         // 初始化全局系统
+        AiSpriteLoader.PreloadAllSprites();
         AudioManager.Instance.PlayBGM("dash");
         var _ = DamageNumberPool.Instance;
         var __ = ElementalEffectManager.Instance;
@@ -99,7 +100,7 @@ public class BattleSceneSetup : MonoBehaviour
 
         // 精灵
         var sr = ground.AddComponent<SpriteRenderer>();
-        sr.sprite = PlaceholderSpriteFactory.InkGroundSprite((int)(groundWidth * 100), (int)(groundHeight * 100));
+        sr.sprite = AiSpriteLoader.InkGroundSprite((int)(groundWidth * 100), (int)(groundHeight * 100));
         sr.drawMode = SpriteDrawMode.Sliced;
         sr.size = new Vector2(groundWidth, groundHeight);
 
@@ -124,7 +125,7 @@ public class BattleSceneSetup : MonoBehaviour
 
         // 精灵
         var sr = _player.AddComponent<SpriteRenderer>();
-        sr.sprite = PlaceholderSpriteFactory.PlayerSprite();
+        sr.sprite = AiSpriteLoader.PlayerSprite();
 
         // 物理组件
         var rb = _player.AddComponent<Rigidbody2D>();
