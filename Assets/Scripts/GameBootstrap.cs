@@ -60,7 +60,7 @@ namespace Game
             {
                 Debug.Log($"[Bootstrap] 登录成功，加载存档...");
                 archiveMgr.LoadArchive();
-            });
+            };
 
             // 6. 连接服务器
             Debug.Log($"[Bootstrap] 连接服务器: {serverUrl}");

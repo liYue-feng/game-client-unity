@@ -12,7 +12,7 @@ public class Archer : EnemyBase
     public GameObject projectilePrefab;
     [Tooltip("射箭冷却时间")]
     public float shootCooldown = 2f;
-    [Tooltip("保持的理想距离"]
+    [Tooltip("保持的理想距离")]
     public float preferredDistance = 5f;
 
     private float _shootCooldownTimer;

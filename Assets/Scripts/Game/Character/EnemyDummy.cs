@@ -8,7 +8,7 @@ public class EnemyDummy : MonoBehaviour
 {
     [Tooltip("生命值")]
     public int hp = 50;
-    [Tooltip("最大生命值"]
+    [Tooltip("最大生命值")]
     public int maxHp = 50;
 
     private SpriteRenderer _sprite;
