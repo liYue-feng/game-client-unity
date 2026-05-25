@@ -130,10 +130,23 @@ public class InventoryUI : MonoBehaviour
 
     void Toggle()
     {
-        _isVisible = !_isVisible;
-        _panel.SetActive(_isVisible);
-        if (_isVisible) RefreshAllSlots();
-        AudioManager.Instance.PlaySFX(_isVisible ? "ui_click" : "ui_cancel");
+        if (_isVisible) Hide();
+        else Show();
+    }
+
+    public void Show()
+    {
+        _isVisible = true;
+        _panel.SetActive(true);
+        RefreshAllSlots();
+        AudioManager.Instance.PlaySFX("ui_click");
+    }
+
+    public void Hide()
+    {
+        _isVisible = false;
+        _panel.SetActive(false);
+        AudioManager.Instance.PlaySFX("ui_cancel");
     }
 
     void OnInventoryChanged(int slot, PassiveItem item)

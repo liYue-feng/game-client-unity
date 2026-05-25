@@ -36,6 +36,13 @@ public class BattleSceneSetup : MonoBehaviour
     private int _summonUpgradeCount;
     private int _styleSwitchCount;
 
+    // 运行时引用
+    private InputMediator _inputMediator;
+    private PauseMenuUI _pauseMenu;
+    private InventoryUI _inventoryUI;
+    private bool _isPaused;
+    private bool _isInventoryOpen;
+
     private void Start()
     {
         _startTime = Time.time;
@@ -52,6 +59,7 @@ public class BattleSceneSetup : MonoBehaviour
         CreateCamera();
         CreateGround();
         CreatePlayer();
+        _inputMediator = _player.GetComponent<InputMediator>();
         ApplyTalentBonuses();
         SummonManager.Instance.InitializeForBattle(_player);
         CreateWaveSpawner();
@@ -140,7 +148,7 @@ public class BattleSceneSetup : MonoBehaviour
         _player.AddComponent<CharacterStats>();
         var stateMachine = _player.AddComponent<PlayerStateMachine>();
         _player.AddComponent<StaminaController>();
-        _player.AddComponent<InputHandler>();
+        _player.AddComponent<NewInputHandler>(); // 新输入系统
         _player.AddComponent<InputMediator>();
         _player.AddComponent<PlayerInputBridge>();
         var controller = _player.AddComponent<PlayerController>();
@@ -361,10 +369,81 @@ public class BattleSceneSetup : MonoBehaviour
     private void CreateInventoryUI()
     {
         var invObj = new GameObject("[InventoryUI]");
-        invObj.AddComponent<InventoryUI>();
+        _inventoryUI = invObj.AddComponent<InventoryUI>();
     }
 
     /// <summary>创建暂停菜单</summary>
+    private void CreatePauseMenu()
+    {
+        var pauseObj = new GameObject("[PauseMenu]");
+        DontDestroyOnLoad(pauseObj);
+        _pauseMenu = pauseObj.AddComponent<PauseMenuUI>();
+        _pauseMenu.OnBackToMenu += () =>
+        {
+            LoadingScreen.Instance.Show();
+            SceneTransitionManager.Instance.GoToMainMenu();
+        };
+        _pauseMenu.OnSettings += () =>
+        {
+            var settingsObj = new GameObject("SettingsUI");
+            var settings = settingsObj.AddComponent<SettingsUI>();
+            settings.OnClose += () => Destroy(settingsObj);
+        };
+    }
+
+    private void Update()
+    {
+        if (_inputMediator == null) return;
+
+        // 暂停菜单切换
+        if (_inputMediator.PausePressed)
+        {
+            TogglePause();
+        }
+
+        // 背包切换
+        if (_inputMediator.InventoryPressed)
+        {
+            ToggleInventory();
+        }
+    }
+
+    private void TogglePause()
+    {
+        _isPaused = !_isPaused;
+
+        if (_pauseMenu != null)
+        {
+            if (_isPaused)
+            {
+                _pauseMenu.Show();
+                Time.timeScale = 0f;
+            }
+            else
+            {
+                _pauseMenu.Hide();
+                Time.timeScale = 1f;
+            }
+        }
+    }
+
+    private void ToggleInventory()
+    {
+        _isInventoryOpen = !_isInventoryOpen;
+
+        if (_inventoryUI != null)
+        {
+            if (_isInventoryOpen)
+            {
+                _inventoryUI.Show();
+            }
+            else
+            {
+                _inventoryUI.Hide();
+            }
+        }
+    }
+
     int CountCategoryInInventory(string category)
     {
         int count = 0;

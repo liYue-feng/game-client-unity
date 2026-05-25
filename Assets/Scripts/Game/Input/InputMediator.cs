@@ -1,15 +1,17 @@
 using UnityEngine;
 
 /// <summary>
-/// 输入中介器：统一键盘和手势输入到同一接口。
+/// 输入中介器：统一键盘/新手柄/手势输入到同一接口。
 /// PlayerStateMachine 和 PlayerController 只从这里读取输入，
-/// 不关心输入来自键盘还是触摸屏。
+/// 不关心输入来自哪里。
 ///
-/// 阶段1只接入 InputHandler（键盘），阶段5加入 GestureInput（触摸）。
+/// 自动检测：优先用 NewInputHandler（新InputSystem），
+/// 如果没有则回退到老 InputHandler。
 /// </summary>
 public class InputMediator : MonoBehaviour
 {
-    private InputHandler _keyboard;
+    private InputHandler _oldHandler;
+    private NewInputHandler _newHandler;
     // 阶段5: private GestureInput _gesture;
 
     /// <summary>水平移动输入 -1~1</summary>
@@ -20,24 +22,56 @@ public class InputMediator : MonoBehaviour
     public bool ParryPressed { get; private set; }
     /// <summary>本帧是否按了冲刺</summary>
     public bool DashPressed { get; private set; }
+    /// <summary>本帧是否按了暂停（仅新输入系统）</summary>
+    public bool PausePressed { get; private set; }
+    /// <summary>本帧是否按了背包（仅新输入系统）</summary>
+    public bool InventoryPressed { get; private set; }
     /// <summary>本帧是否按了重击</summary>
     public bool HeavyAttackPressed { get; private set; }
 
     private void Awake()
     {
-        _keyboard = GetComponent<InputHandler>();
+        // 优先找新输入系统
+        _newHandler = GetComponent<NewInputHandler>();
+        if (_newHandler == null)
+        {
+            // 没有的话回退到老系统
+            _oldHandler = GetComponent<InputHandler>();
+        }
         // 阶段5: _gesture = GetComponent<GestureInput>();
     }
 
     private void Update()
     {
-        // 优先级：手势 > 键盘（移动端手势覆盖键盘）
-        // 阶段1：只读键盘
-        MoveInput = _keyboard.MoveInput;
-        AttackPressed = _keyboard.AttackPressed;
-        ParryPressed = _keyboard.ParryPressed;
-        DashPressed = _keyboard.DashPressed;
-        HeavyAttackPressed = _keyboard.HeavyAttackPressed;
+        // 重置所有脉冲信号
+        MoveInput = 0f;
+        AttackPressed = false;
+        ParryPressed = false;
+        DashPressed = false;
+        PausePressed = false;
+        InventoryPressed = false;
+        HeavyAttackPressed = false;
+
+        // 优先用新输入系统
+        if (_newHandler != null)
+        {
+            MoveInput = _newHandler.MoveInput;
+            AttackPressed = _newHandler.AttackPressed;
+            ParryPressed = _newHandler.ParryPressed;
+            DashPressed = _newHandler.DashPressed;
+            PausePressed = _newHandler.PausePressed;
+            InventoryPressed = _newHandler.InventoryPressed;
+            HeavyAttackPressed = _newHandler.HeavyAttackPressed;
+        }
+        // 回退到老系统
+        else if (_oldHandler != null)
+        {
+            MoveInput = _oldHandler.MoveInput;
+            AttackPressed = _oldHandler.AttackPressed;
+            ParryPressed = _oldHandler.ParryPressed;
+            DashPressed = _oldHandler.DashPressed;
+            HeavyAttackPressed = _oldHandler.HeavyAttackPressed;
+        }
 
         // 阶段5 加入手势时取消注释：
         // if (_gesture != null)

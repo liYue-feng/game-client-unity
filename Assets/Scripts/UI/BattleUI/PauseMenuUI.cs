@@ -152,4 +152,7 @@ public class PauseMenuUI : MonoBehaviour
         _canvas.enabled = false;
         OnResume?.Invoke();
     }
+
+    public void Show() => Pause();
+    public void Hide() => Resume();
 }
