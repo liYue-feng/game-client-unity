@@ -10,10 +10,10 @@ public class InkHitEffect : MonoBehaviour
 {
     [Tooltip("溅出的墨点数量")]
     public int particleCount = 7;
-    [Tooltip="粒子速度范围")]
+    [Tooltip("粒子速度范围")]
     public float minSpeed = 2f;
     public float maxSpeed = 5f;
-    [Tooltip="粒子存活时间（秒）")]
+    [Tooltip("粒子存活时间（秒）")]
     public float lifetime = 0.3f;
 
     /// <summary>

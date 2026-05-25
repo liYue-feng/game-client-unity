@@ -6,7 +6,7 @@ using UnityEngine;
 /// </summary>
 public class MinimapUI : MonoBehaviour
 {
-    [Tooltip="小地图渲染器")]
+    [Tooltip("小地图渲染器")]
     public MinimapRenderer renderer;
 
     private void Start()

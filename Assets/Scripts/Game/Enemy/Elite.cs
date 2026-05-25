@@ -11,15 +11,15 @@ public class Elite : EnemyBase
     [Header("精英特有参数")]
     [Tooltip("三连击段数")]
     public int comboCount = 3;
-    [Tooltip="每段连击间隔")]
+    [Tooltip("每段连击间隔")]
     public float comboInterval = 0.4f;
     [Tooltip("蓄力重击前摇")]
     public float heavyTelegraphDuration = 1.0f;
     [Tooltip("蓄力重击伤害")]
     public int heavyDamage = 25;
-    [Tooltip="闪避玩家攻击的范围")]
+    [Tooltip("闪避玩家攻击的范围")]
     public float dodgeRange = 3f;
-    [Tooltip="使用蓄力重击的概率")]
+    [Tooltip("使用蓄力重击的概率")]
     public float heavyAttackChance = 0.3f;
 
     private int _currentCombo;

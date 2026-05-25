@@ -9,15 +9,15 @@ using System.Collections;
 [RequireComponent(typeof(LineRenderer))]
 public class InkSlashEffect : MonoBehaviour
 {
-    [Tooltip="弧线段数")]
+    [Tooltip("弧线段数")]
     public int segments = 8;
-    [Tooltip="弧线半径")]
+    [Tooltip("弧线半径")]
     public float radius = 1.2f;
-    [Tooltip="弧线角度范围（度）")]
+    [Tooltip("弧线角度范围（度）")]
     public float arcAngle = 90f;
-    [Tooltip="淡出时间（秒）")]
+    [Tooltip("淡出时间（秒）")]
     public float fadeDuration = 0.2f;
-    [Tooltip="线条宽度")]
+    [Tooltip("线条宽度")]
     public float lineWidth = 0.08f;
 
     private LineRenderer _lineRenderer;

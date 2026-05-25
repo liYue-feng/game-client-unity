@@ -14,19 +14,19 @@ public class Boss : EnemyBase
     [Header("Boss阶段参数")]
     [Tooltip("狂暴血量阈值（百分比）")]
     public float enrageThreshold = 0.5f;
-    [Tooltip="狂暴后速度倍率")]
+    [Tooltip("狂暴后速度倍率")]
     public float enrageSpeedMult = 1.5f;
-    [Tooltip="狂暴后伤害倍率")]
+    [Tooltip("狂暴后伤害倍率")]
     public float enrageDamageMult = 1.3f;
 
     [Header("Boss攻击模式")]
-    [Tooltip="冲锋攻击距离")]
+    [Tooltip("冲锋攻击距离")]
     public float chargeRange = 5f;
-    [Tooltip="冲锋速度")]
+    [Tooltip("冲锋速度")]
     public float chargeSpeed = 10f;
-    [Tooltip="跳劈伤害")]
+    [Tooltip("跳劈伤害")]
     public int slamDamage = 30;
-    [Tooltip="范围攻击伤害")]
+    [Tooltip("范围攻击伤害")]
     public int aoeDamage = 20;
 
     private bool _isEnraged;

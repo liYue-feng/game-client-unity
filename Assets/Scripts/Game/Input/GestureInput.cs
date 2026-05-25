@@ -18,7 +18,7 @@ public class GestureInput : MonoBehaviour
     public float swipeThreshold = 50f;
     [Tooltip("长按判定时间（秒）")]
     public float longPressThreshold = 0.4f;
-    [Tooltip="点击最大持续时间（秒）"]
+    [Tooltip("点击最大持续时间（秒）"]
     public float tapWindow = 0.2f;
 
     // 手势状态

@@ -15,7 +15,7 @@ public class Projectile : MonoBehaviour
     public float lifetime = 3f;
     [Tooltip("是否可被弹反")]
     public bool isParryable = true;
-    [Tooltip="发射者（避免自伤）"]
+    [Tooltip("发射者（避免自伤）"]
     public GameObject owner;
 
     private Vector2 _direction;

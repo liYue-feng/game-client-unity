@@ -8,17 +8,17 @@ using System.Collections.Generic;
 public class MinimapRenderer : MonoBehaviour
 {
     [Header("小地图参数")]
-    [Tooltip="房间方块大小（像素）")]
+    [Tooltip("房间方块大小（像素）")]
     public float cellSize = 16f;
-    [Tooltip="房间间距")]
+    [Tooltip("房间间距")]
     public float cellGap = 2f;
-    [Tooltip="当前房间颜色")]
+    [Tooltip("当前房间颜色")]
     public Color currentRoomColor = new Color(1f, 0.9f, 0.3f);
-    [Tooltip="已清理房间颜色")]
+    [Tooltip("已清理房间颜色")]
     public Color clearedRoomColor = new Color(0.5f, 0.7f, 0.5f, 0.7f);
-    [Tooltip="未清理房间颜色")]
+    [Tooltip("未清理房间颜色")]
     public Color unclearedRoomColor = new Color(0.8f, 0.4f, 0.3f, 0.8f);
-    [Tooltip="Boss房间颜色")]
+    [Tooltip("Boss房间颜色")]
     public Color bossRoomColor = new Color(0.8f, 0.2f, 0.2f);
 
     private Dictionary<Vector2Int, GameObject> _roomCells = new Dictionary<Vector2Int, GameObject>();

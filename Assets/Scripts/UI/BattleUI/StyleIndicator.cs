@@ -7,13 +7,13 @@ using UnityEngine.UI;
 /// </summary>
 public class StyleIndicator : MonoBehaviour
 {
-    [Tooltip="5个流派图标")]
+    [Tooltip("5个流派图标")]
     public Image[] styleIcons = new Image[5];
-    [Tooltip="当前流派高亮颜色")]
+    [Tooltip("当前流派高亮颜色")]
     public Color activeColor = new Color(1f, 0.9f, 0.3f);
-    [Tooltip="非当前流派颜色")]
+    [Tooltip("非当前流派颜色")]
     public Color inactiveColor = new Color(0.4f, 0.4f, 0.4f, 0.6f);
-    [Tooltip="特殊资源滑块")]
+    [Tooltip("特殊资源滑块")]
     public Slider resourceSlider;
 
     private void Start()

@@ -7,11 +7,11 @@ using System.Collections;
 /// </summary>
 public class RoomClearBanner : MonoBehaviour
 {
-    [Tooltip="横幅文字")]
+    [Tooltip("横幅文字")]
     public Text bannerText;
-    [Tooltip="得分文字")]
+    [Tooltip("得分文字")]
     public Text scoreText;
-    [Tooltip="显示持续时间")]
+    [Tooltip("显示持续时间")]
     public float displayDuration = 1.5f;
 
     private void Start()

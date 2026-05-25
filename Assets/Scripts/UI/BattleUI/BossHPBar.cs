@@ -7,11 +7,11 @@ using UnityEngine.UI;
 /// </summary>
 public class BossHPBar : MonoBehaviour
 {
-    [Tooltip="Boss血条滑块")]
+    [Tooltip("Boss血条滑块")]
     public Slider bossSlider;
-    [Tooltip="Boss名称文字")]
+    [Tooltip("Boss名称文字")]
     public Text bossNameText;
-    [Tooltip="阶段文字")]
+    [Tooltip("阶段文字")]
     public Text phaseText;
 
     private EnemyBase _boss;

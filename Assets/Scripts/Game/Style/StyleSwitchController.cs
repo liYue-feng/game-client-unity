@@ -9,7 +9,7 @@ using UnityEngine;
 /// </summary>
 public class StyleSwitchController : MonoBehaviour
 {
-    [Tooltip="切换按键：1-5对应5种流派")]
+    [Tooltip("切换按键：1-5对应5种流派")]
     public KeyCode[] switchKeys = new KeyCode[]
     {
         KeyCode.Alpha1, // Blade
