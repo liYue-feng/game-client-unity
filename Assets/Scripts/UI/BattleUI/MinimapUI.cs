@@ -23,7 +23,7 @@ public class MinimapUI : MonoBehaviour
     /// <summary>初始化小地图（地牢生成后调用）</summary>
     public void InitializeMinimap(DungeonGrid grid)
     {
-        if (renderer != null)
+        if (GetComponent<Renderer>() != null)
         {
             minimapRenderer.Initialize(grid);
         }
@@ -31,7 +31,7 @@ public class MinimapUI : MonoBehaviour
 
     private void OnRoomCleared(RoomNode room)
     {
-        if (renderer != null)
+        if (GetComponent<Renderer>() != null)
         {
             minimapRenderer.UpdateDisplay();
         }
