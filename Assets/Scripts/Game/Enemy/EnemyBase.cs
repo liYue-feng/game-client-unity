@@ -12,6 +12,13 @@ using System.Collections;
 [RequireComponent(typeof(Rigidbody2D))]
 public abstract class EnemyBase : MonoBehaviour
 {
+    [Header("一级属性")]
+    public PrimaryAttributes primary = new PrimaryAttributes
+    {
+        strength = 3, innerForce = 1, vitality = 2, spirit = 1, comprehension = 1
+    };
+    public CombatStyle combatStyle = CombatStyle.Sword;
+
     [Header("基础属性")]
     public int hp = 30;
     public int maxHp = 30;
@@ -22,6 +29,8 @@ public abstract class EnemyBase : MonoBehaviour
     public float attackDuration = 0.3f;
     [Tooltip("死亡时掉落的经验值")]
     public int expValue = 1;
+    [Tooltip("伤害减免（0-1）")]
+    public float damageReduction = 0f;
 
     [Header("前摇参数")]
     [Tooltip("出招前摇时间（秒），这是给玩家的反应时间")]
@@ -81,9 +90,26 @@ public abstract class EnemyBase : MonoBehaviour
 
     protected virtual void Start()
     {
-        // 找到玩家
         var playerObj = GameObject.FindGameObjectWithTag("Player");
         if (playerObj != null) _player = playerObj.transform;
+
+        // 根据一级属性计算基础属性
+        RecalculateStats();
+    }
+
+    /// <summary>根据一级属性重新计算二级属性和HP</summary>
+    public void RecalculateStats()
+    {
+        var sec = PrimaryAttributeConverter.Convert(primary, 1);
+        maxHp = sec.maxHp;
+        if (hp > maxHp || hp == 0) hp = maxHp;
+    }
+
+    /// <summary>获取对指定流派的防御力</summary>
+    public int GetDefense(CombatStyle attackerStyle)
+    {
+        var sec = PrimaryAttributeConverter.Convert(primary, 1);
+        return sec.GetDef(attackerStyle);
     }
 
     protected virtual void Update()
@@ -251,17 +277,21 @@ public abstract class EnemyBase : MonoBehaviour
         }
     }
 
-    /// <summary>受到伤害</summary>
+    /// <summary>受到伤害。按设计文档公式：伤害经过防御减免。</summary>
     public virtual void TakeDamage(int amount, float knockbackDirX = 0f, float knockbackForce = 5f)
     {
         if (IsDead) return;
 
-        hp = Mathf.Max(0, hp - amount);
+        // 防御减免（使用平均防御值）
+        var sec = PrimaryAttributeConverter.Convert(primary, 1);
+        int avgDef = (sec.swordDef + sec.bladeDef + sec.sealDef + sec.poisonDef + sec.bloodDef) / 5;
+        float reduction = Mathf.Min(0.9f, avgDef * 0.001f);
+        int finalDamage = Mathf.Max(1, Mathf.RoundToInt(amount * (1f - reduction) * (1f - damageReduction)));
 
-        // 受击闪烁
+        hp = Mathf.Max(0, hp - finalDamage);
+
         if (_hitEffect != null) _hitEffect.PlayHitEffect();
 
-        // 击退
         _rb.velocity = Vector2.zero;
         _rb.AddForce(new Vector2(knockbackDirX * knockbackForce, 2f), ForceMode2D.Impulse);
 

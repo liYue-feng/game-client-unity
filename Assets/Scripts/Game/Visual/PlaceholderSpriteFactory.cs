@@ -330,7 +330,7 @@ public static class PlaceholderSpriteFactory
             {
                 int idx = y * width + x;
                 float grain = (Mathf.PerlinNoise(x * 0.2f, y * 0.2f) - 0.5f) * 0.08f;
-                Color c = ShuiMoPalette.LightInk;
+                Color c = ShuiMoPalette.InkLight;
                 c.r += grain;
                 c.g += grain;
                 c.b += grain;
@@ -381,5 +381,149 @@ public static class PlaceholderSpriteFactory
         tex.SetPixels(pixels);
         tex.Apply();
         return Sprite.Create(tex, new Rect(0, 0, width, height), new Vector2(0.5f, 0.5f), 100f);
+    }
+
+    // ====== 自动武器特效精灵 ======
+
+    /// <summary>
+    /// 墨斩轨迹精灵：横向弧形笔触，中间浓两端淡。
+    /// 模拟毛笔在宣纸上快速横扫的效果。
+    /// </summary>
+    public static Sprite CreateInkSlashSprite(int width, int height, Color color)
+    {
+        Texture2D tex = new Texture2D(width, height);
+        tex.filterMode = FilterMode.Bilinear;
+
+        Color[] pixels = new Color[width * height];
+        float halfH = height / 2f;
+
+        for (int y = 0; y < height; y++)
+        {
+            float yNorm = (y - halfH) / halfH; // -1 to 1
+            for (int x = 0; x < width; x++)
+            {
+                int idx = y * width + x;
+                float xNorm = (float)x / width;
+
+                // 横向渐变：两端淡出
+                float endFade = 1f;
+                if (xNorm < 0.15f) endFade = xNorm / 0.15f;
+                else if (xNorm > 0.85f) endFade = (1f - xNorm) / 0.15f;
+
+                // 纵向渐变：中间浓
+                float vertFade = 1f - Mathf.Abs(yNorm) * 0.8f;
+
+                // 笔触噪点
+                float noise = (Mathf.PerlinNoise(x * 0.3f, y * 0.5f) - 0.5f) * 0.15f;
+
+                // 弧形形状：上下边缘越靠近两端越收窄
+                float arcNarrow = 1f;
+                float distFromCenter = Mathf.Abs(xNorm - 0.5f) * 2f; // 0 at center, 1 at ends
+                float edgeThreshold = 0.7f + distFromCenter * 0.3f;
+                if (Mathf.Abs(yNorm) > edgeThreshold) arcNarrow = 0f;
+
+                float alpha = endFade * vertFade * arcNarrow + noise;
+                pixels[idx] = new Color(color.r, color.g, color.b, Mathf.Clamp01(alpha));
+            }
+        }
+
+        tex.SetPixels(pixels);
+        tex.Apply();
+        return Sprite.Create(tex, new Rect(0, 0, width, height), new Vector2(0.5f, 0.5f), 100f);
+    }
+
+    /// <summary>
+    /// 墨柱精灵：纵向墨条，顶部浓底部淡出+墨滴效果。
+    /// 模拟从天而降的墨汁柱。
+    /// </summary>
+    public static Sprite CreateInkColumnSprite(int width, int height, Color color)
+    {
+        Texture2D tex = new Texture2D(width, height);
+        tex.filterMode = FilterMode.Bilinear;
+
+        Color[] pixels = new Color[width * height];
+        float halfW = width / 2f;
+
+        for (int y = 0; y < height; y++)
+        {
+            float yNorm = (float)y / height; // 0=top, 1=bottom
+            for (int x = 0; x < width; x++)
+            {
+                int idx = y * width + x;
+                float xNorm = (x - halfW) / halfW; // -1 to 1
+
+                // 顶部浓，底部淡出
+                float vertFade = 1f - yNorm * yNorm;
+
+                // 横向渐变：边缘淡
+                float horizFade = 1f - Mathf.Abs(xNorm) * 0.7f;
+
+                // 底部墨滴不规则延展
+                float drip = 0f;
+                if (yNorm > 0.8f)
+                {
+                    float dripT = (yNorm - 0.8f) / 0.2f;
+                    float dripNoise = Mathf.PerlinNoise(x * 0.5f, 0f);
+                    drip = dripT * (0.3f + dripNoise * 0.3f);
+                }
+
+                float noise = (Mathf.PerlinNoise(x * 0.3f, y * 0.3f) - 0.5f) * 0.1f;
+                float alpha = vertFade * horizFade + drip + noise;
+
+                pixels[idx] = new Color(color.r, color.g, color.b, Mathf.Clamp01(alpha));
+            }
+        }
+
+        tex.SetPixels(pixels);
+        tex.Apply();
+        return Sprite.Create(tex, new Rect(0, 0, width, height), new Vector2(0.5f, 0f), 100f);
+    }
+
+    /// <summary>
+    /// 墨弹精灵：墨滴飞弹，圆形带运动拖尾。
+    /// </summary>
+    public static Sprite CreateInkProjectileSprite(int radius, Color color)
+    {
+        int size = radius * 3; // 含尾部空间
+        int tailLength = radius;
+        Texture2D tex = new Texture2D(size + tailLength, size);
+        tex.filterMode = FilterMode.Bilinear;
+
+        Color[] pixels = new Color[(size + tailLength) * size];
+        Vector2 headCenter = new Vector2(radius, radius);
+
+        for (int y = 0; y < size; y++)
+        {
+            for (int x = 0; x < size + tailLength; x++)
+            {
+                int idx = y * (size + tailLength) + x;
+
+                // 头部圆形
+                float headDist = Vector2.Distance(new Vector2(x, y), headCenter);
+                float headAlpha = 0f;
+                if (headDist < radius)
+                {
+                    float t = headDist / radius;
+                    headAlpha = t < 0.3f ? 1f : 1f - Mathf.Pow((t - 0.3f) / 0.7f, 2f);
+                }
+
+                // 尾部拖尾（在头部左侧）
+                float tailAlpha = 0f;
+                if (x < radius && headDist < radius * 1.2f)
+                {
+                    float tailT = (float)x / radius;
+                    tailAlpha = tailT * 0.6f;
+                }
+
+                float noise = (Mathf.PerlinNoise(x * 0.4f, y * 0.4f) - 0.5f) * 0.15f;
+                float alpha = Mathf.Max(headAlpha, tailAlpha) + noise;
+
+                pixels[idx] = new Color(color.r, color.g, color.b, Mathf.Clamp01(alpha));
+            }
+        }
+
+        tex.SetPixels(pixels);
+        tex.Apply();
+        return Sprite.Create(tex, new Rect(0, 0, size + tailLength, size), new Vector2(0.5f, 0.5f), 100f);
     }
 }

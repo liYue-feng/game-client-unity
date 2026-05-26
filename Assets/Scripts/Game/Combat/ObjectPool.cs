@@ -157,4 +157,36 @@ public class ObjectPool : MonoBehaviour
     {
         return _pools.TryGetValue(key, out var pool) ? pool.Count : 0;
     }
+
+    /// <summary>预实例化指定数量的对象到已注册的池（不重复注册）</summary>
+    public void PreWarm(string key, int count)
+    {
+        if (!_pools.ContainsKey(key) || !_factories.ContainsKey(key))
+        {
+            Debug.LogError($"[ObjectPool] PreWarm失败: 池 '{key}' 未注册");
+            return;
+        }
+
+        var factory = _factories[key];
+        var root = _poolRoots[key];
+        for (int i = 0; i < count; i++)
+        {
+            var obj = factory();
+            obj.name = $"{key}_pw{i}";
+            obj.transform.SetParent(root);
+            obj.SetActive(false);
+            _pools[key].Enqueue(obj);
+        }
+    }
+
+    /// <summary>确保池中至少有 minCount 个可用对象，不足则补充</summary>
+    public void EnsureCapacity(string key, int minCount)
+    {
+        if (!_pools.ContainsKey(key)) return;
+        int deficit = minCount - _pools[key].Count;
+        if (deficit > 0)
+        {
+            PreWarm(key, deficit);
+        }
+    }
 }

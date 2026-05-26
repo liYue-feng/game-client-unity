@@ -16,7 +16,15 @@ public class WaveSpawner : MonoBehaviour
     [Tooltip("波间延迟（秒）")]
     public float waveDelay = 2f;
     [Tooltip("每种敌人的池预分配数量")]
-    public int poolSizePerType = 5;
+    public int poolSizePerType = 10;
+
+    [Header("敌人属性成长")]
+    [Tooltip("每波 HP 倍率增长 (1.0 = 不变, 1.2 = +20%/波)")]
+    public float enemyHpMultiplier = 1.15f;
+    [Tooltip("每波伤害倍率增长")]
+    public float enemyDamageMultiplier = 1.1f;
+    [Tooltip("每波速度倍率增长")]
+    public float enemySpeedMultiplier = 1.05f;
 
     private int _currentWave;
     private List<GameObject> _aliveEnemies = new List<GameObject>();
@@ -168,6 +176,9 @@ public class WaveSpawner : MonoBehaviour
         {
             enemyBase.ResetForPool();
 
+            // 应用波次属性增长
+            ApplyWaveScaling(enemyBase, _currentWave);
+
             // 监听死亡 — 使用局部变量避免闭包问题
             string typeKey = entry.enemyType;
             System.Action<EnemyBase> onDeath = null;
@@ -188,6 +199,21 @@ public class WaveSpawner : MonoBehaviour
     {
         yield return new WaitForSeconds(delay);
         if (obj != null) ObjectPool.Instance.Return(key, obj);
+    }
+
+    /// <summary>根据当前波次对敌人属性进行增长</summary>
+    private void ApplyWaveScaling(EnemyBase enemy, int waveIndex)
+    {
+        if (waveIndex <= 0) return;
+
+        float hpScale = Mathf.Pow(enemyHpMultiplier, waveIndex);
+        float dmgScale = Mathf.Pow(enemyDamageMultiplier, waveIndex);
+        float spdScale = Mathf.Pow(enemySpeedMultiplier, waveIndex);
+
+        enemy.maxHp = Mathf.RoundToInt(enemy.maxHp * hpScale);
+        enemy.hp = enemy.maxHp;
+        enemy.damage = Mathf.RoundToInt(enemy.damage * dmgScale);
+        enemy.moveSpeed *= spdScale;
     }
 }
 

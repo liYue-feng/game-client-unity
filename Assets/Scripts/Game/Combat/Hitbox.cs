@@ -76,33 +76,51 @@ public class Hitbox : MonoBehaviour
 
     private void OnTriggerEnter2D(Collider2D other)
     {
-        // 防止重复命中
         if (_hitTargets.Contains(other)) return;
-
-        // 层级过滤
         if (targetLayer != -1 && ((1 << other.gameObject.layer) & targetLayer) == 0) return;
-
-        // 不命中自己
         if (other.gameObject == owner) return;
 
-        // 查找 Hurtbox
         Hurtbox hurtbox = other.GetComponent<Hurtbox>();
         if (hurtbox == null) return;
 
         _hitTargets.Add(other);
 
-        // 计算击退方向
         Vector2 knockbackDir = (other.transform.position - transform.position).normalized;
         if (knockbackDir == Vector2.zero) knockbackDir = Vector2.right;
 
-        // 通知 Hurtbox
-        hurtbox.ReceiveHit(damage, knockbackDir.x, knockbackForce, this);
-
-        // 触发全局事件
-        CombatEvents.InvokeHitLanded(other.transform.position, damage);
-
-        // 应用玩家背包中的元素效果
+        int finalDamage = CalculateDamage(other.gameObject);
+        hurtbox.ReceiveHit(finalDamage, knockbackDir.x, knockbackForce, this);
+        CombatEvents.InvokeHitLanded(other.transform.position, finalDamage);
         ApplyElementalEffects(other.gameObject);
+    }
+
+    int CalculateDamage(GameObject target)
+    {
+        CharacterStats attackerStats = owner != null ? owner.GetComponent<CharacterStats>() : null;
+        if (attackerStats == null) return damage;
+
+        SecondaryAttributes sec = attackerStats.Secondary;
+        int attrAtk = sec.GetAtk(attackerStats.combatStyle);
+
+        int attrDef = 0;
+        EnemyBase enemy = target.GetComponent<EnemyBase>();
+        if (enemy != null)
+            attrDef = enemy.GetDefense(attackerStats.combatStyle);
+        else
+        {
+            CharacterStats defStats = target.GetComponent<CharacterStats>();
+            if (defStats != null)
+                attrDef = defStats.Secondary.GetDef(attackerStats.combatStyle);
+        }
+
+        return DamageCalculator.CalculateHpDamage(
+            attrAtk, attrDef,
+            damageReduction: attackerStats.damageReduction,
+            critValue: sec.critValue + attackerStats.extraCritValue,
+            critResistValue: sec.critResistValue,
+            critDamageBonus: attackerStats.critDamageBonus,
+            attackerLevel: attackerStats.level
+        );
     }
 
     /// <summary>根据攻击者背包中的元素升级施加效果</summary>

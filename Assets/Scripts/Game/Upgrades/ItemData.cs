@@ -18,6 +18,13 @@ public class ItemData : ScriptableObject
         Summon      // 翡翠绿 — 召唤/宠物/光环
     }
 
+    public enum Rarity
+    {
+        Common,     // 白 — 常规出现
+        Rare,       // 蓝 — 较少出现
+        Epic        // 紫 — 极少出现
+    }
+
     [Header("基础信息")]
     public string itemName;
     [TextArea]
@@ -29,6 +36,13 @@ public class ItemData : ScriptableObject
     public int maxHpBonus = 0;
     public float moveSpeedBonus = 0f;
     public float dashSpeedBonus = 0f;
+
+    [Header("一级属性加成（设计文档规范）")]
+    public int strengthBonus = 0;      // 力量
+    public int innerForceBonus = 0;    // 内力
+    public int vitalityBonus = 0;      // 体力
+    public int spiritBonus = 0;        // 精神
+    public int comprehensionBonus = 0; // 悟性
 
     [Header("高级属性加成")]
     public float critChanceBonus = 0f;
@@ -45,6 +59,14 @@ public class ItemData : ScriptableObject
 
     [Header("被动道具ID（存入背包用）")]
     public string itemId = "";
+
+    [Header("自动武器系统")]
+    public bool isWeapon = false;             // true = 自动攻击武器，选后启动Spawner
+    public string weaponBehaviourId = "";     // 武器行为ID: ink_bolt/ink_swirl/ink_strike/ink_slash
+
+    [Header("稀有度与运气")]
+    public Rarity rarity = Rarity.Common;
+    public float luckBonus = 0f;              // 运气加成（累加到第4槽位概率）
 
     /// <summary>物品唯一ID，用于去重和升级</summary>
     public string UniqueId => string.IsNullOrEmpty(itemId) ? itemName : itemId;

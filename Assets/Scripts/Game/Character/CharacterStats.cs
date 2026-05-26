@@ -2,12 +2,19 @@ using UnityEngine;
 using System;
 
 /// <summary>
-/// 角色属性组件：HP、耐力、经验值、基础战斗数值。
+/// 角色属性组件：HP、耐力、经验值、战斗数值。
+/// 按《代号·剑》设计文档：一级属性(力/内/体/精/悟) → 二级属性转换。
 /// 挂在角色 GameObject 上，由 PlayerStateMachine 和 EnemyBase 读取。
 /// 所有数值变化通过事件通知 UI 层，实现数据与显示解耦。
 /// </summary>
 public class CharacterStats : MonoBehaviour
 {
+    [Header("一级属性（基础，影响所有二级属性）")]
+    public PrimaryAttributes primary = PrimaryAttributes.Default;
+
+    [Header("当前战斗流派")]
+    public CombatStyle combatStyle = CombatStyle.Sword;
+
     [Header("生命值")]
     [Tooltip("最大生命值")]
     public int maxHp = 100;
@@ -35,17 +42,30 @@ public class CharacterStats : MonoBehaviour
     public float expGrowthRate = 1.5f;
 
     [Header("基础战斗数值")]
+    [Tooltip("基础攻击力（由一级属性计算得出，直接修改仅用于测试）")]
+    public int attack = 10;
     [Tooltip("基础移动速度")]
     public float moveSpeed = 5f;
-    [Tooltip("基础攻击力")]
-    public int attack = 10;
     [Tooltip("基础冲刺速度")]
     public float baseDashSpeed = 15f;
-    public float dashSpeed => baseDashSpeed; // 兼容旧代码
+    public float dashSpeed => baseDashSpeed;
     [Tooltip("冲刺持续时间")]
     public float dashDuration = 0.2f;
     [Tooltip("冲刺冷却时间")]
     public float dashCooldown = 0.5f;
+
+    [Header("暴击属性")]
+    [Tooltip("暴击伤害加成（百分比，0.5=+50%暴击伤害）")]
+    public float critDamageBonus = 0f;
+    [Tooltip("道具提供的暴击值加成")]
+    public int extraCritValue = 0;
+
+    [Header("伤害减免")]
+    [Tooltip("全局伤害减免（0-1）")]
+    public float damageReduction = 0f;
+
+    /// <summary>二级属性缓存（由一级属性+等级系数计算）</summary>
+    public SecondaryAttributes Secondary { get; private set; }
 
     /// <summary>HP 变化时触发，参数为 (currentHp, maxHp)</summary>
     public event Action<int, int> OnHpChanged;
@@ -58,7 +78,6 @@ public class CharacterStats : MonoBehaviour
     /// <summary>升级时触发，参数为 (newLevel)</summary>
     public event Action<int> OnLevelUp;
 
-    /// <summary>耐力最后使用时间戳，用于延迟回复计算</summary>
     private float _lastStaminaUseTime;
 
     /// <summary>是否已死亡</summary>
@@ -72,11 +91,54 @@ public class CharacterStats : MonoBehaviour
         currentHp = maxHp;
         currentStamina = maxStamina;
         currentExp = 0;
+        RecalculateSecondaryStats();
     }
 
     /// <summary>
-    /// 受到伤害。扣减 HP 并触发事件。
-    /// 不会让 HP 降到 0 以下。
+    /// 根据一级属性和等级重新计算所有二级属性。
+    /// 在一级属性变化或升级后调用。
+    /// </summary>
+    public void RecalculateSecondaryStats()
+    {
+        // 从背包获取一级属性加成
+        PrimaryAttributes bonus = PrimaryAttributes.Zero;
+        if (Inventory.Instance != null)
+        {
+            bonus = Inventory.Instance.TotalPrimaryBonus;
+        }
+
+        PrimaryAttributes total = primary + bonus;
+        Secondary = PrimaryAttributeConverter.Convert(total, level);
+
+        // 更新传统字段（向后兼容）
+        maxHp = Secondary.maxHp;
+        maxStamina = Secondary.maxStamina;
+        staminaRegenRate = Secondary.staminaRegen;
+        attack = Secondary.GetAtk(combatStyle);
+
+        // HP 和耐力不低于基础值
+        currentHp = Mathf.Min(currentHp, maxHp);
+        currentStamina = Mathf.Min(currentStamina, maxStamina);
+
+        OnHpChanged?.Invoke(currentHp, maxHp);
+        OnStaminaChanged?.Invoke(currentStamina, maxStamina);
+    }
+
+    /// <summary>
+    /// 增加一级属性（来自装备/道具加成）。
+    /// </summary>
+    public void AddPrimaryBonus(int str, int inner, int vit, int spi, int comp)
+    {
+        primary.strength += str;
+        primary.innerForce += inner;
+        primary.vitality += vit;
+        primary.spirit += spi;
+        primary.comprehension += comp;
+        RecalculateSecondaryStats();
+    }
+
+    /// <summary>
+    /// 受到 HP 伤害。扣减 HP 并触发事件。
     /// </summary>
     public void TakeDamage(int amount)
     {
@@ -88,6 +150,23 @@ public class CharacterStats : MonoBehaviour
         if (currentHp <= 0)
         {
             OnDeath?.Invoke();
+        }
+    }
+
+    /// <summary>
+    /// 受到耐力伤害。
+    /// </summary>
+    public void TakeStaminaDamage(int amount)
+    {
+        if (IsDead) return;
+        currentStamina = Mathf.Max(0, currentStamina - amount);
+        _lastStaminaUseTime = Time.time;
+        OnStaminaChanged?.Invoke(currentStamina, maxStamina);
+
+        // 耐力归零 → 破防状态（虚弱）
+        if (currentStamina <= 0)
+        {
+            CombatEvents.InvokeStaminaBreak(transform.position);
         }
     }
 
@@ -115,7 +194,6 @@ public class CharacterStats : MonoBehaviour
 
     /// <summary>
     /// 强制消耗耐力，即使不足也扣到 0。
-    /// 用于必须执行的消耗（如受击时）。
     /// </summary>
     public void ForceUseStamina(int cost)
     {
@@ -131,8 +209,6 @@ public class CharacterStats : MonoBehaviour
     {
         if (IsDead) return;
         if (currentStamina >= maxStamina) return;
-
-        // 还在延迟期内，不回复
         if (Time.time - _lastStaminaUseTime < staminaRegenDelay) return;
 
         int regenAmount = Mathf.RoundToInt(staminaRegenRate * Time.deltaTime);
@@ -147,7 +223,7 @@ public class CharacterStats : MonoBehaviour
     }
 
     /// <summary>
-    /// 增加经验值，检查是否升级。
+    /// 增加经验值，检查是否升级。升级时重新计算二级属性。
     /// </summary>
     public void AddExp(int amount)
     {
@@ -155,11 +231,11 @@ public class CharacterStats : MonoBehaviour
 
         currentExp += amount;
 
-        // 检查是否升级（支持连升多级）
         while (currentExp >= ExpToNextLevel)
         {
             currentExp -= ExpToNextLevel;
             level++;
+            RecalculateSecondaryStats();
             AudioManager.Instance.PlaySFX("levelup");
             OnLevelUp?.Invoke(level);
         }

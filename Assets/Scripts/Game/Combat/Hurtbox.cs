@@ -32,11 +32,20 @@ public class Hurtbox : MonoBehaviour
             return;
         }
 
-        // 实际受伤
+        // 实际受伤：玩家走 CharacterStats，敌人走 EnemyBase
         if (stats != null)
         {
             stats.TakeDamage(damage);
             CombatEvents.InvokeDamageTaken(transform.position, damage);
+        }
+        else
+        {
+            EnemyBase enemy = GetComponent<EnemyBase>();
+            if (enemy != null)
+            {
+                enemy.TakeDamage(damage, knockbackDirX, knockbackForce);
+                return; // EnemyBase 内部处理击退，不重复施加
+            }
         }
 
         // 通知状态机进入受击
@@ -53,12 +62,15 @@ public class Hurtbox : MonoBehaviour
             }
         }
 
-        // 击退（通过 Rigidbody2D）
-        Rigidbody2D rb = GetComponent<Rigidbody2D>();
-        if (rb != null)
+        // 击退（仅玩家，敌人由 EnemyBase.TakeDamage 处理）
+        if (stats != null)
         {
-            rb.velocity = Vector2.zero;
-            rb.AddForce(new Vector2(knockbackDirX * knockbackForce, 2f), ForceMode2D.Impulse);
+            Rigidbody2D rb = GetComponent<Rigidbody2D>();
+            if (rb != null)
+            {
+                rb.velocity = Vector2.zero;
+                rb.AddForce(new Vector2(knockbackDirX * knockbackForce, 2f), ForceMode2D.Impulse);
+            }
         }
     }
 }
