@@ -1,4 +1,5 @@
 using UnityEngine;
+using Game.Network;
 using Game.Protocol;
 
 /// <summary>

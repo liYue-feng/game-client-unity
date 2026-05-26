@@ -347,7 +347,7 @@ public class PlayerStateMachine : MonoBehaviour
                 _dashCooldownTimer = _stats.dashCooldown;
                 break;
             case PlayerState.Die:
-                _stats.OnDeath?.Invoke(); // 确保死亡事件触发
+                _stats.RaiseDeathEvent();
                 break;
         }
     }

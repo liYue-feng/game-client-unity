@@ -60,7 +60,7 @@ public class ObjectPool : MonoBehaviour
         root.transform.SetParent(transform);
 
         _factories[key] = factory;
-        _poolRoots[key] = root;
+        _poolRoots[key] = root.transform;
         _pools[key] = new Queue<GameObject>();
 
         // 预分配
@@ -68,7 +68,7 @@ public class ObjectPool : MonoBehaviour
         {
             var obj = factory();
             obj.name = $"{key}_{i}";
-            obj.transform.SetParent(root);
+            obj.transform.SetParent(root.transform);
             obj.SetActive(false);
             _pools[key].Enqueue(obj);
         }

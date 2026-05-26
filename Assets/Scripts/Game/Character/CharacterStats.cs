@@ -153,6 +153,11 @@ public class CharacterStats : MonoBehaviour
         }
     }
 
+    public void RaiseDeathEvent()
+    {
+        OnDeath?.Invoke();
+    }
+
     /// <summary>
     /// 受到耐力伤害。
     /// </summary>

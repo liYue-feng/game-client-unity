@@ -1,4 +1,5 @@
 using UnityEngine;
+using Game.Managers;
 
 /// <summary>
 /// 主菜单场景启动器 — 初始化场景管理器 + 显示登录/菜单
