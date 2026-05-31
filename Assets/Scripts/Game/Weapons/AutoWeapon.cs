@@ -1,5 +1,6 @@
 using UnityEngine;
 using System.Collections;
+using Game.Managers;
 
 /// <summary>
 /// 自动武器弹体基类：墨滴飞弹，自动生命周期管理 + 对象池回收。
@@ -67,6 +68,10 @@ public class AutoWeapon : MonoBehaviour
             int finalDamage = CalculateWeaponDamage(enemy);
             var knockbackDir = (enemy.transform.position - transform.position).normalized;
             enemy.TakeDamage(finalDamage, knockbackDir.x);
+
+            // 触发击中事件（显示伤害数字 + 墨迹特效）
+            CombatEvents.OnHitLanded?.Invoke(transform.position, finalDamage);
+            AudioManager.Instance.PlaySFX("hit");
         }
 
         if (!piercing)
