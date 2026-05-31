@@ -189,6 +189,9 @@ public class BattleSceneSetup : MonoBehaviour
         // 墨迹飞溅
         var inkEffect = _player.AddComponent<InkHitEffect>();
 
+        // 武器系统（监听升级事件，自动激活武器）
+        _player.AddComponent<WeaponSystem>();
+
         // 地面检测层级
         _player.layer = LayerMask.NameToLayer("Default");
     }
