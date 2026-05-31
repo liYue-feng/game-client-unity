@@ -58,13 +58,13 @@ public class BattleSceneSetup : MonoBehaviour
 
         CreateCamera();
         CreateGround();
+        CreateUpgradeManager();  // 先创建UpgradeManager，WeaponSystem可以找到它
         CreatePlayer();
         _inputMediator = _player.GetComponent<InputMediator>();
         ApplyTalentBonuses();
         SummonManager.Instance.InitializeForBattle(_player);
         CreateWaveSpawner();
         CreateHUD();
-        CreateUpgradeManager();
         CreateInventoryUI();
         CreatePauseMenu();
         SetupEffectListeners();
