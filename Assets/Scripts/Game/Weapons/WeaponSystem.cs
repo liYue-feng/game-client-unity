@@ -36,6 +36,7 @@ public class WeaponSystem : MonoBehaviour
         {
             // 升级已有武器
             spawner.IncreaseLevel();
+            AudioManager.Instance.PlaySFX("levelup");
             Debug.Log($"[WeaponSystem] {weaponId} 升级到 Lv.{spawner.CurrentLevel}");
         }
         else
@@ -46,6 +47,7 @@ public class WeaponSystem : MonoBehaviour
             {
                 _spawners[weaponId] = spawner;
                 spawner.StartWeapon();
+                AudioManager.Instance.PlaySFX("ui_confirm");
                 Debug.Log($"[WeaponSystem] {weaponId} 激活 Lv.1");
             }
         }
