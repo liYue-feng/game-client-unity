@@ -28,7 +28,6 @@ public class WaveSpawner : MonoBehaviour
 
     private int _currentWave;
     private List<GameObject> _aliveEnemies = new List<GameObject>();
-    private bool _allWavesComplete;
     private bool _poolsRegistered;
 
     /// <summary>所有波次完成事件</summary>
@@ -125,7 +124,6 @@ public class WaveSpawner : MonoBehaviour
     {
         RegisterPools();
         _currentWave = 0;
-        _allWavesComplete = false;
         StartCoroutine(SpawnWaveCoroutine(0));
     }
 
@@ -133,7 +131,6 @@ public class WaveSpawner : MonoBehaviour
     {
         if (waveIndex >= waves.Length)
         {
-            _allWavesComplete = true;
             OnAllWavesComplete?.Invoke();
             yield break;
         }

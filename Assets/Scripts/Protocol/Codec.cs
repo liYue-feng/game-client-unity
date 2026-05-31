@@ -16,6 +16,7 @@
 
 using System;
 using System.Text;
+using UnityEngine;
 
 namespace Game.Protocol
 {

@@ -111,42 +111,14 @@ public class LoginUI : MonoBehaviour
 
     void OnSubmit()
     {
-        var username = _usernameInput.text.Trim();
-        var password = _passwordInput.text.Trim();
-
         switch (_currentMode)
         {
             case Mode.Login:
-                if (string.IsNullOrEmpty(username) || string.IsNullOrEmpty(password))
-                {
-                    _errorText.text = "请输入账号和密码";
-                    return;
-                }
-                Debug.Log($"[LoginUI] 登录: {username}");
-                if (loginManager != null)
-                    loginManager.Login(username, password);
-                break;
-
             case Mode.Register:
-                if (string.IsNullOrEmpty(username) || string.IsNullOrEmpty(password))
-                {
-                    _errorText.text = "请输入账号和密码";
-                    return;
-                }
-                if (password.Length < 6)
-                {
-                    _errorText.text = "密码至少6位";
-                    return;
-                }
-                Debug.Log($"[LoginUI] 注册: {username}");
-                if (loginManager != null)
-                    loginManager.Register(username, password);
-                break;
-
             case Mode.Guest:
-                Debug.Log("[LoginUI] 游客登录");
+                Debug.Log("[LoginUI] 尝试登录...");
                 if (loginManager != null)
-                    loginManager.LoginAsGuest();
+                    loginManager.WechatLogin();
                 break;
         }
     }

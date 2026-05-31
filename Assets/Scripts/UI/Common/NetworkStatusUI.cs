@@ -9,7 +9,6 @@ public class NetworkStatusUI : MonoBehaviour
     private Text _statusText;
     private Font _font;
     private NetworkStatus _lastStatus = NetworkStatus.Disconnected;
-    private long _rtt;
 
     void Start()
     {
@@ -19,7 +18,6 @@ public class NetworkStatusUI : MonoBehaviour
         if (HeartbeatManager.Instance != null)
         {
             HeartbeatManager.Instance.OnStatusChanged += OnStatusChanged;
-            HeartbeatManager.Instance.OnRTTUpdated += OnRTTUpdated;
             OnStatusChanged(HeartbeatManager.Instance.Status);
         }
     }
@@ -76,12 +74,6 @@ public class NetworkStatusUI : MonoBehaviour
         UpdateDisplay();
     }
 
-    void OnRTTUpdated(long rtt)
-    {
-        _rtt = rtt;
-        UpdateDisplay();
-    }
-
     void UpdateDisplay()
     {
         if (_statusText == null) return;
@@ -89,11 +81,11 @@ public class NetworkStatusUI : MonoBehaviour
         switch (_lastStatus)
         {
             case NetworkStatus.Connected:
-                _statusText.text = $"● 在线 | {_rtt}ms";
+                _statusText.text = $"● 在线";
                 _statusText.color = new Color(0.2f, 0.7f, 0.3f);
                 break;
             case NetworkStatus.Unstable:
-                _statusText.text = $"◐ 不稳 | {_rtt}ms";
+                _statusText.text = $"◐ 不稳";
                 _statusText.color = new Color(0.9f, 0.6f, 0.1f);
                 break;
             case NetworkStatus.Reconnecting:
@@ -112,7 +104,6 @@ public class NetworkStatusUI : MonoBehaviour
         if (HeartbeatManager.Instance != null)
         {
             HeartbeatManager.Instance.OnStatusChanged -= OnStatusChanged;
-            HeartbeatManager.Instance.OnRTTUpdated -= OnRTTUpdated;
         }
     }
 }

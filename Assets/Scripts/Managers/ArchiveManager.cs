@@ -161,5 +161,24 @@ namespace Game.Managers
                 NetworkClient.Instance.Send(MsgID.SaveArchiveReq, new SaveArchiveReq { data = CurrentData });
             }
         }
+
+        /// <summary>
+        /// 从指定槽位加载存档（兼容代码）
+        /// </summary>
+        public void LoadArchive(int slotIndex)
+        {
+            Debug.Log($"[ArchiveManager] 加载存档槽 {slotIndex}...");
+            LoadArchive(); // 简单地使用现有的加载逻辑
+        }
+
+        /// <summary>
+        /// 删除指定槽位的存档
+        /// </summary>
+        public void DeleteArchive(int slotIndex)
+        {
+            Debug.Log($"[ArchiveManager] 删除存档槽 {slotIndex}...");
+            // 简单实现：发送空存档覆盖
+            SaveArchive("");
+        }
     }
 }

@@ -159,11 +159,11 @@ public class LobbyUI : MonoBehaviour
         go.GetComponent<Button>().onClick.AddListener(cb);
     }
 
-    void CreateSmallButton(Transform p, string n, UnityEngine.Events.UnityAction cb, Vector2 pos)
+    void CreateSmallButton(Transform p, string n, string btnText, UnityEngine.Events.UnityAction cb, Vector2 pos)
     {
         var go = new GameObject(n); go.transform.SetParent(p, false);
         var rt = go.AddComponent<RectTransform>(); rt.anchoredPosition = pos; rt.sizeDelta = new Vector2(200, 50);
-        var ib = go.AddComponent<InkButton>(); ib.buttonText = "← 返回"; ib.fontSize = 22;
+        var ib = go.AddComponent<InkButton>(); ib.buttonText = btnText; ib.fontSize = 22;
         go.GetComponent<Button>().onClick.AddListener(cb);
     }
 

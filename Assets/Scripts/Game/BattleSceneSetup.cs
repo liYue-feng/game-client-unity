@@ -335,7 +335,7 @@ public class BattleSceneSetup : MonoBehaviour
             AudioManager.Instance.PlaySFX("death");
             DamageNumberPool.SpawnText("破", enemy.transform.position, DamageType.Crit);
             _killCount++;
-            if (enemy is Boss || enemy.name.Contains("boss"))
+            if (enemy.GetComponent<Boss>() != null || enemy.name.ToLower().Contains("boss"))
                 _bossKills++;
         };
     }

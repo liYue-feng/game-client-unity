@@ -70,7 +70,7 @@ public class BattleHUD : MonoBehaviour
     /// <summary>
     /// 创建水墨风格的滑动条
     /// </summary>
-    private Slider CreateInkSlider(Transform parent, string name, Vector2 size, Vector2 position, Color fillColor)
+    private (Slider slider, Image fillImg) CreateInkSlider(Transform parent, string name, Vector2 size, Vector2 position, Color fillColor)
     {
         var go = new GameObject(name);
         go.transform.SetParent(parent, false);
@@ -86,7 +86,7 @@ public class BattleHUD : MonoBehaviour
         bgGo.transform.SetParent(go.transform, false);
         var bgImg = bgGo.AddComponent<Image>();
         bgImg.sprite = PlaceholderSpriteFactory.CreateRoughRectSprite((int)size.x, (int)size.y);
-        bgImg.color = ShuiMoPalette.LightInk;
+        bgImg.color = ShuiMoPalette.InkLight;
         var bgRect = bgGo.GetComponent<RectTransform>();
         bgRect.anchorMin = Vector2.zero;
         bgRect.anchorMax = Vector2.one;
@@ -113,9 +113,8 @@ public class BattleHUD : MonoBehaviour
         fillRect.sizeDelta = new Vector2(0, 0);
 
         slider.fillRect = fillRect;
-        slider.fillImage = fillImg;
 
-        return slider;
+        return (slider, fillImg);
     }
 
     /// <summary>
@@ -127,20 +126,20 @@ public class BattleHUD : MonoBehaviour
         var panel = CreateInkPanel(_canvas.transform, "StatusPanel", new Vector2(320, 140), new Vector2(180, -100));
 
         // 血条
-        var hpSlider = CreateInkSlider(panel.transform, "HPBar", new Vector2(280, 36), new Vector2(0, 20), ShuiMoPalette.CinnabarRed);
+        var (hpSlider, hpFillImg) = CreateInkSlider(panel.transform, "HPBar", new Vector2(280, 36), new Vector2(0, 20), ShuiMoPalette.CinnabarRed);
         var hpBarGo = hpSlider.gameObject;
         var hpBar = hpBarGo.AddComponent<PlayerHPBar>();
         hpBar.hpSlider = hpSlider;
-        hpBar.fillImage = hpSlider.fillImage;
+        hpBar.fillImage = hpFillImg;
         hpBar.Initialize(playerStats);
         _playerHPBar = hpBar;
 
         // 耐力条
-        var staminaSlider = CreateInkSlider(panel.transform, "StaminaBar", new Vector2(280, 30), new Vector2(0, -25), ShuiMoPalette.FlowerBlue);
+        var (staminaSlider, staminaFillImg) = CreateInkSlider(panel.transform, "StaminaBar", new Vector2(280, 30), new Vector2(0, -25), ShuiMoPalette.FlowerBlue);
         var staminaBarGo = staminaSlider.gameObject;
         var staminaBar = staminaBarGo.AddComponent<StaminaBar>();
         staminaBar.staminaSlider = staminaSlider;
-        staminaBar.fillImage = staminaSlider.fillImage;
+        staminaBar.fillImage = staminaFillImg;
         staminaBar.Initialize(playerStats);
         _staminaBar = staminaBar;
 
@@ -196,7 +195,7 @@ public class BattleHUD : MonoBehaviour
         panelRect.pivot = new Vector2(0.5f, 0);
 
         // 经验条滑块
-        var expSlider = CreateInkSlider(panel.transform, "ExpBar", new Vector2(420, 30), new Vector2(20, 0), ShuiMoPalette.Gamboge);
+        var (expSlider, expFillImg) = CreateInkSlider(panel.transform, "ExpBar", new Vector2(420, 30), new Vector2(20, 0), ShuiMoPalette.Gamboge);
 
         // 等级文字
         var levelText = CreateLabel(panel.transform, "LevelText", $"Lv.{stats.level}", new Vector2(-200, 0), ShuiMoPalette.InkBlack);
@@ -209,7 +208,7 @@ public class BattleHUD : MonoBehaviour
         var expBarGo = expSlider.gameObject;
         var expBar = expBarGo.AddComponent<ExpBar>();
         expBar.expSlider = expSlider;
-        expBar.fillImage = expSlider.fillImage;
+        expBar.fillImage = expFillImg;
         expBar.levelText = levelText;
         expBar.Initialize(stats);
         _expBar = expBar;

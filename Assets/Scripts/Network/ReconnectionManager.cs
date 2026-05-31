@@ -84,19 +84,20 @@ public class ReconnectionManager : MonoBehaviour
             try
             {
                 _connectAction?.Invoke(_lastUrl);
-                // 连接成功由 HeartbeatManager 判定
-                yield return new WaitForSeconds(0.5f);
-
-                if (HeartbeatManager.Instance != null && HeartbeatManager.Instance.Status == NetworkStatus.Connected)
-                {
-                    SetState(ReconnectState.Connected);
-                    OnReconnected?.Invoke();
-                    yield break;
-                }
             }
             catch (Exception e)
             {
                 Debug.LogWarning($"[Reconnect] 连接失败: {e.Message}");
+            }
+
+            // 连接成功由 HeartbeatManager 判定
+            yield return new WaitForSeconds(0.5f);
+
+            if (HeartbeatManager.Instance != null && HeartbeatManager.Instance.Status == NetworkStatus.Connected)
+            {
+                SetState(ReconnectState.Connected);
+                OnReconnected?.Invoke();
+                yield break;
             }
         }
 

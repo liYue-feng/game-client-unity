@@ -13,6 +13,8 @@ public class InkButton : MonoBehaviour
     public string buttonText = "";
     [Tooltip("文字大小")]
     public int fontSize = 28;
+    [Tooltip("墨水颜色")]
+    public Color inkColor = new Color(0.1f, 0.1f, 0.1f, 1f);
 
     private Text _label;
     private RawImage _bg;
@@ -29,6 +31,8 @@ public class InkButton : MonoBehaviour
             _label.text = buttonText;
         if (_label != null && _label.fontSize != fontSize)
             _label.fontSize = fontSize;
+        if (_label != null && _label.color != inkColor)
+            _label.color = inkColor;
     }
 
     void SetupBackground()
@@ -55,7 +59,7 @@ public class InkButton : MonoBehaviour
         _label.text = buttonText;
         _label.fontSize = fontSize;
         _label.alignment = TextAnchor.MiddleCenter;
-        _label.color = new Color(0.1f, 0.1f, 0.1f, 1f);
+        _label.color = inkColor;
         _label.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         _label.raycastTarget = false;
 

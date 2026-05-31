@@ -70,7 +70,7 @@ public class AutoWeapon : MonoBehaviour
             enemy.TakeDamage(finalDamage, knockbackDir.x);
 
             // 触发击中事件（显示伤害数字 + 墨迹特效）
-            CombatEvents.OnHitLanded?.Invoke(transform.position, finalDamage);
+            CombatEvents.InvokeHitLanded(transform.position, finalDamage);
             AudioManager.Instance.PlaySFX("hit");
         }
 
