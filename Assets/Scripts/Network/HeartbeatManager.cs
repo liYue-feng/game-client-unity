@@ -5,6 +5,7 @@ using Game.Network;
 /// <summary>
 /// 心跳保活管理器 — 监控NetworkClient连接状态
 /// </summary>
+[Obsolete("NetworkConnectionController owns connection policy.")]
 public class HeartbeatManager : MonoBehaviour
 {
     public static HeartbeatManager Instance { get; private set; }
@@ -42,6 +43,11 @@ public class HeartbeatManager : MonoBehaviour
             NetworkClient.Instance.OnConnected -= OnConnected;
             NetworkClient.Instance.OnDisconnected -= OnDisconnectedHandler;
         }
+
+        if (ReferenceEquals(Instance, this))
+        {
+            Instance = null;
+        }
     }
 
     private void OnConnected()
@@ -66,7 +72,10 @@ public class HeartbeatManager : MonoBehaviour
     }
 
     // 这些方法保持空实现以兼容现有代码
+    [Obsolete("NetworkConnectionController owns connection policy.")]
     public void StartHeartbeat(NetworkClient client) { }
+
+    [Obsolete("NetworkConnectionController owns connection policy.")]
     public void StopHeartbeat() { }
 }
 

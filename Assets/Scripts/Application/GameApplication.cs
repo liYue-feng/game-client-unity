@@ -56,7 +56,7 @@ namespace Game
                     case RuntimeMode.Offline:
                         break;
                     case RuntimeMode.Online:
-                        throw new NotSupportedException("Online runtime flow is not implemented in Phase A2");
+                        throw new NotSupportedException("Online runtime flow is not implemented in Phase A3");
                     default:
                         throw new InvalidOperationException($"RuntimeMode '{_settings.RuntimeMode}' is not supported.");
                 }
@@ -127,6 +127,7 @@ namespace Game
         internal static void ResetStaticState()
         {
             _instance = null;
+            NetworkClient.ResetStaticState();
             MainThreadDispatcher.ResetStaticState();
             SceneTransitionManager.ResetStaticState();
             AudioManager.ResetStaticState();

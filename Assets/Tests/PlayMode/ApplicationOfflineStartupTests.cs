@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Text.RegularExpressions;
+using Game.Network;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.TestTools;
@@ -33,6 +34,7 @@ namespace Game.Tests.PlayMode
             Assert.That(FindAll("[GameServices]").Count, Is.EqualTo(1));
             Assert.That(GameObject.Find("[MainThreadDispatcher]"), Is.Not.Null);
             Assert.That(GameObject.Find("[SceneTransitionManager]"), Is.Not.Null);
+            Assert.That(GameObject.Find("[NetworkConnectionControllerHost]"), Is.Not.Null);
             Assert.That(GameObject.Find("[AudioManager]"), Is.Not.Null);
             Assert.That(GameObject.Find("[LoadingScreen]"), Is.Not.Null);
             Assert.That(GameObject.Find("[AchievementManager]"), Is.Not.Null);
@@ -60,7 +62,7 @@ namespace Game.Tests.PlayMode
         {
             yield return WaitForReady();
 
-            const string onlineNotImplemented = "Online runtime flow is not implemented in Phase A2";
+            const string onlineNotImplemented = "Online runtime flow is not implemented in Phase A3";
             var settings = Resources.Load("GameRuntimeSettings");
             var runtimeModeField = settings.GetType().GetField("_runtimeMode", BindingFlags.Instance | BindingFlags.NonPublic);
             var offlineMode = runtimeModeField.GetValue(settings);
@@ -70,6 +72,7 @@ namespace Game.Tests.PlayMode
             string observedState = null;
             string observedFailureStage = null;
             string observedFailureReason = null;
+            int hostCountDuringOnline = -1;
             List<string> unexpectedServices = null;
             List<string> unexpectedOnlineComponents = null;
 
@@ -78,7 +81,7 @@ namespace Game.Tests.PlayMode
                 $"[GameApplication] Initialization failed at Mode.Select: Root cause: {onlineNotImplemented}.");
             LogAssert.Expect(
                 LogType.Exception,
-                new Regex("NotSupportedException: Online runtime flow is not implemented in Phase A2"));
+                new Regex("NotSupportedException: Online runtime flow is not implemented in Phase A3"));
 
             try
             {
@@ -94,10 +97,12 @@ namespace Game.Tests.PlayMode
                 observedState = GetApplicationProperty(onlineApplicationObject, "State")?.ToString();
                 observedFailureStage = GetApplicationProperty(onlineApplicationObject, "FailureStage")?.ToString();
                 observedFailureReason = GetApplicationProperty(onlineApplicationObject, "FailureReason")?.ToString();
+                hostCountDuringOnline = FindAll("[NetworkConnectionControllerHost]").Count;
                 unexpectedServices = new[]
                     {
                         "[GameServices]",
                         "[MainThreadDispatcher]",
+                        "[NetworkConnectionControllerHost]",
                         "[SceneTransitionManager]",
                         "[AudioManager]",
                         "[LoadingScreen]",
@@ -134,6 +139,27 @@ namespace Game.Tests.PlayMode
             Assert.That(observedFailureReason, Is.EqualTo($"Root cause: {onlineNotImplemented}."));
             Assert.That(unexpectedServices, Is.Empty);
             Assert.That(unexpectedOnlineComponents, Is.Empty);
+            Assert.That(NetworkClient.Instance.IsConnected, Is.False);
+            Assert.That(hostCountDuringOnline, Is.Zero);
+        }
+
+        [UnityTest]
+        public IEnumerator OfflineStartupRegistersClientAndShutdownUnregistersIt()
+        {
+            yield return WaitForReady();
+            var registered = NetworkClient.Instance;
+            Assert.That(FindAll("[NetworkConnectionControllerHost]").Count, Is.EqualTo(1));
+
+            var application = GetApplicationComponent(GameObject.Find("[GameApplication]"));
+            application.GetType().GetMethod("Shutdown", BindingFlags.Instance | BindingFlags.Public)
+                .Invoke(application, null);
+            yield return null;
+
+            Assert.That(FindAll("[NetworkConnectionControllerHost]").Count, Is.Zero);
+            Assert.That(NetworkClient.Instance, Is.Not.SameAs(registered),
+                "GameServices.Shutdown must unregister the explicit client and expose a fresh fail-closed facade");
+            InvokeEnsureApplication(application.GetType().Assembly);
+            yield return WaitForReady();
         }
 
         [UnityTest]
@@ -155,6 +181,7 @@ namespace Game.Tests.PlayMode
                         "[GameApplication]",
                         "[GameServices]",
                         "[MainThreadDispatcher]",
+                        "[NetworkConnectionControllerHost]",
                         "[SceneTransitionManager]",
                         "[AudioManager]",
                         "[LoadingScreen]",
@@ -182,6 +209,7 @@ namespace Game.Tests.PlayMode
             var serviceNames = new[]
             {
                 "[MainThreadDispatcher]",
+                "[NetworkConnectionControllerHost]",
                 "[SceneTransitionManager]",
                 "[AudioManager]",
                 "[LoadingScreen]",

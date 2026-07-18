@@ -9,6 +9,7 @@ namespace Game
     {
         private readonly GameObject _rootObject;
         private GameServiceCollection _lifecycle;
+        private NetworkClient _networkClient;
         private bool _shutdown;
 
         private GameServices(GameObject rootObject)
@@ -36,14 +37,26 @@ namespace Game
             {
                 var root = rootObject.transform;
                 var dispatcher = MainThreadDispatcher.Install(root, settings.MainThreadMaxTasksPerFrame);
+                var client = new NetworkClient
+                {
+                    serverUrl = settings.ServerUrl
+                };
+                NetworkClient.RegisterInstance(client);
+                var networkHost = NetworkConnectionControllerHost.Install(
+                    root,
+                    client,
+                    new WebSocketTransportFactory(),
+                    settings);
                 var sceneTransition = SceneTransitionManager.Install(root);
                 var audio = AudioManager.Install(root);
                 var loading = LoadingScreen.Install(root);
                 var achievements = AchievementManager.Install(root);
+                services._networkClient = client;
 
                 services._lifecycle = new GameServiceCollection(new IGameService[]
                 {
                     dispatcher,
+                    networkHost,
                     sceneTransition,
                     audio,
                     loading,
@@ -75,6 +88,14 @@ namespace Game
                 }
             }
 
+            if (_networkClient != null)
+            {
+                NetworkClient.UnregisterInstance(_networkClient);
+                _networkClient.Dispose();
+                _networkClient = null;
+            }
+
+            NetworkClient.ResetStaticState();
             MainThreadDispatcher.ResetStaticState();
             SceneTransitionManager.ResetStaticState();
             AudioManager.ResetStaticState();
