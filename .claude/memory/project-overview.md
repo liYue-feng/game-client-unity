@@ -33,11 +33,15 @@ Unity C# 游戏客户端，面向"吸血鬼幸存者"类微信小游戏（代号
 - 视觉: PlaceholderSpriteFactory、HitEffectPlayer、InkParticlePool、InkHitEffect、InkSlashEffect
 - 入口: GameBootstrap、BattleSceneSetup
 
-**当前缺失（项目无法在Unity中打开）**:
-- ProjectSettings/ 目录缺失（Unity无法识别为项目）
-- Assets/Scenes/ 目录缺失（没有.unity场景文件）
-- Assets/Plugins/ 目录缺失（WebSocketSharp DLL未引入）
+**当前工程状态（2026-07-18 已核对）**:
+- `ProjectSettings/`、`Assets/Scenes/` 和 `Assets/Plugins/websocket-sharp.dll` 已存在
+- 当前有 1 个战斗场景，但场景中的 `BattleSceneSetup` 脚本 GUID 引用错误
+- 3 个目录 `.meta` 文件存在重复 GUID
+- 当前没有 Prefab、自动测试或自有程序集定义，仍属于代码生成原型阶段
+- 网络心跳/重连职责重复，部分 WebSocket 回调尚未统一切回 Unity 主线程
+- 现代化顺序为 Phase A 工程基础、Phase B 战斗体验、Phase C UI/资源工程化
+- Phase A 设计见 `docs/superpowers/specs/2026-07-18-unity-client-modernization-phase-a-design.md`
 
 **开发优先级**: 战斗手感 > Roguelite > 流派 > 商业化
 
-**How to apply**: 战斗手感是最核心的卖点，优先级最高。协议修改必须同步服务器端。项目目前只有代码，需要补全Unity工程文件才能在编辑器中运行。
+**How to apply**: 先完成 Phase A 的资源完整性、离线运行、生命周期和网络基线，再继续战斗手感优化。协议修改必须同步服务器端。任何 Unity 编译、测试或 PlayMode 结论都需要真实运行证据。
