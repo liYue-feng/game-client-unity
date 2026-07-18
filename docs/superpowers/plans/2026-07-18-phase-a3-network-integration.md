@@ -190,7 +190,7 @@ internal static class NetworkTestSettings
 - Consumes: `WebSocketSharp.WebSocket` from `Assets/Plugins/websocket-sharp.dll` and `Game.Core`.
 - Produces: `NetworkCloseInfo(ushort code, string reason)`, `IWebSocketTransport`, `IWebSocketTransportFactory.Create(string url)`, and `WebSocketTransportFactory`.
 
-- [ ] **Step 1: Write the failing contract tests and EditMode fakes**
+- [x] **Step 1: Write the failing contract tests and EditMode fakes**
 
 Create the two test doubles exactly as defined in **Shared Test Double Contracts**, then create:
 
@@ -222,13 +222,13 @@ namespace Game.Tests.EditMode.Network
 }
 ```
 
-- [ ] **Step 2: Run RED for the missing assembly/contracts**
+- [x] **Step 2: Run RED for the missing assembly/contracts**
 
 Run: `D:\Unity_Soft\2022\Editor\Unity.exe -batchmode -nographics -quit -projectPath . -runTests -testPlatform EditMode -testFilter Game.Tests.EditMode.Network.WebSocketTransportContractTests -testResults Logs\A3-task1-red.xml -logFile Logs\A3-task1-red.log`
 
 Expected: non-zero exit and compiler errors naming `NetworkCloseInfo`, `IWebSocketTransport`, or `WebSocketTransportFactory`.
 
-- [ ] **Step 3: Create the assembly boundary and exact raw contracts**
+- [x] **Step 3: Create the assembly boundary and exact raw contracts**
 
 Use these definitions:
 
@@ -288,7 +288,7 @@ For `Assets/Scripts/Protocol/Game.Network.asmref`:
 { "reference": "Game.Network" }
 ```
 
-- [ ] **Step 4: Implement the WebSocketSharp adapter with no policy logic**
+- [x] **Step 4: Implement the WebSocketSharp adapter with no policy logic**
 
 Implement `Assets/Scripts/Network/WebSocketTransport.cs` with these members and event mappings:
 
@@ -347,7 +347,7 @@ public sealed class WebSocketTransport : IWebSocketTransport
 
 The file contains no codec call, timer, coroutine, retry counter, `GameObject`, or `MainThreadDispatcher` call.
 
-- [ ] **Step 5: Run GREEN and asset integrity**
+- [x] **Step 5: Run GREEN and asset integrity**
 
 Run: `D:\Unity_Soft\2022\Editor\Unity.exe -batchmode -nographics -quit -projectPath . -runTests -testPlatform EditMode -testFilter Game.Tests.EditMode.Network.WebSocketTransportContractTests -testResults Logs\A3-task1-green.xml -logFile Logs\A3-task1-green.log`
 
@@ -357,7 +357,7 @@ Run: `powershell -NoProfile -ExecutionPolicy Bypass -File tools\validation\Test-
 
 Expected: `Unity asset integrity check passed.`
 
-- [ ] **Step 6: Commit Task 1**
+- [x] **Step 6: Commit Task 1**
 
 Run:
 
@@ -383,7 +383,7 @@ Root coordinator action after clean task review: `git -c http.version=HTTP/1.1 p
 - Produces: `NetworkConnectionState`; `INetworkConnectionGateway`; `NoOpNetworkConnectionGateway`; constructible `NetworkClient : IDisposable`; static `Instance`, `RegisterInstance`, `UnregisterInstance`, and `ResetStaticState`; disposable typed/raw subscriptions; compatibility connection members.
 - Ownership rule: `NetworkClient` stores but never closes or disposes `INetworkConnectionGateway`; Task 4 host binds/unbinds the real gateway. `NetworkClient.SetTransport` only changes the byte-send target; Task 3 controller closes/disposes transports.
 
-- [ ] **Step 1: Write RED tests for routing, disposal, and gateway forwarding**
+- [x] **Step 1: Write RED tests for routing, disposal, and gateway forwarding**
 
 Create `FakeNetworkConnectionGateway` from **Shared Test Double Contracts**. `NetworkClientTests.cs` imports `System.Linq`, `System.Text.RegularExpressions`, `Game.Network`, `Game.Protocol`, `NUnit.Framework`, `UnityEngine`, and `UnityEngine.TestTools`, then contains these cases:
 
@@ -494,13 +494,13 @@ public void MalformedFrameAndTypedDeserializationFailureDoNotBlockOtherHandlers(
 }
 ```
 
-- [ ] **Step 2: Run Task 2 RED**
+- [x] **Step 2: Run Task 2 RED**
 
 Run: `D:\Unity_Soft\2022\Editor\Unity.exe -batchmode -nographics -quit -projectPath . -runTests -testPlatform EditMode -testFilter Game.Tests.EditMode.Network.NetworkClientTests -testResults Logs\A3-task2-red.xml -logFile Logs\A3-task2-red.log`
 
 Expected: non-zero exit because `NetworkClient` is a `MonoBehaviour`, subscription methods return `void`, and the gateway types do not exist.
 
-- [ ] **Step 3: Define the facade/controller boundary before controller code exists**
+- [x] **Step 3: Define the facade/controller boundary before controller code exists**
 
 Create these exact public contracts in Task 2 so this task compiles independently:
 
@@ -579,7 +579,7 @@ public sealed class NetworkClient : IDisposable
 
 `BindConnectionGateway` rejects null and replaces only the no-op gateway or the currently bound gateway. `UnbindConnectionGateway` restores the no-op only when `ReferenceEquals` matches. `Dispose` clears handlers/session/transport references but does not invoke `Disconnect` and does not dispose the gateway or transport.
 
-- [ ] **Step 4: Add the corrected facade migration regression before implementing migration**
+- [x] **Step 4: Add the corrected facade migration regression before implementing migration**
 
 Add this sequence; the first dispatch proves migration worked before disposal, and the second proves the original token removes the migrated handler:
 
@@ -602,23 +602,23 @@ public void FacadeTokenRemainsAuthoritativeAfterMigration()
 }
 ```
 
-- [ ] **Step 5: Run facade migration RED**
+- [x] **Step 5: Run facade migration RED**
 
 Run: `D:\Unity_Soft\2022\Editor\Unity.exe -batchmode -nographics -quit -projectPath . -runTests -testPlatform EditMode -testFilter Game.Tests.EditMode.Network.NetworkClientTests.FacadeTokenRemainsAuthoritativeAfterMigration -testResults Logs\A3-task2-migration-red.xml -logFile Logs\A3-task2-migration-red.log`
 
 Expected: non-zero exit because pre-registration facade subscriptions are not migrated to the explicit client and the original token cannot remove the migrated handler.
 
-- [ ] **Step 6: Implement exact subscription identity and facade migration**
+- [x] **Step 6: Implement exact subscription identity and facade migration**
 
 Store each registration as a record containing `msgId`, the raw `Action<string>` wrapper, and an active flag shared by the returned token. Dispatch a copied array. `Send` while disconnected logs exactly `[NetworkClient] Send dropped because transport is disconnected. msgId={msgId}` and returns `false`. Malformed frames log one concise warning and return. A typed JSON failure logs `[NetworkClient] Failed to deserialize message {msgId} as {typeof(T).Name}: {exception.Message}` and continues with the remaining snapshot handlers. `RegisterInstance` moves every active facade registration to the explicit instance while preserving that shared token state. Disposing the original token removes its migrated wrapper. `UnregisterInstance` changes the active static reference only when the argument is the active explicit instance. `ResetStaticState` disposes the active explicit client, disposes the facade, creates a clean facade, and leaves the no-op gateway active.
 
-- [ ] **Step 7: Run Task 2 GREEN**
+- [x] **Step 7: Run Task 2 GREEN**
 
 Run: `D:\Unity_Soft\2022\Editor\Unity.exe -batchmode -nographics -quit -projectPath . -runTests -testPlatform EditMode -testFilter Game.Tests.EditMode.Network.NetworkClientTests -testResults Logs\A3-task2-green.xml -logFile Logs\A3-task2-green.log`
 
 Expected: exit code 0 and all `NetworkClientTests` pass.
 
-- [ ] **Step 8: Commit Task 2**
+- [x] **Step 8: Commit Task 2**
 
 Run:
 
@@ -643,7 +643,7 @@ Root coordinator action after clean task review: `git -c http.version=HTTP/1.1 p
 - Consumes: `NetworkClient`, `NetworkConnectionState`, `IWebSocketTransportFactory`, `IWebSocketTransport`, `GameRuntimeSettings`, and `INetworkDispatcher.Enqueue(Action)`.
 - Produces: `NetworkConnectionController : IDisposable` with `Connect(string)`, `Disconnect()`, `Tick(float)`, `BeginAuthentication()`, `MarkReady()`, `State`, `StateChanged`, and the exact `INetworkConnectionGateway` contract from Task 2.
 
-- [ ] **Step 1: Create dispatcher/settings fakes and write the first RED transition test**
+- [x] **Step 1: Create dispatcher/settings fakes and write the first RED transition test**
 
 Create `FakeNetworkDispatcher` and `NetworkTestSettings` from **Shared Test Double Contracts**, then add:
 
@@ -663,13 +663,13 @@ public void OpenMovesConnectingToConnectedOnlyAfterDispatcherPump()
 }
 ```
 
-- [ ] **Step 2: Run the controller RED test**
+- [x] **Step 2: Run the controller RED test**
 
 Run: `D:\Unity_Soft\2022\Editor\Unity.exe -batchmode -nographics -quit -projectPath . -runTests -testPlatform EditMode -testFilter Game.Tests.EditMode.Network.NetworkConnectionControllerTests.OpenMovesConnectingToConnectedOnlyAfterDispatcherPump -testResults Logs\A3-task3-red.xml -logFile Logs\A3-task3-red.log`
 
 Expected: non-zero exit because the dispatcher seam and controller do not exist.
 
-- [ ] **Step 3: Implement controller construction, generation capture, and state transitions**
+- [x] **Step 3: Implement controller construction, generation capture, and state transitions**
 
 Use these signatures:
 
@@ -699,13 +699,13 @@ public sealed class NetworkConnectionController : INetworkConnectionGateway, IDi
 
 For the first GREEN only, implement `Connect` to create a fresh transport, call `client.SetTransport(transport)`, set `State` to `Connecting`, capture `var callbackGeneration = _generation` in the `Opened` delegate, enqueue the opened handler through `INetworkDispatcher`, compare `callbackGeneration` with `_generation`, set `State` to `Connected`, reset heartbeat remaining seconds, and call `client.NotifyConnected()`. `Disconnect`, `Tick`, `BeginAuthentication`, `MarkReady`, `Error`, `Closed`, and `MessageReceived` may keep minimal non-throwing bodies until the expanded RED tests below are written and run.
 
-- [ ] **Step 4: Run the first controller GREEN**
+- [x] **Step 4: Run the first controller GREEN**
 
 Run: `D:\Unity_Soft\2022\Editor\Unity.exe -batchmode -nographics -quit -projectPath . -runTests -testPlatform EditMode -testFilter Game.Tests.EditMode.Network.NetworkConnectionControllerTests.OpenMovesConnectingToConnectedOnlyAfterDispatcherPump -testResults Logs\A3-task3-first-green.xml -logFile Logs\A3-task3-first-green.log`
 
 Expected: exit code 0 and `OpenMovesConnectingToConnectedOnlyAfterDispatcherPump` passes.
 
-- [ ] **Step 5: Add RED tests for backoff doubling/clamping and timeout closure**
+- [x] **Step 5: Add RED tests for backoff doubling/clamping and timeout closure**
 
 ```csharp
 [Test]
@@ -791,7 +791,7 @@ private sealed class ControllerFixture : IDisposable
 }
 ```
 
-- [ ] **Step 6: Add RED tests for terminal races and retry exhaustion**
+- [x] **Step 6: Add RED tests for terminal races and retry exhaustion**
 
 ```csharp
 [Test]
@@ -871,7 +871,7 @@ public void IntentionalDisconnectInvalidatesQueuedOpenAndMessage()
 }
 ```
 
-- [ ] **Step 7: Add RED tests for heartbeat cadence and status gating**
+- [x] **Step 7: Add RED tests for heartbeat cadence and status gating**
 
 ```csharp
 [Test]
@@ -937,13 +937,13 @@ public void HeartbeatIsSuppressedDuringReconnectingAndFailed()
 
 `DecodeIds` calls `Codec.TryDecode` for every payload and returns the decoded `ushort[]`. Heartbeat payload is `new HeartbeatReq { timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() }`.
 
-- [ ] **Step 8: Run expanded controller RED**
+- [x] **Step 8: Run expanded controller RED**
 
 Run: `D:\Unity_Soft\2022\Editor\Unity.exe -batchmode -nographics -quit -projectPath . -runTests -testPlatform EditMode -testFilter Game.Tests.EditMode.Network.NetworkConnectionControllerTests -testResults Logs\A3-task3-expanded-red.xml -logFile Logs\A3-task3-expanded-red.log`
 
 Expected: non-zero exit because the minimal Step 3 controller does not yet implement backoff doubling/clamping, timeout close/dispose, retry exhaustion, queued callback invalidation, duplicate terminal suppression, and heartbeat cadence.
 
-- [ ] **Step 9: Implement controller timers, terminal invalidation, reconnect, and heartbeat**
+- [x] **Step 9: Implement controller timers, terminal invalidation, reconnect, and heartbeat**
 
 Implement these concrete fields inside `NetworkConnectionController`: `_state`, `_generation`, `_transport`, `_url`, `_intentionalClose`, `_terminalHandledForGeneration`, `_attempt`, `_timeoutRemaining`, `_reconnectDelayRemaining`, `_nextBackoffSeconds`, `_heartbeatRemaining`, and `_disposed`.
 
@@ -953,13 +953,13 @@ The timeout terminal path increments `_generation`, closes the old transport wit
 
 Every transport delegate must call `_dispatcher.Enqueue(() => HandleX(callbackGeneration, payload))`; the handler starts with `if (callbackGeneration != _generation || _disposed) return;`. The first `Error` or `Closed` for a generation increments `_generation` before scheduling reconnect so any queued sibling callback becomes stale.
 
-- [ ] **Step 10: Run all controller tests GREEN**
+- [x] **Step 10: Run all controller tests GREEN**
 
 Run: `D:\Unity_Soft\2022\Editor\Unity.exe -batchmode -nographics -quit -projectPath . -runTests -testPlatform EditMode -testFilter Game.Tests.EditMode.Network.NetworkConnectionControllerTests -testResults Logs\A3-task3-green.xml -logFile Logs\A3-task3-green.log`
 
 Expected: exit code 0 and all state, dispatcher, backoff, timeout, race, exhaustion, and heartbeat tests pass.
 
-- [ ] **Step 11: Commit Task 3**
+- [x] **Step 11: Commit Task 3**
 
 Run:
 
@@ -988,7 +988,7 @@ Root coordinator action after clean task review: `git -c http.version=HTTP/1.1 p
 - Consumes: `IGameService`, `GameServiceCollection`, `MainThreadDispatcher`, `GameRuntimeSettings`, Task 2 gateway binding, and Task 3 controller.
 - Produces: `NetworkConnectionControllerHost.Install`, host `Initialize/Shutdown`, real `GameServices` registration/unregistration, exact legacy state mapping, and A3 Online fail-closed startup.
 
-- [ ] **Step 1: Write a RED host lifecycle test that calls real Initialize/Shutdown**
+- [x] **Step 1: Write a RED host lifecycle test that calls real Initialize/Shutdown**
 
 ```csharp
 [Test]
@@ -1033,13 +1033,13 @@ public void HostInitializeBindsGatewayUpdateTicksAndShutdownUnbinds()
 }
 ```
 
-- [ ] **Step 2: Run host RED**
+- [x] **Step 2: Run host RED**
 
 Run: `D:\Unity_Soft\2022\Editor\Unity.exe -batchmode -nographics -quit -projectPath . -runTests -testPlatform EditMode -testFilter Game.Tests.EditMode.Network.NetworkConnectionControllerHostTests -testResults Logs\A3-task4-host-red.xml -logFile Logs\A3-task4-host-red.log`
 
 Expected: non-zero exit because `NetworkConnectionControllerHost` does not exist.
 
-- [ ] **Step 3: Implement host binding, ticking, and shutdown order**
+- [x] **Step 3: Implement host binding, ticking, and shutdown order**
 
 Use this install contract:
 
@@ -1066,7 +1066,7 @@ public sealed class NetworkConnectionControllerHost : MonoBehaviour, IGameServic
 
 `Install` creates `[NetworkConnectionControllerHost]` below the supplied parent and constructs the controller. `Initialize` calls `client.BindConnectionGateway(this)` once. `Update` calls `_controller.Tick((_deltaSecondsProvider ?? DefaultDeltaProvider)())`, where `DefaultDeltaProvider` returns `Time.deltaTime`. `Shutdown` invalidates the controller, disconnects/disposes transport state, then calls `client.UnbindConnectionGateway(this)`. `OnDestroy` delegates to idempotent `Shutdown`. Do not modify `GameServices` or `GameApplication` in this step.
 
-- [ ] **Step 4: Add PlayMode RED tests that exercise real GameServices.Create/Shutdown through GameApplication**
+- [x] **Step 4: Add PlayMode RED tests that exercise real GameServices.Create/Shutdown through GameApplication**
 
 Add `Game.Network` to `Game.PlayModeTests.asmdef.references`; do not add any EditMode test assembly reference. Extend `ApplicationOfflineStartupTests` with:
 
@@ -1093,25 +1093,25 @@ public IEnumerator OfflineStartupRegistersClientAndShutdownUnregistersIt()
 
 Update the existing Online test to expect `Online runtime flow is not implemented in Phase A3`, assert `FailureStage == "Mode.Select"`, assert no `[NetworkConnectionControllerHost]` exists, and assert `NetworkClient.Instance.IsConnected` is false. This test invokes `GameApplication.Awake`, whose Offline path calls `GameServices.Create`, and its cleanup invokes public `GameApplication.Shutdown`, which calls `GameServices.Shutdown`.
 
-- [ ] **Step 5: Run GameServices/Online RED**
+- [x] **Step 5: Run GameServices/Online RED**
 
 Run: `D:\Unity_Soft\2022\Editor\Unity.exe -batchmode -nographics -quit -projectPath . -runTests -testPlatform PlayMode -testFilter Game.Tests.PlayMode.ApplicationOfflineStartupTests -testResults Logs\A3-task4-services-red.xml -logFile Logs\A3-task4-services-red.log`
 
 Expected: non-zero exit because the host is not installed, the explicit client is not registered/unregistered, and Online still reports Phase A2.
 
-- [ ] **Step 6: Implement GameServices registration, shutdown, and Online A3 gate**
+- [x] **Step 6: Implement GameServices registration, shutdown, and Online A3 gate**
 
 In `GameServices.Create`, create and `NetworkClient.RegisterInstance(client)` immediately after installing `MainThreadDispatcher`, install `NetworkConnectionControllerHost`, and append host after dispatcher in `GameServiceCollection` so reverse shutdown reaches host before dispatcher. In `GameServices.Shutdown`, call lifecycle shutdown, then `NetworkClient.UnregisterInstance(_networkClient)`, `_networkClient.Dispose()`, `NetworkClient.ResetStaticState()`, and only then `MainThreadDispatcher.ResetStaticState()`.
 
 In `GameApplication`, make `RuntimeMode.Online` set failure state with `FailureStage = "Mode.Select"` and error text containing `Online runtime flow is not implemented in Phase A3`; do not call `GameServices.Create` and do not connect a socket.
 
-- [ ] **Step 7: Run GameServices/Online GREEN before legacy changes**
+- [x] **Step 7: Run GameServices/Online GREEN before legacy changes**
 
 Run: `D:\Unity_Soft\2022\Editor\Unity.exe -batchmode -nographics -quit -projectPath . -runTests -testPlatform PlayMode -testFilter Game.Tests.PlayMode.ApplicationOfflineStartupTests -testResults Logs\A3-task4-services-green.xml -logFile Logs\A3-task4-services-green.log`
 
 Expected: exit code 0; Offline registers/unregisters the explicit client through real startup/shutdown and Online fails closed without a connection.
 
-- [ ] **Step 8: Write RED legacy retirement and mapping tests**
+- [x] **Step 8: Write RED legacy retirement and mapping tests**
 
 ```csharp
 [Test]
@@ -1156,13 +1156,13 @@ public void StatusAdapterUsesExactLegacyMapping(
 }
 ```
 
-- [ ] **Step 9: Run legacy retirement RED**
+- [x] **Step 9: Run legacy retirement RED**
 
 Run: `D:\Unity_Soft\2022\Editor\Unity.exe -batchmode -nographics -quit -projectPath . -runTests -testPlatform EditMode -testFilter Game.Tests.EditMode.Network.LegacyNetworkCompatibilityTests -testResults Logs\A3-task4-legacy-red.xml -logFile Logs\A3-task4-legacy-red.log`
 
 Expected: non-zero exit because legacy wrappers are not obsolete, `ReconnectionManager` still owns coroutine state, and `NetworkStatusAdapter` does not exist.
 
-- [ ] **Step 10: Retire legacy owners while preserving compatibility calls**
+- [x] **Step 10: Retire legacy owners while preserving compatibility calls**
 
 Implement `NetworkStatusAdapter` as a pure switch with the test-case mappings above:
 
@@ -1199,7 +1199,7 @@ public static class NetworkStatusAdapter
 
 Mark both legacy classes `[Obsolete("NetworkConnectionController owns connection policy.")]`. `HeartbeatManager.StartHeartbeat(NetworkClient)` and `StopHeartbeat()` remain empty methods and are also marked obsolete. `ReconnectionManager.Register`, `StartReconnect`, and `StopReconnect` remain empty compatibility methods and never call `Connect`; `State` returns `NetworkStatusAdapter.ToReconnectState(NetworkClient.Instance.ConnectionState)` and `AttemptCount` always returns `0`. Both wrappers unsubscribe their event handlers on destroy and clear their static active instance only when the destroyed object is that instance.
 
-- [ ] **Step 11: Run Task 4 GREEN across EditMode and PlayMode**
+- [x] **Step 11: Run Task 4 GREEN across EditMode and PlayMode**
 
 Run: `D:\Unity_Soft\2022\Editor\Unity.exe -batchmode -nographics -quit -projectPath . -runTests -testPlatform EditMode -testFilter Game.Tests.EditMode.Network.NetworkConnectionControllerHostTests -testResults Logs\A3-task4-host-green.xml -logFile Logs\A3-task4-host-green.log`
 
@@ -1213,7 +1213,7 @@ Run: `D:\Unity_Soft\2022\Editor\Unity.exe -batchmode -nographics -quit -projectP
 
 Expected: exit code 0; Offline registers and unregisters the explicit client, host shutdown removes the host, and Online fails closed without a connection.
 
-- [ ] **Step 12: Commit Task 4**
+- [x] **Step 12: Commit Task 4**
 
 Run:
 
@@ -1237,7 +1237,7 @@ Root coordinator action after clean task review: `git -c http.version=HTTP/1.1 p
 - Consumes: `NetworkClient.On<T>(ushort, Action<T>)` returning `IDisposable`.
 - Produces: one owned token in Login, two in Archive, two in Rank, seven in Combat; idempotent `OnDestroy` disposal; active singleton clearing without a production test hook.
 
-- [ ] **Step 1: Write one RED cleanup test covering every manager subscription**
+- [x] **Step 1: Write one RED cleanup test covering every manager subscription**
 
 Create managers through `new GameObject(...).AddComponent<T>()`, attach counters to every public response event, destroy all four objects, and dispatch all twelve response ids:
 
@@ -1300,13 +1300,13 @@ private static void AssertSingletonCleared(Type type, string fieldName) =>
 
 Use `[TearDown]` to destroy any remaining named manager objects and call `NetworkClient.ResetStaticState()`. Reflection inspects the existing singleton field; no runtime-only-for-tests property or reset method is added.
 
-- [ ] **Step 2: Run manager cleanup RED**
+- [x] **Step 2: Run manager cleanup RED**
 
 Run: `D:\Unity_Soft\2022\Editor\Unity.exe -batchmode -nographics -quit -projectPath . -runTests -testPlatform EditMode -testFilter Game.Tests.EditMode.Network.ManagerNetworkSubscriptionTests -testResults Logs\A3-task5-red.xml -logFile Logs\A3-task5-red.log`
 
 Expected: non-zero exit or failed assertions because callbacks remain registered and `_instance` remains set after destruction.
 
-- [ ] **Step 3: Store and dispose every subscription explicitly**
+- [x] **Step 3: Store and dispose every subscription explicitly**
 
 Add `private readonly List<IDisposable> _networkSubscriptions = new List<IDisposable>();` to each manager. Replace each registration statement with `_networkSubscriptions.Add(client.On<T>(id, handler));`; the exact registration counts are Login 1, Archive 2, Rank 2, and Combat 7. Add this exact cleanup shape to each class:
 
@@ -1327,13 +1327,13 @@ private void OnDestroy()
 
 Do not recreate delegates to unsubscribe and do not add manager reset methods.
 
-- [ ] **Step 4: Run manager cleanup GREEN**
+- [x] **Step 4: Run manager cleanup GREEN**
 
 Run: `D:\Unity_Soft\2022\Editor\Unity.exe -batchmode -nographics -quit -projectPath . -runTests -testPlatform EditMode -testFilter Game.Tests.EditMode.Network.ManagerNetworkSubscriptionTests -testResults Logs\A3-task5-green.xml -logFile Logs\A3-task5-green.log`
 
 Expected: exit code 0; all twelve post-destroy dispatches produce zero callbacks and all four private singleton fields are null.
 
-- [ ] **Step 5: Commit Task 5**
+- [x] **Step 5: Commit Task 5**
 
 Run:
 
@@ -1353,31 +1353,31 @@ Root coordinator action after clean task review: `git -c http.version=HTTP/1.1 p
 - Consumes: committed Tasks 1-5.
 - Produces: asset-integrity, Pester, full EditMode, full PlayMode, diff hygiene, branch review, commit, and remote branch evidence.
 
-- [ ] **Step 1: Run asset integrity**
+- [x] **Step 1: Run asset integrity**
 
 Run: `powershell -NoProfile -ExecutionPolicy Bypass -File tools\validation\Test-UnityAssetIntegrity.ps1 -ProjectRoot .`
 
 Expected: exit code 0 and `Unity asset integrity check passed.`
 
-- [ ] **Step 2: Run all Pester validation**
+- [x] **Step 2: Run all Pester validation**
 
 Run: `powershell -NoProfile -ExecutionPolicy Bypass -Command "Import-Module Pester; Invoke-Pester -Script 'tools/validation/UnityAssetIntegrity.Tests.ps1' -EnableExit"`
 
 Expected: exit code 0 and `Passed: 5 Failed: 0`.
 
-- [ ] **Step 3: Run the complete EditMode suite**
+- [x] **Step 3: Run the complete EditMode suite**
 
 Run: `D:\Unity_Soft\2022\Editor\Unity.exe -batchmode -nographics -quit -projectPath . -runTests -testPlatform EditMode -testResults Logs\A3-final-editmode-results.xml -logFile Logs\A3-final-editmode.log`
 
 Expected: exit code 0, `Logs\A3-final-editmode-results.xml` reports zero failed tests, and `Logs\A3-final-editmode.log` contains no compiler error.
 
-- [ ] **Step 4: Run the complete PlayMode suite**
+- [x] **Step 4: Run the complete PlayMode suite**
 
 Run: `D:\Unity_Soft\2022\Editor\Unity.exe -batchmode -nographics -quit -projectPath . -runTests -testPlatform PlayMode -testResults Logs\A3-final-playmode-results.xml -logFile Logs\A3-final-playmode.log`
 
 Expected: exit code 0, `Logs\A3-final-playmode-results.xml` reports zero failed tests, and `Logs\A3-final-playmode.log` contains no compiler error.
 
-- [ ] **Step 5: Run exact branch hygiene checks and request whole-branch review**
+- [x] **Step 5: Run exact branch hygiene checks and request whole-branch review**
 
 Run:
 
@@ -1391,9 +1391,19 @@ Expected: `git diff --check master...HEAD` exits 0 with no output; `git status -
 
 Invoke `superpowers:requesting-code-review` against merge base `master` and current `HEAD`. A Critical or Important finding returns execution to the task that owns the cited file; rerun that task's named filtered GREEN command plus Steps 1-4 after the correction.
 
-- [ ] **Step 6: Record evidence and commit Task 6**
+- [x] **Step 6: Record evidence and commit Task 6**
 
 Under this step, record the asset-integrity exit code, Pester passed/failed counts, EditMode total/failed counts, PlayMode total/failed counts, and reviewer result. Then run:
+
+Evidence recorded on 2026-07-18:
+
+- Asset integrity: exit `0`, output `Unity asset integrity check passed.`
+- Pester: exit `0`, `Passed: 5 Failed: 0 Skipped: 0 Pending: 0 Inconclusive: 0`
+- Complete EditMode: `Logs/A3-final-editmode-results.xml`, exit `0`, result `Passed`, total `88`, passed `88`, failed `0`
+- Complete PlayMode: `Logs/A3-final-playmode-results.xml`, exit `0`, result `Passed`, total `11`, passed `11`, failed `0`
+- Branch hygiene: `git diff --check master...HEAD` exit `0`
+- Whole-branch review: `Spec: PASS`, `Quality: Approved`, `Push gate: YES`; only minor finding was missing Task 6 evidence before this edit.
+- Hygiene note: commit `ca95ae8` normalized Unity `.meta` trailing whitespace so the branch-level diff check passes.
 
 ```powershell
 git add docs/superpowers/plans/2026-07-18-phase-a3-network-integration.md
