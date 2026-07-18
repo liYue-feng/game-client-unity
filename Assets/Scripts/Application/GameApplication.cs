@@ -50,6 +50,17 @@ namespace Game
                     throw new InvalidOperationException(validationError);
                 }
 
+                FailureStage = "Mode.Select";
+                switch (_settings.RuntimeMode)
+                {
+                    case RuntimeMode.Offline:
+                        break;
+                    case RuntimeMode.Online:
+                        throw new NotSupportedException("Online runtime flow is not implemented in Phase A2");
+                    default:
+                        throw new InvalidOperationException($"RuntimeMode '{_settings.RuntimeMode}' is not supported.");
+                }
+
                 FailureStage = "Services.Initialize";
                 _services = GameServices.Create(transform, _settings);
                 FailureStage = null;
