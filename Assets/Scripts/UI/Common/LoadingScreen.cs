@@ -1,12 +1,13 @@
 using UnityEngine;
 using UnityEngine.UI;
 using System.Collections;
+using Game.Core;
 
 /// <summary>
 /// 加载界面：场景切换时的水墨过渡。
 /// 淡入淡出 + 墨点动画 + 提示文字。
 /// </summary>
-public class LoadingScreen : MonoBehaviour
+public class LoadingScreen : MonoBehaviour, IGameService
 {
     private static LoadingScreen _instance;
     public static LoadingScreen Instance
@@ -15,18 +16,20 @@ public class LoadingScreen : MonoBehaviour
         {
             if (_instance == null)
             {
-                var go = new GameObject("[LoadingScreen]");
-                DontDestroyOnLoad(go);
-                _instance = go.AddComponent<LoadingScreen>();
+                Debug.LogError("[LoadingScreen] Service is not installed by GameApplication.");
             }
+
             return _instance;
         }
     }
+
+    public string ServiceName => nameof(LoadingScreen);
 
     private Canvas _canvas;
     private Image _overlay;
     private Text _hintText;
     private Text _titleText;
+    private bool _initialized;
 
     private static readonly string[] Hints =
     {
@@ -46,10 +49,64 @@ public class LoadingScreen : MonoBehaviour
             return;
         }
         _instance = this;
-        DontDestroyOnLoad(gameObject);
+    }
+
+    internal static LoadingScreen Install(Transform parent)
+    {
+        if (_instance != null)
+        {
+            return _instance;
+        }
+
+        var serviceObject = new GameObject("[LoadingScreen]");
+        serviceObject.transform.SetParent(parent, false);
+        return serviceObject.AddComponent<LoadingScreen>();
+    }
+
+    public void Initialize()
+    {
+        if (_initialized)
+        {
+            return;
+        }
 
         BuildUI();
         _canvas.enabled = false;
+        _initialized = true;
+    }
+
+    public void Shutdown()
+    {
+        if (!_initialized)
+        {
+            return;
+        }
+
+        StopAllCoroutines();
+        if (_canvas != null)
+        {
+            _canvas.enabled = false;
+        }
+
+        _canvas = null;
+        _overlay = null;
+        _hintText = null;
+        _titleText = null;
+        _initialized = false;
+    }
+
+    internal static void ResetStaticState()
+    {
+        _instance = null;
+    }
+
+    private void OnDestroy()
+    {
+        Shutdown();
+        if (ReferenceEquals(_instance, this))
+        {
+            _instance = null;
+        }
     }
 
     private void BuildUI()

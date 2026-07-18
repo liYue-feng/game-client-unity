@@ -1,5 +1,6 @@
 using UnityEngine;
 using Game.Managers;
+using Game;
 
 /// <summary>
 /// 主菜单场景启动器 — 初始化场景管理器 + 显示登录/菜单
@@ -8,6 +9,13 @@ public class MenuSceneSetup : MonoBehaviour
 {
     void Awake()
     {
+        if (GameApplication.HasInstance)
+        {
+            Debug.LogWarning($"[{nameof(MenuSceneSetup)}] Disabled because GameApplication owns startup.");
+            enabled = false;
+            return;
+        }
+
         // 确保场景管理器存在
         if (SceneTransitionManager.Instance == null)
         {

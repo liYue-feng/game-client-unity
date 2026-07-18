@@ -1,5 +1,6 @@
 using UnityEngine;
 using System.Collections.Generic;
+using Game.Core;
 
 /// <summary>
 /// 音效管理器：管理BGM和SFX播放。
@@ -19,7 +20,7 @@ using System.Collections.Generic;
 ///   战斗:   密集鼓点+琵琶扫弦，紧张急促
 ///   Boss:   大鼓重击+唢呐高亢，黑暗压迫
 /// </summary>
-public class AudioManager : MonoBehaviour
+public class AudioManager : MonoBehaviour, IGameService
 {
     private static AudioManager _instance;
     public static AudioManager Instance
@@ -28,13 +29,14 @@ public class AudioManager : MonoBehaviour
         {
             if (_instance == null)
             {
-                var go = new GameObject("[AudioManager]");
-                DontDestroyOnLoad(go);
-                _instance = go.AddComponent<AudioManager>();
+                Debug.LogError("[AudioManager] Service is not installed by GameApplication.");
             }
+
             return _instance;
         }
     }
+
+    public string ServiceName => nameof(AudioManager);
 
     [Header("音量")]
     [Range(0f, 1f)] public float masterVolume = 0.8f;
@@ -50,6 +52,8 @@ public class AudioManager : MonoBehaviour
     private readonly Dictionary<string, AudioClip> _clips = new Dictionary<string, AudioClip>();
     // 记录哪些音效已从Resources加载成功
     private readonly HashSet<string> _loadedFromResources = new HashSet<string>();
+    private readonly HashSet<AudioClip> _generatedRuntimeClips = new HashSet<AudioClip>();
+    private bool _initialized;
 
     /// <summary>已加载的clip名称列表</summary>
     public IReadOnlyCollection<string> LoadedClipNames => _clips.Keys;
@@ -62,7 +66,26 @@ public class AudioManager : MonoBehaviour
             return;
         }
         _instance = this;
-        DontDestroyOnLoad(gameObject);
+    }
+
+    internal static AudioManager Install(Transform parent)
+    {
+        if (_instance != null)
+        {
+            return _instance;
+        }
+
+        var serviceObject = new GameObject("[AudioManager]");
+        serviceObject.transform.SetParent(parent, false);
+        return serviceObject.AddComponent<AudioManager>();
+    }
+
+    public void Initialize()
+    {
+        if (_initialized)
+        {
+            return;
+        }
 
         _bgmSource = gameObject.AddComponent<AudioSource>();
         _bgmSource.loop = true;
@@ -78,6 +101,50 @@ public class AudioManager : MonoBehaviour
         }
 
         LoadAllSounds();
+        _initialized = true;
+    }
+
+    public void Shutdown()
+    {
+        if (!_initialized)
+        {
+            return;
+        }
+
+        _bgmSource?.Stop();
+        foreach (var source in _sfxPool)
+        {
+            source?.Stop();
+        }
+
+        foreach (var clip in _generatedRuntimeClips)
+        {
+            if (clip != null)
+            {
+                Destroy(clip);
+            }
+        }
+
+        _sfxPool.Clear();
+        _clips.Clear();
+        _loadedFromResources.Clear();
+        _generatedRuntimeClips.Clear();
+        _bgmSource = null;
+        _initialized = false;
+    }
+
+    internal static void ResetStaticState()
+    {
+        _instance = null;
+    }
+
+    private void OnDestroy()
+    {
+        Shutdown();
+        if (ReferenceEquals(_instance, this))
+        {
+            _instance = null;
+        }
     }
 
     /// <summary>
@@ -166,7 +233,9 @@ public class AudioManager : MonoBehaviour
     {
         if (!_clips.ContainsKey(name))
         {
-            _clips[name] = generator();
+            var clip = generator();
+            _clips[name] = clip;
+            _generatedRuntimeClips.Add(clip);
         }
     }
 

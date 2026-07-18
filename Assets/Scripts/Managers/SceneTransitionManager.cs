@@ -2,13 +2,29 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 using System;
 using System.Collections;
+using Game.Core;
 
 /// <summary>
 /// 场景切换管理器 — 水墨晕染过渡 + 场景生命周期管理
 /// </summary>
-public class SceneTransitionManager : MonoBehaviour
+public class SceneTransitionManager : MonoBehaviour, IGameService
 {
-    public static SceneTransitionManager Instance { get; private set; }
+    private static SceneTransitionManager _instance;
+
+    public static SceneTransitionManager Instance
+    {
+        get
+        {
+            if (_instance == null)
+            {
+                Debug.LogError("[SceneTransitionManager] Service is not installed by GameApplication.");
+            }
+
+            return _instance;
+        }
+    }
+
+    public string ServiceName => nameof(SceneTransitionManager);
 
     [Header("过渡设置")]
     public float transitionDuration = 0.8f;
@@ -18,17 +34,66 @@ public class SceneTransitionManager : MonoBehaviour
     private bool _isTransitioning;
     private string _targetScene;
     private Action _onComplete;
+    private bool _initialized;
 
-    void Awake()
+    internal static SceneTransitionManager Install(Transform parent)
     {
-        if (Instance != null)
+        if (_instance != null)
+        {
+            return _instance;
+        }
+
+        var serviceObject = new GameObject("[SceneTransitionManager]");
+        serviceObject.transform.SetParent(parent, false);
+        return serviceObject.AddComponent<SceneTransitionManager>();
+    }
+
+    public void Initialize()
+    {
+        if (_initialized)
+        {
+            return;
+        }
+
+        SceneManager.sceneLoaded += OnSceneLoaded;
+        _initialized = true;
+    }
+
+    public void Shutdown()
+    {
+        if (!_initialized)
+        {
+            return;
+        }
+
+        StopAllCoroutines();
+        SceneManager.sceneLoaded -= OnSceneLoaded;
+        if (_overlayTex != null)
+        {
+            Destroy(_overlayTex);
+            _overlayTex = null;
+        }
+
+        _isTransitioning = false;
+        _targetScene = null;
+        _onComplete = null;
+        _initialized = false;
+    }
+
+    internal static void ResetStaticState()
+    {
+        _instance = null;
+    }
+
+    private void Awake()
+    {
+        if (_instance != null && !ReferenceEquals(_instance, this))
         {
             Destroy(gameObject);
             return;
         }
-        Instance = this;
-        DontDestroyOnLoad(gameObject);
-        SceneManager.sceneLoaded += OnSceneLoaded;
+
+        _instance = this;
     }
 
     /// <summary>
@@ -112,9 +177,12 @@ public class SceneTransitionManager : MonoBehaviour
         return tex;
     }
 
-    void OnDestroy()
+    private void OnDestroy()
     {
-        SceneManager.sceneLoaded -= OnSceneLoaded;
-        if (_overlayTex != null) Destroy(_overlayTex);
+        Shutdown();
+        if (ReferenceEquals(_instance, this))
+        {
+            _instance = null;
+        }
     }
 }

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using Game.Core;
 
 /// <summary>
 /// 成就定义
@@ -27,7 +28,7 @@ public class Achievement
 /// 数据持久化到 PlayerPrefs。
 /// 单例模式。
 /// </summary>
-public class AchievementManager : MonoBehaviour
+public class AchievementManager : MonoBehaviour, IGameService
 {
     private static AchievementManager _instance;
     public static AchievementManager Instance
@@ -36,13 +37,14 @@ public class AchievementManager : MonoBehaviour
         {
             if (_instance == null)
             {
-                var go = new GameObject("[AchievementManager]");
-                DontDestroyOnLoad(go);
-                _instance = go.AddComponent<AchievementManager>();
+                Debug.LogError("[AchievementManager] Service is not installed by GameApplication.");
             }
+
             return _instance;
         }
     }
+
+    public string ServiceName => nameof(AchievementManager);
 
     public List<Achievement> AllAchievements = new List<Achievement>();
 
@@ -50,14 +52,64 @@ public class AchievementManager : MonoBehaviour
     public event Action<Achievement> OnProgressUpdated;
     /// <summary>成就完成事件</summary>
     public event Action<Achievement> OnCompleted;
+    private bool _initialized;
 
-    void Awake()
+    private void Awake()
     {
         if (_instance != null && _instance != this) { Destroy(gameObject); return; }
         _instance = this;
-        DontDestroyOnLoad(gameObject);
+    }
+
+    internal static AchievementManager Install(Transform parent)
+    {
+        if (_instance != null)
+        {
+            return _instance;
+        }
+
+        var serviceObject = new GameObject("[AchievementManager]");
+        serviceObject.transform.SetParent(parent, false);
+        return serviceObject.AddComponent<AchievementManager>();
+    }
+
+    public void Initialize()
+    {
+        if (_initialized)
+        {
+            return;
+        }
+
+        AllAchievements.Clear();
         InitializeAchievements();
         LoadFromPrefs();
+        _initialized = true;
+    }
+
+    public void Shutdown()
+    {
+        if (!_initialized)
+        {
+            return;
+        }
+
+        SaveToPrefs();
+        OnProgressUpdated = null;
+        OnCompleted = null;
+        _initialized = false;
+    }
+
+    internal static void ResetStaticState()
+    {
+        _instance = null;
+    }
+
+    private void OnDestroy()
+    {
+        Shutdown();
+        if (ReferenceEquals(_instance, this))
+        {
+            _instance = null;
+        }
     }
 
     void InitializeAchievements()

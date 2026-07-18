@@ -31,6 +31,13 @@ namespace Game
 
         private void Start()
         {
+            if (GameApplication.HasInstance)
+            {
+                Debug.LogWarning($"[{nameof(GameBootstrap)}] Disabled because GameApplication owns startup.");
+                enabled = false;
+                return;
+            }
+
             Debug.Log("========== 游戏启动 ==========");
 
             // 1. 初始化主线程调度器（最先创建，其他组件依赖它）
