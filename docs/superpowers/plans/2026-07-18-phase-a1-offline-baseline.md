@@ -544,16 +544,16 @@ Expected: commit includes the direct test dependency, generated test `.meta` fil
 - Consumes: Validator, repaired assets, and PlayMode smoke test from Tasks 1-3.
 - Produces: Verified A1 commits on the remote branch.
 
-- [ ] **Step 1: Run the complete non-Unity validation**
+- [x] **Step 1: Run the complete non-Unity validation**
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -Command "Import-Module Pester; Invoke-Pester -Script 'tools/validation/UnityAssetIntegrity.Tests.ps1' -EnableExit"
 powershell -NoProfile -ExecutionPolicy Bypass -File tools/validation/Test-UnityAssetIntegrity.ps1
 ```
 
-Expected: 4 Pester tests pass and the repository integrity command prints `Unity asset integrity check passed.`
+Expected: 5 Pester tests pass and the repository integrity command prints `Unity asset integrity check passed.`
 
-- [ ] **Step 2: Run a fresh Unity compile/import check**
+- [x] **Step 2: Run a fresh Unity compile/import check**
 
 ```powershell
 & 'D:\Unity_Soft\2022\Editor\Unity.exe' -batchmode -nographics -quit -projectPath 'E:\Own_project\game-client-unity' -logFile 'E:\Own_project\game-client-unity\Logs\A1-final-compile.log'
@@ -561,7 +561,7 @@ Expected: 4 Pester tests pass and the repository integrity command prints `Unity
 
 Expected: successful batch exit after project import, with no `error CS` or `Scripts have compiler errors` in the log.
 
-- [ ] **Step 3: Run the complete PlayMode test assembly**
+- [x] **Step 3: Run the complete PlayMode test assembly**
 
 ```powershell
 & 'D:\Unity_Soft\2022\Editor\Unity.exe' -batchmode -nographics -projectPath 'E:\Own_project\game-client-unity' -runTests -testPlatform PlayMode -testResults 'E:\Own_project\game-client-unity\Logs\A1-final-playmode.xml' -logFile 'E:\Own_project\game-client-unity\Logs\A1-final-playmode.log'
@@ -569,7 +569,7 @@ Expected: successful batch exit after project import, with no `error CS` or `Scr
 
 Expected: all PlayMode tests pass with 0 failures.
 
-- [ ] **Step 4: Verify repository state and commit history**
+- [x] **Step 4: Verify repository state and commit history**
 
 ```powershell
 git diff --check
