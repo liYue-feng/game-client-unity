@@ -53,6 +53,11 @@ namespace Game.Network
                 throw new ArgumentOutOfRangeException(nameof(maxTasksPerFrame));
             }
 
+            if (_instance != null)
+            {
+                return _instance;
+            }
+
             var serviceObject = new GameObject("[MainThreadDispatcher]");
             serviceObject.transform.SetParent(parent, false);
 
@@ -66,6 +71,11 @@ namespace Game.Network
         {
             lock (QueueLock)
             {
+                if (!ReferenceEquals(_instance, this))
+                {
+                    return;
+                }
+
                 _accepting = true;
             }
         }
@@ -74,6 +84,11 @@ namespace Game.Network
         {
             lock (QueueLock)
             {
+                if (!ReferenceEquals(_instance, this))
+                {
+                    return;
+                }
+
                 _accepting = false;
                 Queue.Clear();
             }
@@ -100,7 +115,7 @@ namespace Game.Network
                 Action action;
                 lock (QueueLock)
                 {
-                    if (Queue.Count == 0)
+                    if (!ReferenceEquals(_instance, this) || Queue.Count == 0)
                     {
                         return;
                     }
@@ -132,6 +147,21 @@ namespace Game.Network
         private void Update()
         {
             ProcessPending();
+        }
+
+        private void OnDestroy()
+        {
+            lock (QueueLock)
+            {
+                if (!ReferenceEquals(_instance, this))
+                {
+                    return;
+                }
+
+                _accepting = false;
+                Queue.Clear();
+                _instance = null;
+            }
         }
     }
 }
