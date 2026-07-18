@@ -128,8 +128,12 @@ namespace Game.Tests.PlayMode
                     { "OnBackToMenu", 1 },
                     { "OnSettings", 1 }
                 };
+                var originalPauseMenus = FindComponents("PauseMenuUI");
+                Assert.That(originalPauseMenus.Count, Is.EqualTo(1),
+                    "Test Runner scene replacement must leave exactly one current BattleScene pause menu.");
+                var originalPauseMenu = originalPauseMenus.Single();
                 var originalPauseHandlerCounts = GetPauseMenuHandlerCounts(
-                    setupType, expectedPauseHandlerCounts.Keys);
+                    setupType, originalPauseMenu, expectedPauseHandlerCounts.Keys);
                 CollectionAssert.AreEquivalent(expectedPauseHandlerCounts, originalPauseHandlerCounts);
                 var originalHandlerCounts = GetBattleSceneHandlerCounts(
                     setupType, combatEventsType, inventory, expectedHandlerCounts.Keys);
@@ -188,18 +192,19 @@ namespace Game.Tests.PlayMode
                 CollectionAssert.AreEquivalent(originalHandlerCounts, reloadedHandlerCounts,
                     "BattleScene reload must not grow persistent publisher handler counts.");
                 var reloadedPauseHandlerCounts = GetPauseMenuHandlerCounts(
-                    setupType, expectedPauseHandlerCounts.Keys);
+                    setupType,
+                    FindUniquePauseMenu("BattleScene reload must replace the scene-owned pause menu."),
+                    expectedPauseHandlerCounts.Keys);
                 CollectionAssert.AreEquivalent(originalPauseHandlerCounts, reloadedPauseHandlerCounts,
-                    "BattleScene reload must not retain setup handlers on persistent pause menus.");
+                    "BattleScene reload must install handlers only on the current pause menu.");
                 AssertCurrentBattleSceneHandlers(combatEventsType, null, setupType, currentSetup,
                     expectedHandlerCounts.Keys.Where(name => !name.StartsWith("Inventory.")));
                 AssertCurrentBattleSceneHandlers(inventoryType, inventory, setupType, currentSetup,
                     new[] { "OnItemChanged" });
-                foreach (var pauseMenu in FindComponents("PauseMenuUI"))
-                {
-                    AssertCurrentBattleSceneHandlers(pauseMenu.GetType(), pauseMenu, setupType, currentSetup,
-                        expectedPauseHandlerCounts.Keys);
-                }
+                var currentPauseMenu = FindUniquePauseMenu(
+                    "BattleScene reload must leave exactly one current pause menu.");
+                AssertCurrentBattleSceneHandlers(currentPauseMenu.GetType(), currentPauseMenu, setupType, currentSetup,
+                    expectedPauseHandlerCounts.Keys);
 
                 var probeInvocations = 0;
                 Action<Vector3, int> probe = (position, damage) => probeInvocations++;
@@ -308,14 +313,20 @@ namespace Game.Tests.PlayMode
 
         private static Dictionary<string, int> GetPauseMenuHandlerCounts(
             Type setupType,
+            Component pauseMenu,
             IEnumerable<string> eventNames)
         {
-            var pauseMenus = FindComponents("PauseMenuUI");
             return eventNames.ToDictionary(
                 eventName => eventName,
-                eventName => pauseMenus.Sum(pauseMenu =>
-                    GetEventHandlers(pauseMenu.GetType(), pauseMenu, eventName)
-                        .Count(handler => IsDeclaredBy(setupType, handler))));
+                eventName => GetEventHandlers(pauseMenu.GetType(), pauseMenu, eventName)
+                    .Count(handler => IsDeclaredBy(setupType, handler)));
+        }
+
+        private static Component FindUniquePauseMenu(string message)
+        {
+            var pauseMenus = FindComponents("PauseMenuUI");
+            Assert.That(pauseMenus.Count, Is.EqualTo(1), message);
+            return pauseMenus.Single();
         }
 
         private static void AssertLiveSceneReference(

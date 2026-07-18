@@ -447,7 +447,6 @@ public class BattleSceneSetup : MonoBehaviour
         }
 
         var pauseObj = new GameObject("[PauseMenu]");
-        DontDestroyOnLoad(pauseObj);
         _pauseMenu = pauseObj.AddComponent<PauseMenuUI>();
         _pauseMenu.OnBackToMenu += HandleBackToMenu;
         _pauseMenu.OnSettings += HandleSettings;

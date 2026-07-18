@@ -53,3 +53,11 @@
 - 产品修复将 10 个订阅全部改为 named handlers，保存 publisher/target 并使用幂等订阅状态；`OnDestroy` 只对本 owner 的相同 delegate 逐一 `-=`，没有全局清空其他 listeners。
 - 首轮 GREEN 精确暴露 Unity 销毁顺序：Player effect component 已 fake-null，条件清理遗漏 ink/slash 两个 delegate，导致 `OnHitLanded` 为 `5`。最终改为在订阅组有效时无条件移除 named delegates，`Logs/A2-task4-review-events-green2.xml` 为 `Passed 1/1`。
 - 最终 focused：BattleScene reload/smoke `Passed 2/2`；service guard `Passed 1/1`。完整 EditMode `54/54`、PlayMode `9/9`、Pester `5/5`、asset integrity、`git diff --check`、fresh compile 全部通过；最终完整验证日志为 `Logs/A2-task4-review-verified-*`。
+
+## Review Important 修复：PauseMenu 场景所有权
+
+- 复审确认之前的测试跨所有 `PauseMenuUI` 求 Setup handler 总数，会把旧菜单 `0` handler 加当前菜单 `1` handler 误判为正常；旧菜单仍因 `DontDestroyOnLoad` 存活，并在每帧 `Update` 监听 Escape。
+- reload 测试改为在 Test Runner 首次替换场景后和显式二次 reload 后分别使用 `Resources.FindObjectsOfTypeAll` 的 valid-scene 结果断言全局 `PauseMenuUI` 恰好 `1`；事件 backing delegate 只检查该唯一实例，不再跨实例求和。
+- RED：`Logs/A2-task4-review-pause-instance-red.xml`，focused reload `Failed 0/1`，首次 Test Runner scene replacement 后实际 `PauseMenuUI` 为 `2`、期望 `1`。
+- 最小产品修复仅移除 `BattleSceneSetup.CreatePauseMenu` 的 `DontDestroyOnLoad`；PauseMenu 保持本局 scene-owned，不引入 singleton，Setup 的 named handler 精确解绑保持不变。
+- GREEN：`Logs/A2-task4-review-pause-instance-green.xml`，focused reload `Passed 1/1`。最终 BattleScene focused `2/2`、guard `1/1`、EditMode `54/54`、PlayMode `9/9`、Pester `5/5`、asset integrity、diff check、fresh compile 全部通过；最终日志为 `Logs/A2-task4-review2-final-*`。
