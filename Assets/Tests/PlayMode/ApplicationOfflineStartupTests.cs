@@ -278,7 +278,7 @@ namespace Game.Tests.PlayMode
             var generated = audioType.GetField("_generatedRuntimeClips", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(audio);
 
             Assert.That(generatedClip == null, Is.True, "Generated runtime clips must be destroyed after partial cleanup.");
-            Assert.That(resourceReference, Is.Not.Null, "Resource-owned clips must not be destroyed by AudioManager.");
+            Assert.That(resourceReference != null, Is.True, "Resource-owned clips must not be destroyed by AudioManager.");
             Assert.That(source.clip, Is.Null, "Stopped AudioSources must release cached clip references.");
             Assert.That((int)pool.GetType().GetProperty("Count").GetValue(pool), Is.Zero);
             Assert.That((int)clips.GetType().GetProperty("Count").GetValue(clips), Is.Zero);

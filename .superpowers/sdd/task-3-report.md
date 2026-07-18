@@ -118,3 +118,14 @@ git diff --check
 | Cleanup audit | project Unity processes `0`；temporary `InitTestScene` files `0` |
 
 最终日志：`Logs/A2-task3-review4-focused-final.xml`、`A2-task3-review4-editmode-final.xml`、`A2-task3-review4-playmode-final.xml`、`A2-task3-review4-compile-final.log`。Unity License client 仍输出签名/握手噪声，但随后成功连接 2022.3 licensing client；上述测试和 compile 均正常结束，因此未把环境噪声当作产品缺陷处理。
+
+### 资源 clip fake-null 断言复审
+
+后续复审确认 resource-owned clip 的存活断言仍使用 NUnit `Is.Not.Null`，该约束只检查 CLR wrapper，无法识别 Unity 已销毁对象的 fake-null 状态。测试改为 `resourceReference != null` 并断言为 true，使用 Unity 重载比较确保资源 clip 确实仍存活；未修改产品代码或其他断言。
+
+验证命令：
+
+```powershell
+Unity.exe -batchmode -nographics -projectPath . -runTests -testPlatform PlayMode -testFilter Game.Tests.PlayMode.ApplicationOfflineStartupTests -testResults Logs/A2-task3-resource-clip-focused.xml -logFile Logs/A2-task3-resource-clip-focused.log
+git diff --check
+```
