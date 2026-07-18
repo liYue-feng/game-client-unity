@@ -40,6 +40,13 @@ public class BattleSceneSetup : MonoBehaviour
     private InputMediator _inputMediator;
     private PauseMenuUI _pauseMenu;
     private InventoryUI _inventoryUI;
+    private InkHitEffect _inkEffect;
+    private InkSlashEffect _slashEffect;
+    private PlayerController _playerController;
+    private Inventory _inventory;
+    private bool _combatEventsSubscribed;
+    private bool _inventoryEventSubscribed;
+    private bool _pauseMenuEventsSubscribed;
     private bool _isPaused;
     private bool _isInventoryOpen;
 
@@ -287,68 +294,94 @@ public class BattleSceneSetup : MonoBehaviour
     /// <summary>设置全局特效监听</summary>
     private void SetupEffectListeners()
     {
-        // 命中时播放墨迹飞溅 + 音效 + 伤害数字
-        var inkEffect = _player.GetComponent<InkHitEffect>();
-        if (inkEffect != null)
+        if (_combatEventsSubscribed)
         {
-            CombatEvents.OnHitLanded += (pos, dmg) => inkEffect.PlayAt(pos);
+            return;
+        }
+
+        // 命中时播放墨迹飞溅 + 音效 + 伤害数字
+        _inkEffect = _player.GetComponent<InkHitEffect>();
+        if (_inkEffect != null)
+        {
+            CombatEvents.OnHitLanded += HandleInkHitLanded;
         }
 
         // 挥砍墨线
-        var slashEffect = _player.GetComponentInChildren<InkSlashEffect>();
-        var playerController = _player.GetComponent<PlayerController>();
-        if (slashEffect != null && playerController != null)
+        _slashEffect = _player.GetComponentInChildren<InkSlashEffect>();
+        _playerController = _player.GetComponent<PlayerController>();
+        if (_slashEffect != null && _playerController != null)
         {
-            CombatEvents.OnHitLanded += (pos, dmg) =>
-            {
-                slashEffect.Play(_player.transform.position, playerController.FacingDirection);
-            };
+            CombatEvents.OnHitLanded += HandleSlashHitLanded;
         }
 
         // 音效
-        CombatEvents.OnHitLanded += (pos, dmg) => AudioManager.Instance.PlaySFX("hit");
-        CombatEvents.OnDamageTaken += (pos, dmg) =>
-        {
-            AudioManager.Instance.PlaySFX("hit");
-            DamageNumberPool.Spawn(dmg, pos, DamageType.Normal);
-        };
-        CombatEvents.OnParrySuccess += (pos) =>
-        {
-            AudioManager.Instance.PlaySFX("parry");
-            DamageNumberPool.SpawnText("弹反", pos, DamageType.Parry);
-        };
-        CombatEvents.OnPlayerDeath += () =>
-        {
-            AudioManager.Instance.PlaySFX("game_over");
-            var stats = _player.GetComponent<CharacterStats>();
-            if (stats != null)
-            {
-                TalentManager.Instance.AddTalentPoints(stats.level);
+        CombatEvents.OnHitLanded += HandleHitLandedAudio;
+        CombatEvents.OnDamageTaken += HandleDamageTaken;
+        CombatEvents.OnParrySuccess += HandleParrySuccess;
+        CombatEvents.OnPlayerDeath += HandlePlayerDeath;
+        CombatEvents.OnEnemyDeath += HandleEnemyDeath;
+        _combatEventsSubscribed = true;
+    }
 
-                // 汇报成就数据
-                var data = new CombatResultData
-                {
-                    killCount = _killCount,
-                    expGained = stats.currentExp + stats.ExpToNextLevel * (stats.level - 1),
-                    maxCombo = 0, // ComboCounter 目前没有 MaxCombo 属性
-                    survivalTime = Mathf.RoundToInt(Time.time - _startTime),
-                    playerLevel = stats.level,
-                    bossKills = _bossKills,
-                    elementalUpgradeCount = _elementalUpgradeCount,
-                    summonUpgradeCount = _summonUpgradeCount,
-                    styleSwitchCount = _styleSwitchCount
-                };
-                AchievementManager.Instance.ReportBattleResult(data);
-            }
-        };
-        CombatEvents.OnEnemyDeath += (enemy) =>
+    private void HandleInkHitLanded(Vector3 position, int damage)
+    {
+        _inkEffect.PlayAt(position);
+    }
+
+    private void HandleSlashHitLanded(Vector3 position, int damage)
+    {
+        _slashEffect.Play(_player.transform.position, _playerController.FacingDirection);
+    }
+
+    private void HandleHitLandedAudio(Vector3 position, int damage)
+    {
+        AudioManager.Instance.PlaySFX("hit");
+    }
+
+    private void HandleDamageTaken(Vector3 position, int damage)
+    {
+        AudioManager.Instance.PlaySFX("hit");
+        DamageNumberPool.Spawn(damage, position, DamageType.Normal);
+    }
+
+    private void HandleParrySuccess(Vector3 position)
+    {
+        AudioManager.Instance.PlaySFX("parry");
+        DamageNumberPool.SpawnText("弹反", position, DamageType.Parry);
+    }
+
+    private void HandlePlayerDeath()
+    {
+        AudioManager.Instance.PlaySFX("game_over");
+        var stats = _player.GetComponent<CharacterStats>();
+        if (stats != null)
         {
-            AudioManager.Instance.PlaySFX("death");
-            DamageNumberPool.SpawnText("破", enemy.transform.position, DamageType.Crit);
-            _killCount++;
-            if (enemy.GetComponent<Boss>() != null || enemy.name.ToLower().Contains("boss"))
-                _bossKills++;
-        };
+            TalentManager.Instance.AddTalentPoints(stats.level);
+
+            // 汇报成就数据
+            var data = new CombatResultData
+            {
+                killCount = _killCount,
+                expGained = stats.currentExp + stats.ExpToNextLevel * (stats.level - 1),
+                maxCombo = 0, // ComboCounter 目前没有 MaxCombo 属性
+                survivalTime = Mathf.RoundToInt(Time.time - _startTime),
+                playerLevel = stats.level,
+                bossKills = _bossKills,
+                elementalUpgradeCount = _elementalUpgradeCount,
+                summonUpgradeCount = _summonUpgradeCount,
+                styleSwitchCount = _styleSwitchCount
+            };
+            AchievementManager.Instance.ReportBattleResult(data);
+        }
+    }
+
+    private void HandleEnemyDeath(GameObject enemy)
+    {
+        AudioManager.Instance.PlaySFX("death");
+        DamageNumberPool.SpawnText("破", enemy.transform.position, DamageType.Crit);
+        _killCount++;
+        if (enemy.GetComponent<Boss>() != null || enemy.name.ToLower().Contains("boss"))
+            _bossKills++;
     }
 
     /// <summary>
@@ -375,20 +408,27 @@ public class BattleSceneSetup : MonoBehaviour
         _upgradeManager.OnBeforeGenerateOptions = (options) => { };
 
         // 追踪升级选择（用于成就统计）
-        Inventory.Instance.OnItemChanged += (slot, item) =>
+        _inventory = Inventory.Instance;
+        if (!_inventoryEventSubscribed)
         {
-            if (item == null) return;
-            if (item.category.Contains("elemental") || item.id.StartsWith("elem_"))
-            {
-                _elementalUpgradeCount = Mathf.Max(_elementalUpgradeCount,
-                    CountCategoryInInventory("elemental"));
-            }
-            if (item.category.Contains("summon") || item.id.StartsWith("summon_"))
-            {
-                _summonUpgradeCount = Mathf.Max(_summonUpgradeCount,
-                    CountCategoryInInventory("summon"));
-            }
-        };
+            _inventory.OnItemChanged += HandleInventoryItemChanged;
+            _inventoryEventSubscribed = true;
+        }
+    }
+
+    private void HandleInventoryItemChanged(int slot, PassiveItem item)
+    {
+        if (item == null) return;
+        if (item.category.Contains("elemental") || item.id.StartsWith("elem_"))
+        {
+            _elementalUpgradeCount = Mathf.Max(_elementalUpgradeCount,
+                CountCategoryInInventory("elemental"));
+        }
+        if (item.category.Contains("summon") || item.id.StartsWith("summon_"))
+        {
+            _summonUpgradeCount = Mathf.Max(_summonUpgradeCount,
+                CountCategoryInInventory("summon"));
+        }
     }
 
     /// <summary>创建背包UI（按Tab查看）</summary>
@@ -401,20 +441,69 @@ public class BattleSceneSetup : MonoBehaviour
     /// <summary>创建暂停菜单</summary>
     private void CreatePauseMenu()
     {
+        if (_pauseMenuEventsSubscribed)
+        {
+            return;
+        }
+
         var pauseObj = new GameObject("[PauseMenu]");
         DontDestroyOnLoad(pauseObj);
         _pauseMenu = pauseObj.AddComponent<PauseMenuUI>();
-        _pauseMenu.OnBackToMenu += () =>
+        _pauseMenu.OnBackToMenu += HandleBackToMenu;
+        _pauseMenu.OnSettings += HandleSettings;
+        _pauseMenuEventsSubscribed = true;
+    }
+
+    private void HandleBackToMenu()
+    {
+        LoadingScreen.Instance.Show();
+        SceneTransitionManager.Instance.GoToMainMenu();
+    }
+
+    private void HandleSettings()
+    {
+        var settingsObj = new GameObject("SettingsUI");
+        var settings = settingsObj.AddComponent<SettingsUI>();
+        settings.OnClose += () => Destroy(settingsObj);
+    }
+
+    private void OnDestroy()
+    {
+        UnsubscribeSceneListeners();
+    }
+
+    private void UnsubscribeSceneListeners()
+    {
+        if (_combatEventsSubscribed)
         {
-            LoadingScreen.Instance.Show();
-            SceneTransitionManager.Instance.GoToMainMenu();
-        };
-        _pauseMenu.OnSettings += () =>
+            CombatEvents.OnHitLanded -= HandleInkHitLanded;
+            CombatEvents.OnHitLanded -= HandleSlashHitLanded;
+            CombatEvents.OnHitLanded -= HandleHitLandedAudio;
+            CombatEvents.OnDamageTaken -= HandleDamageTaken;
+            CombatEvents.OnParrySuccess -= HandleParrySuccess;
+            CombatEvents.OnPlayerDeath -= HandlePlayerDeath;
+            CombatEvents.OnEnemyDeath -= HandleEnemyDeath;
+            _combatEventsSubscribed = false;
+        }
+
+        if (_inventoryEventSubscribed)
         {
-            var settingsObj = new GameObject("SettingsUI");
-            var settings = settingsObj.AddComponent<SettingsUI>();
-            settings.OnClose += () => Destroy(settingsObj);
-        };
+            if (_inventory != null)
+            {
+                _inventory.OnItemChanged -= HandleInventoryItemChanged;
+            }
+            _inventoryEventSubscribed = false;
+        }
+
+        if (_pauseMenuEventsSubscribed)
+        {
+            if (_pauseMenu != null)
+            {
+                _pauseMenu.OnBackToMenu -= HandleBackToMenu;
+                _pauseMenu.OnSettings -= HandleSettings;
+            }
+            _pauseMenuEventsSubscribed = false;
+        }
     }
 
     private void Update()

@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
@@ -63,82 +64,166 @@ namespace Game.Tests.PlayMode
         [UnityTest]
         public IEnumerator BattleSceneReloadPreservesApplicationAndServiceOwners()
         {
-            yield return SceneManager.LoadSceneAsync("BattleScene", LoadSceneMode.Single);
-            yield return null;
-            yield return null;
-            yield return WaitForApplicationReady();
-
-            var application = GameObject.Find("[GameApplication]");
-            var services = GameObject.Find("[GameServices]");
-            var player = GameObject.Find("Player");
-            Assert.That(application, Is.Not.Null);
-            Assert.That(services, Is.Not.Null);
-            Assert.That(player, Is.Not.Null);
-
-            var applicationId = application.GetInstanceID();
-            var servicesId = services.GetInstanceID();
-            var playerId = player.GetInstanceID();
-            var serviceNames = new[]
+            var failures = new List<string>();
+            void CaptureFailure(string condition, string stackTrace, LogType type)
             {
-                "[MainThreadDispatcher]",
-                "[SceneTransitionManager]",
-                "[AudioManager]",
-                "[LoadingScreen]",
-                "[AchievementManager]"
-            };
-            var serviceIds = new Dictionary<string, int>();
-            foreach (var serviceName in serviceNames)
-            {
-                var serviceObject = GameObject.Find(serviceName);
-                Assert.That(serviceObject, Is.Not.Null, $"{serviceName} must be installed before reload.");
-                serviceIds.Add(serviceName, serviceObject.GetInstanceID());
+                if (type == LogType.Error || type == LogType.Exception || type == LogType.Assert)
+                {
+                    failures.Add($"{type}: {condition}\n{stackTrace}");
+                }
             }
 
-            yield return SceneManager.LoadSceneAsync("BattleScene", LoadSceneMode.Single);
-            yield return null;
-            yield return null;
-            yield return WaitForApplicationReady();
-
-            var reloadedServices = GameObject.Find("[GameServices]");
-            Assert.That(SceneManager.GetActiveScene().name, Is.EqualTo("BattleScene"));
-            Assert.That(FindAll("[GameApplication]").Count, Is.EqualTo(1));
-            Assert.That(FindAll("[GameServices]").Count, Is.EqualTo(1));
-            Assert.That(GameObject.Find("[GameApplication]").GetInstanceID(), Is.EqualTo(applicationId));
-            Assert.That(reloadedServices.GetInstanceID(), Is.EqualTo(servicesId));
-            Assert.That(GameObject.Find("Player").GetInstanceID(), Is.Not.EqualTo(playerId));
-            foreach (var serviceName in serviceNames)
+            Application.logMessageReceived += CaptureFailure;
+            var previousIgnoreFailingMessages = LogAssert.ignoreFailingMessages;
+            LogAssert.ignoreFailingMessages = true;
+            try
             {
-                var serviceObject = GameObject.Find(serviceName);
-                Assert.That(serviceObject, Is.Not.Null, $"{serviceName} must survive BattleScene reload.");
-                Assert.That(FindAll(serviceName).Count, Is.EqualTo(1),
-                    $"{serviceName} must remain unique after BattleScene reload.");
-                Assert.That(serviceObject.GetInstanceID(), Is.EqualTo(serviceIds[serviceName]),
-                    $"{serviceName} must preserve its installed instance across scene reload.");
-                Assert.That(serviceObject.transform.parent, Is.SameAs(reloadedServices.transform),
-                    $"{serviceName} must remain owned by the persistent service root.");
+                yield return SceneManager.LoadSceneAsync("BattleScene", LoadSceneMode.Single);
+                yield return null;
+                yield return null;
+                yield return WaitForApplicationReady();
 
-                var serviceComponent = serviceObject.GetComponents<Component>()
-                    .First(component => component != null && component.GetType().Name == serviceName.Trim('[', ']'));
-                var staticOwner = serviceComponent.GetType()
-                    .GetProperty("Instance", BindingFlags.Static | BindingFlags.Public)
-                    ?.GetValue(null);
-                Assert.That(staticOwner, Is.SameAs(serviceComponent),
-                    $"{serviceName}.Instance must remain bound to the surviving owner.");
+                var application = GameObject.Find("[GameApplication]");
+                var services = GameObject.Find("[GameServices]");
+                var player = GameObject.Find("Player");
+                Assert.That(application, Is.Not.Null);
+                Assert.That(services, Is.Not.Null);
+                Assert.That(player, Is.Not.Null);
+
+                var applicationId = application.GetInstanceID();
+                var servicesId = services.GetInstanceID();
+                var playerId = player.GetInstanceID();
+                var serviceNames = new[]
+                {
+                    "[MainThreadDispatcher]",
+                    "[SceneTransitionManager]",
+                    "[AudioManager]",
+                    "[LoadingScreen]",
+                    "[AchievementManager]"
+                };
+                var serviceIds = new Dictionary<string, int>();
+                foreach (var serviceName in serviceNames)
+                {
+                    var serviceObject = GameObject.Find(serviceName);
+                    Assert.That(serviceObject, Is.Not.Null, $"{serviceName} must be installed before reload.");
+                    serviceIds.Add(serviceName, serviceObject.GetInstanceID());
+                }
+
+                var setupType = GetApplicationComponent(application).GetType().Assembly.GetType("BattleSceneSetup");
+                var combatEventsType = setupType.Assembly.GetType("CombatEvents");
+                var inventoryType = setupType.Assembly.GetType("Inventory");
+                var inventory = inventoryType.GetProperty("Instance", BindingFlags.Static | BindingFlags.Public)
+                    .GetValue(null);
+                var expectedHandlerCounts = new Dictionary<string, int>
+                {
+                    { "OnHitLanded", 3 },
+                    { "OnDamageTaken", 1 },
+                    { "OnParrySuccess", 1 },
+                    { "OnPlayerDeath", 1 },
+                    { "OnEnemyDeath", 1 },
+                    { "Inventory.OnItemChanged", 1 }
+                };
+                var expectedPauseHandlerCounts = new Dictionary<string, int>
+                {
+                    { "OnBackToMenu", 1 },
+                    { "OnSettings", 1 }
+                };
+                var originalPauseHandlerCounts = GetPauseMenuHandlerCounts(
+                    setupType, expectedPauseHandlerCounts.Keys);
+                CollectionAssert.AreEquivalent(expectedPauseHandlerCounts, originalPauseHandlerCounts);
+                var originalHandlerCounts = GetBattleSceneHandlerCounts(
+                    setupType, combatEventsType, inventory, expectedHandlerCounts.Keys);
+                CollectionAssert.AreEquivalent(expectedHandlerCounts, originalHandlerCounts);
+
+                yield return SceneManager.LoadSceneAsync("BattleScene", LoadSceneMode.Single);
+                yield return null;
+                yield return null;
+                yield return WaitForApplicationReady();
+
+                var reloadedServices = GameObject.Find("[GameServices]");
+                Assert.That(SceneManager.GetActiveScene().name, Is.EqualTo("BattleScene"));
+                Assert.That(FindAll("[GameApplication]").Count, Is.EqualTo(1));
+                Assert.That(FindAll("[GameServices]").Count, Is.EqualTo(1));
+                Assert.That(GameObject.Find("[GameApplication]").GetInstanceID(), Is.EqualTo(applicationId));
+                Assert.That(reloadedServices.GetInstanceID(), Is.EqualTo(servicesId));
+                Assert.That(GameObject.Find("Player").GetInstanceID(), Is.Not.EqualTo(playerId));
+                foreach (var serviceName in serviceNames)
+                {
+                    var serviceObject = GameObject.Find(serviceName);
+                    Assert.That(serviceObject, Is.Not.Null, $"{serviceName} must survive BattleScene reload.");
+                    Assert.That(FindAll(serviceName).Count, Is.EqualTo(1),
+                        $"{serviceName} must remain unique after BattleScene reload.");
+                    Assert.That(serviceObject.GetInstanceID(), Is.EqualTo(serviceIds[serviceName]),
+                        $"{serviceName} must preserve its installed instance across scene reload.");
+                    Assert.That(serviceObject.transform.parent, Is.SameAs(reloadedServices.transform),
+                        $"{serviceName} must remain owned by the persistent service root.");
+
+                    var serviceComponent = serviceObject.GetComponents<Component>()
+                        .First(component => component != null && component.GetType().Name == serviceName.Trim('[', ']'));
+                    var staticOwner = serviceComponent.GetType()
+                        .GetProperty("Instance", BindingFlags.Static | BindingFlags.Public)
+                        ?.GetValue(null);
+                    Assert.That(staticOwner, Is.SameAs(serviceComponent),
+                        $"{serviceName}.Instance must remain bound to the surviving owner.");
+                }
+
+                foreach (var prohibitedTypeName in new[]
+                         {
+                             "NetworkClient",
+                             "LoginManager",
+                             "GameBootstrap",
+                             "ArchiveManager",
+                             "RankManager",
+                             "HeartbeatManager",
+                             "ReconnectionManager"
+                         })
+                {
+                    Assert.That(FindComponents(prohibitedTypeName), Is.Empty,
+                        $"BattleScene reload must not create {prohibitedTypeName} in Offline mode.");
+                }
+
+                var currentSetup = FindComponents("BattleSceneSetup").Single();
+                var reloadedHandlerCounts = GetBattleSceneHandlerCounts(
+                    setupType, combatEventsType, inventory, expectedHandlerCounts.Keys);
+                CollectionAssert.AreEquivalent(originalHandlerCounts, reloadedHandlerCounts,
+                    "BattleScene reload must not grow persistent publisher handler counts.");
+                var reloadedPauseHandlerCounts = GetPauseMenuHandlerCounts(
+                    setupType, expectedPauseHandlerCounts.Keys);
+                CollectionAssert.AreEquivalent(originalPauseHandlerCounts, reloadedPauseHandlerCounts,
+                    "BattleScene reload must not retain setup handlers on persistent pause menus.");
+                AssertCurrentBattleSceneHandlers(combatEventsType, null, setupType, currentSetup,
+                    expectedHandlerCounts.Keys.Where(name => !name.StartsWith("Inventory.")));
+                AssertCurrentBattleSceneHandlers(inventoryType, inventory, setupType, currentSetup,
+                    new[] { "OnItemChanged" });
+                foreach (var pauseMenu in FindComponents("PauseMenuUI"))
+                {
+                    AssertCurrentBattleSceneHandlers(pauseMenu.GetType(), pauseMenu, setupType, currentSetup,
+                        expectedPauseHandlerCounts.Keys);
+                }
+
+                var probeInvocations = 0;
+                Action<Vector3, int> probe = (position, damage) => probeInvocations++;
+                var hitLandedEvent = combatEventsType.GetEvent("OnHitLanded", BindingFlags.Static | BindingFlags.Public);
+                hitLandedEvent.AddEventHandler(null, probe);
+                try
+                {
+                    combatEventsType.GetMethod("InvokeHitLanded", BindingFlags.Static | BindingFlags.Public)
+                        .Invoke(null, new object[] { Vector3.zero, 0 });
+                    yield return null;
+                }
+                finally
+                {
+                    hitLandedEvent.RemoveEventHandler(null, probe);
+                }
+
+                Assert.That(probeInvocations, Is.EqualTo(1),
+                    "The safe hit signal must dispatch once through the current event list.");
+                Assert.That(failures, Is.Empty, string.Join("\n\n", failures));
             }
-
-            foreach (var prohibitedTypeName in new[]
-                     {
-                         "NetworkClient",
-                         "LoginManager",
-                         "GameBootstrap",
-                         "ArchiveManager",
-                         "RankManager",
-                         "HeartbeatManager",
-                         "ReconnectionManager"
-                     })
+            finally
             {
-                Assert.That(FindComponents(prohibitedTypeName), Is.Empty,
-                    $"BattleScene reload must not create {prohibitedTypeName} in Offline mode.");
+                LogAssert.ignoreFailingMessages = previousIgnoreFailingMessages;
+                Application.logMessageReceived -= CaptureFailure;
             }
         }
 
@@ -166,6 +251,105 @@ namespace Game.Tests.PlayMode
                 : applicationObject.GetComponents<Component>()
                     .FirstOrDefault(component => component != null && component.GetType().Name == "GameApplication");
             return application?.GetType().GetProperty("State")?.GetValue(application)?.ToString();
+        }
+
+        private static Component GetApplicationComponent(GameObject applicationObject)
+        {
+            return applicationObject.GetComponents<Component>()
+                .First(component => component != null && component.GetType().Name == "GameApplication");
+        }
+
+        private static Dictionary<string, int> GetBattleSceneHandlerCounts(
+            Type setupType,
+            Type combatEventsType,
+            object inventory,
+            IEnumerable<string> eventNames)
+        {
+            return eventNames.ToDictionary(
+                eventName => eventName,
+                eventName =>
+                {
+                    var isInventoryEvent = eventName.StartsWith("Inventory.", StringComparison.Ordinal);
+                    var publisherType = isInventoryEvent ? inventory.GetType() : combatEventsType;
+                    var publisher = isInventoryEvent ? inventory : null;
+                    var backingFieldName = isInventoryEvent ? eventName.Substring("Inventory.".Length) : eventName;
+                    return GetEventHandlers(publisherType, publisher, backingFieldName)
+                        .Count(handler => IsDeclaredBy(setupType, handler));
+                });
+        }
+
+        private static void AssertCurrentBattleSceneHandlers(
+            Type publisherType,
+            object publisher,
+            Type setupType,
+            Component currentSetup,
+            IEnumerable<string> eventNames)
+        {
+            foreach (var eventName in eventNames)
+            {
+                foreach (var handler in GetEventHandlers(publisherType, publisher, eventName)
+                             .Where(handler => IsDeclaredBy(setupType, handler)))
+                {
+                    AssertLiveSceneReference(handler.Target, currentSetup, eventName, "delegate target");
+                    if (handler.Target == null)
+                    {
+                        continue;
+                    }
+
+                    foreach (var field in handler.Target.GetType()
+                                 .GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                                 .Where(field => typeof(UnityEngine.Object).IsAssignableFrom(field.FieldType)))
+                    {
+                        AssertLiveSceneReference(field.GetValue(handler.Target), currentSetup, eventName, field.Name);
+                    }
+                }
+            }
+        }
+
+        private static Dictionary<string, int> GetPauseMenuHandlerCounts(
+            Type setupType,
+            IEnumerable<string> eventNames)
+        {
+            var pauseMenus = FindComponents("PauseMenuUI");
+            return eventNames.ToDictionary(
+                eventName => eventName,
+                eventName => pauseMenus.Sum(pauseMenu =>
+                    GetEventHandlers(pauseMenu.GetType(), pauseMenu, eventName)
+                        .Count(handler => IsDeclaredBy(setupType, handler))));
+        }
+
+        private static void AssertLiveSceneReference(
+            object value,
+            Component currentSetup,
+            string eventName,
+            string referenceName)
+        {
+            if (!(value is UnityEngine.Object unityObject) || ReferenceEquals(unityObject, null))
+            {
+                return;
+            }
+
+            Assert.That(unityObject != null, Is.True,
+                $"{eventName} {referenceName} must not reference a destroyed scene object.");
+            if (unityObject.GetType().Name == "BattleSceneSetup")
+            {
+                Assert.That(unityObject, Is.SameAs(currentSetup),
+                    $"{eventName} must target the current BattleSceneSetup.");
+            }
+        }
+
+        private static List<Delegate> GetEventHandlers(Type publisherType, object publisher, string eventName)
+        {
+            var bindingFlags = BindingFlags.NonPublic |
+                               (publisher == null ? BindingFlags.Static : BindingFlags.Instance);
+            var backingDelegate = publisherType.GetField(eventName, bindingFlags)?.GetValue(publisher) as Delegate;
+            return backingDelegate?.GetInvocationList().ToList() ?? new List<Delegate>();
+        }
+
+        private static bool IsDeclaredBy(Type ownerType, Delegate handler)
+        {
+            var declaringType = handler.Method.DeclaringType;
+            return declaringType == ownerType || declaringType?.DeclaringType == ownerType;
         }
 
         private static List<GameObject> FindAll(string objectName)

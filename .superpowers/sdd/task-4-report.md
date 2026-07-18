@@ -43,3 +43,13 @@
 
 - Unity licensing client 启动阶段仍有既有握手噪声，但随后成功取得 entitlement；最终 XML、退出码和 compile success marker 均正常，本任务未据此修改产品代码。
 - 本任务未执行手工可视化试玩，也未合并、推送或删除 worktree。
+
+## Review Important 修复：场景事件订阅生命周期
+
+- Review 发现 `BattleSceneSetup` 向静态 `CombatEvents` 注册 7 个匿名 handler，向持久 `Inventory.Instance.OnItemChanged` 注册 1 个匿名 handler，且没有解绑；实际代码复核还发现向 `DontDestroyOnLoad` 的 `PauseMenuUI` 注册了 `OnBackToMenu`、`OnSettings` 两个匿名 handler。
+- 新 focused reload 测试通过反射读取 event backing delegates，覆盖 `OnHitLanded`、`OnDamageTaken`、`OnParrySuccess`、`OnPlayerDeath`、`OnEnemyDeath`、`Inventory.OnItemChanged` 和两个 PauseMenu events；同时检查 handler 数量、当前 `BattleSceneSetup` owner、destroyed Unity scene reference，并用伤害值 `0` 的 `OnHitLanded` 安全信号探针验证单次派发。测试继续捕获 `Error`、`Exception`、`Assert` 日志。
+- Combat/Inventory RED：`Logs/A2-task4-review-events-red.xml`，focused reload `Failed 0/1`；初始场景替换后 `OnHitLanded` 为 `6`（期望 `3`），其余四个 CombatEvents 和 Inventory 均为 `2`（期望 `1`）。
+- PauseMenu RED：`Logs/A2-task4-review-pause-events-red.xml`，`OnBackToMenu`、`OnSettings` 均为 `2`（期望 `1`）。
+- 产品修复将 10 个订阅全部改为 named handlers，保存 publisher/target 并使用幂等订阅状态；`OnDestroy` 只对本 owner 的相同 delegate 逐一 `-=`，没有全局清空其他 listeners。
+- 首轮 GREEN 精确暴露 Unity 销毁顺序：Player effect component 已 fake-null，条件清理遗漏 ink/slash 两个 delegate，导致 `OnHitLanded` 为 `5`。最终改为在订阅组有效时无条件移除 named delegates，`Logs/A2-task4-review-events-green2.xml` 为 `Passed 1/1`。
+- 最终 focused：BattleScene reload/smoke `Passed 2/2`；service guard `Passed 1/1`。完整 EditMode `54/54`、PlayMode `9/9`、Pester `5/5`、asset integrity、`git diff --check`、fresh compile 全部通过；最终完整验证日志为 `Logs/A2-task4-review-verified-*`。
