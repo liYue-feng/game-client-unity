@@ -210,6 +210,50 @@ namespace Game.Tests.EditMode.Network
         }
 
         [Test]
+        public void ReentrantConnectFromDisconnectedHandlerKeepsNestedTransportActive()
+        {
+            using (var fixture = ControllerFixture.Create())
+            {
+                fixture.Controller.Connect(fixture.Settings.ServerUrl);
+                var first = fixture.Factory.LastTransport;
+                first.RaiseOpened();
+                fixture.Dispatcher.PumpAll();
+                fixture.Controller.BeginAuthentication();
+                fixture.Controller.MarkReady();
+
+                Action connectNested = () => fixture.Controller.Connect("ws://nested.example/ws");
+                fixture.Client.OnDisconnected += connectNested;
+                fixture.Controller.Connect("ws://outer.example/ws");
+                fixture.Client.OnDisconnected -= connectNested;
+
+                Assert.That(fixture.Factory.Created, Has.Count.EqualTo(3));
+                var outer = fixture.Factory.Created[1];
+                var nested = fixture.Factory.Created[2];
+                Assert.That(first.CloseCalls, Has.Count.EqualTo(1));
+                Assert.That(first.DisposeCalls, Is.EqualTo(1));
+                Assert.That(outer.CloseCalls, Has.Count.EqualTo(1));
+                Assert.That(outer.CloseCalls[0].Reason, Is.EqualTo("Connection replaced"));
+                Assert.That(outer.DisposeCalls, Is.EqualTo(1));
+                Assert.That(nested.CloseCalls, Is.Empty);
+                Assert.That(nested.DisposeCalls, Is.Zero);
+
+                first.RaiseClosed();
+                outer.RaiseClosed();
+                fixture.Dispatcher.PumpAll();
+
+                Assert.That(nested.CloseCalls, Is.Empty);
+                Assert.That(nested.DisposeCalls, Is.Zero);
+                Assert.That(fixture.Controller.State, Is.EqualTo(NetworkConnectionState.Connecting));
+                nested.RaiseOpened();
+                fixture.Dispatcher.PumpAll();
+                Assert.That(fixture.Controller.State, Is.EqualTo(NetworkConnectionState.Connected));
+                Assert.That(fixture.Client.Send(MsgID.HeartbeatReq, "{}"), Is.True);
+                Assert.That(outer.SentPayloads, Is.Empty);
+                Assert.That(nested.SentPayloads, Has.Count.EqualTo(1));
+            }
+        }
+
+        [Test]
         public void HeartbeatUsesConfiguredCadenceOnlyInConnectedAuthenticationAndReady()
         {
             using (var fixture = ControllerFixture.Create(heartbeat: 3f, timeout: 31f))

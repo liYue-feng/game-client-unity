@@ -65,10 +65,6 @@ namespace Game.Network
             if (_transport != null)
             {
                 CloseAndDisposeTransport(1000, "Connection replaced");
-                if (replacingOpenTransport)
-                {
-                    _client.NotifyDisconnected();
-                }
             }
 
             _url = url;
@@ -90,6 +86,10 @@ namespace Game.Network
             transport.Error += message =>
                 _dispatcher.Enqueue(() => HandleError(callbackGeneration, message));
             transport.ConnectAsync();
+            if (replacingOpenTransport)
+            {
+                _client.NotifyDisconnected();
+            }
         }
 
         public void Disconnect()
