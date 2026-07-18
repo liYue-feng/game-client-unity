@@ -579,7 +579,7 @@ git log -4 --oneline
 
 Expected: no uncommitted tracked files; the three A1 commits are present after the design commit.
 
-- [ ] **Step 5: Push and verify the remote**
+- [x] **Step 5: Push and verify the remote**
 
 ```powershell
 git push origin HEAD
