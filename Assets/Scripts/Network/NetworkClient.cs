@@ -1,458 +1,386 @@
-// NetworkClient.cs — WebSocket 网络客户端
-//
-// 这是客户端与服务器的唯一通信入口，负责：
-//   1. 建立/维护 WebSocket 长连接
-//   2. 二进制帧的发送和接收
-//   3. 消息路由（按 MsgID 分发到对应的回调）
-//   4. 心跳保活（每30秒发送一次心跳请求）
-//   5. 断线自动重连
-//
-// 使用方式：
-//   // 获取单例
-//   var client = NetworkClient.Instance;
-//
-//   // 注册消息监听
-//   client.On<LoginResp>(MsgID.LoginResp, resp => {
-//       Debug.Log($"登录成功: uid={resp.uid}");
-//   });
-//
-//   // 连接服务器
-//   client.Connect("ws://localhost:8080/ws");
-//
-//   // 发送消息
-//   client.Send(MsgID.LoginReq, new LoginReq { code = "wx_code" });
-//
-// 设计模式：
-//   - 单例模式：全局唯一，任何脚本都可以方便地访问
-//   - 观察者模式：On<T>() 注册监听，收到消息时自动回调
-//   - 为什么不用事件总线？因为网络消息是唯一的来源，不需要额外的解耦层
-
 using System;
-using System.Collections;
 using System.Collections.Generic;
-using System.Text;
 using Game.Protocol;
 using UnityEngine;
-using WebSocketSharp;
 
 namespace Game.Network
 {
-    /// <summary>
-    /// 网络客户端 —— 与 Go 游戏服务器的 WebSocket 通信
-    /// </summary>
-    public class NetworkClient : MonoBehaviour
+    public sealed class NetworkClient : IDisposable
     {
-        // ========== 单例 ==========
-        private static NetworkClient _instance;
-        public static NetworkClient Instance
-        {
-            get
-            {
-                if (_instance == null)
-                {
-                    // 自动创建 GameObject，确保场景切换时不丢失
-                    var go = new GameObject("[NetworkClient]");
-                    DontDestroyOnLoad(go);
-                    _instance = go.AddComponent<NetworkClient>();
-                }
-                return _instance;
-            }
-        }
+        private static NetworkClient _facade = new NetworkClient();
+        private static NetworkClient _registeredInstance;
 
-        // ========== 配置 ==========
-        [Header("服务器配置")]
-        [Tooltip("WebSocket 服务器地址")]
-        public string serverUrl = "ws://localhost:8080/ws";
+        private readonly Dictionary<ushort, List<Subscription>> _handlers =
+            new Dictionary<ushort, List<Subscription>>();
 
-        [Tooltip("心跳间隔（秒）")]
-        public float heartbeatInterval = 30f;
-
-        [Tooltip("是否自动重连")]
-        public bool autoReconnect = true;
-
-        [Tooltip("重连间隔（秒）")]
-        public float reconnectInterval = 5f;
-
-        [Tooltip("最大重连次数")]
-        public int maxReconnectAttempts = 5;
-
-        // ========== 状态 ==========
-        /// <summary>是否已连接</summary>
-        public bool IsConnected => _ws != null && _ws.IsAlive;
-
-        /// <summary>是否已登录</summary>
-        public bool IsLoggedIn => _uid > 0;
-
-        /// <summary>当前用户ID</summary>
-        public long UID => _uid;
-
-        /// <summary>会话令牌</summary>
-        public string Token => _token;
-
+        private INetworkConnectionGateway _connectionGateway = NoOpNetworkConnectionGateway.Instance;
+        private IWebSocketTransport _transport;
         private long _uid;
         private string _token;
-        private WebSocket _ws;
-        private float _heartbeatTimer;
-        private int _reconnectAttempts;
-        private bool _intentionalClose; // 是否主动关闭（主动关闭不自动重连）
+        private bool _disposed;
 
-        // ========== 消息回调 ==========
-        // key = MsgID, value = 回调列表
-        // 为什么用 List<Action<string>> 而不是单个 Action？
-        //   因为同一个消息可能有多个监听者（如 UI 和数据层都监听登录响应）
-        private Dictionary<ushort, List<Action<string>>> _handlers = new Dictionary<ushort, List<Action<string>>>();
+        public static NetworkClient Instance => _registeredInstance ?? _facade;
 
-        // ========== 事件 ==========
-        /// <summary>连接成功事件</summary>
+        public static void RegisterInstance(NetworkClient client)
+        {
+            if (client == null)
+            {
+                throw new ArgumentNullException(nameof(client));
+            }
+
+            if (ReferenceEquals(_registeredInstance, client))
+            {
+                return;
+            }
+
+            _facade.MoveActiveSubscriptionsTo(client);
+            _registeredInstance = client;
+        }
+
+        public static void UnregisterInstance(NetworkClient client)
+        {
+            if (ReferenceEquals(_registeredInstance, client))
+            {
+                _registeredInstance = null;
+            }
+        }
+
+        public static void ResetStaticState()
+        {
+            var registeredInstance = _registeredInstance;
+            _registeredInstance = null;
+            registeredInstance?.Dispose();
+
+            _facade.Dispose();
+            _facade = new NetworkClient();
+        }
+
+        public NetworkConnectionState ConnectionState => _connectionGateway.State;
+
+        public bool IsConnected => _connectionGateway.IsConnected;
+
+        public bool IsLoggedIn => _uid > 0;
+
+        public long UID => _uid;
+
+        public string Token => _token;
+
+        public string serverUrl { get; set; } = "ws://localhost:8080/ws";
+
         public event Action OnConnected;
 
-        /// <summary>连接断开事件</summary>
         public event Action OnDisconnected;
 
-        /// <summary>连接错误事件</summary>
         public event Action<string> OnError;
 
-        // ========== 生命周期 ==========
-
-        private void Awake()
+        public void BindConnectionGateway(INetworkConnectionGateway gateway)
         {
-            // 确保单例唯一
-            if (_instance != null && _instance != this)
+            if (gateway == null)
             {
-                Destroy(gameObject);
-                return;
+                throw new ArgumentNullException(nameof(gateway));
             }
-            _instance = this;
-            DontDestroyOnLoad(gameObject);
+
+            if (!ReferenceEquals(_connectionGateway, NoOpNetworkConnectionGateway.Instance) &&
+                !ReferenceEquals(_connectionGateway, gateway))
+            {
+                throw new InvalidOperationException("A different network connection gateway is already bound.");
+            }
+
+            _connectionGateway = gateway;
         }
 
-        private void Update()
+        public void UnbindConnectionGateway(INetworkConnectionGateway gateway)
         {
-            if (!IsConnected) return;
-
-            // 心跳定时器
-            _heartbeatTimer += Time.deltaTime;
-            if (_heartbeatTimer >= heartbeatInterval)
+            if (ReferenceEquals(_connectionGateway, gateway))
             {
-                _heartbeatTimer = 0f;
-                SendHeartbeat();
+                _connectionGateway = NoOpNetworkConnectionGateway.Instance;
             }
         }
 
-        private void OnDestroy()
+        public IDisposable On<T>(ushort msgId, Action<T> handler)
         {
-            Disconnect();
-        }
-
-        private void OnApplicationPause(bool pauseStatus)
-        {
-            // 应用切到后台时，WebSocket 可能被系统断开
-            // 回到前台时尝试重连
-            if (!pauseStatus && !IsConnected && autoReconnect)
+            Action<string> wrapper = body =>
             {
-                StartCoroutine(TryReconnect());
-            }
-        }
-
-        // ========== 连接管理 ==========
-
-        /// <summary>
-        /// 连接服务器
-        /// </summary>
-        public void Connect(string url = null)
-        {
-            if (IsConnected) return;
-
-            if (!string.IsNullOrEmpty(url))
-                serverUrl = url;
-
-            Debug.Log($"[NetworkClient] 连接服务器: {serverUrl}");
-            _intentionalClose = false;
-
-            _ws = new WebSocket(serverUrl);
-
-            // 注册事件
-            _ws.OnOpen += OnWsOpen;
-            _ws.OnMessage += OnWsMessage;
-            _ws.OnClose += OnWsClose;
-            _ws.OnError += OnWsError;
-
-            // 异步连接
-            _ws.ConnectAsync();
-        }
-
-        /// <summary>
-        /// 断开连接
-        /// </summary>
-        public void Disconnect()
-        {
-            _intentionalClose = true;
-            if (_ws != null && _ws.IsAlive)
-            {
-                _ws.Close(CloseStatusCode.Normal, "客户端主动断开");
-            }
-        }
-
-        /// <summary>
-        /// 尝试重连
-        /// </summary>
-        private IEnumerator TryReconnect()
-        {
-            while (!IsConnected && _reconnectAttempts < maxReconnectAttempts)
-            {
-                _reconnectAttempts++;
-                Debug.Log($"[NetworkClient] 重连中... 第 {_reconnectAttempts}/{maxReconnectAttempts} 次");
-
-                Connect();
-                yield return new WaitForSeconds(reconnectInterval);
-            }
-
-            if (!IsConnected)
-            {
-                Debug.LogError("[NetworkClient] 重连失败，已达最大重试次数");
-                OnError?.Invoke("连接服务器失败，请检查网络后重试");
-            }
-
-            _reconnectAttempts = 0;
-        }
-
-        // ========== WebSocket 事件处理 ==========
-
-        private void OnWsOpen(object sender, EventArgs e)
-        {
-            Debug.Log("[NetworkClient] 连接成功");
-            _reconnectAttempts = 0;
-            _heartbeatTimer = 0f;
-            OnConnected?.Invoke();
-        }
-
-        private void OnWsMessage(object sender, MessageEventArgs e)
-        {
-            // 只处理二进制消息（我们的协议是二进制帧）
-            if (!e.IsBinary)
-            {
-                Debug.LogWarning("[NetworkClient] 收到非二进制消息，已忽略");
-                return;
-            }
-
-            // 解码消息
-            if (!Codec.TryDecode(e.RawData, out ushort msgID, out string body))
-            {
-                Debug.LogError("[NetworkClient] 消息解码失败");
-                return;
-            }
-
-            // 分发消息到注册的回调
-            // 为什么在主线程执行？因为 Unity 的 API 大多不是线程安全的，
-            // WebSocket 的消息回调在工作线程，需要切回主线程
-            MainThreadDispatcher.Enqueue(() =>
-            {
-                DispatchMessage(msgID, body);
-            });
-        }
-
-        private void OnWsClose(object sender, CloseEventArgs e)
-        {
-            Debug.Log($"[NetworkClient] 连接断开: code={e.Code} reason={e.Reason}");
-            _uid = 0;
-            _token = null;
-            OnDisconnected?.Invoke();
-
-            // 非主动关闭时自动重连
-            if (!_intentionalClose && autoReconnect)
-            {
-                StartCoroutine(TryReconnect());
-            }
-        }
-
-        private void OnWsError(object sender, ErrorEventArgs e)
-        {
-            Debug.LogError($"[NetworkClient] 连接错误: {e.Message}");
-            OnError?.Invoke(e.Message);
-        }
-
-        // ========== 消息发送 ==========
-
-        /// <summary>
-        /// 发送消息（泛型版本，自动序列化）
-        /// </summary>
-        public void Send<T>(ushort msgID, T payload)
-        {
-            if (!IsConnected)
-            {
-                Debug.LogWarning("[NetworkClient] 未连接，消息发送失败");
-                return;
-            }
-
-            byte[] frame = Codec.Encode(msgID, payload);
-            _ws.Send(frame);
-        }
-
-        /// <summary>
-        /// 发送消息（原始JSON字符串）
-        /// </summary>
-        public void Send(ushort msgID, string jsonBody)
-        {
-            if (!IsConnected)
-            {
-                Debug.LogWarning("[NetworkClient] 未连接，消息发送失败");
-                return;
-            }
-
-            byte[] frame = Codec.Encode(msgID, jsonBody);
-            _ws.Send(frame);
-        }
-
-        /// <summary>
-        /// 发送心跳
-        /// </summary>
-        private void SendHeartbeat()
-        {
-            var req = new HeartbeatReq
-            {
-                timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
-            };
-            Send(MsgID.HeartbeatReq, req);
-        }
-
-        // ========== 消息监听 ==========
-
-        /// <summary>
-        /// 注册消息监听（泛型版本，自动反序列化）
-        ///
-        /// 使用方式：
-        ///   client.On<LoginResp>(MsgID.LoginResp, resp => {
-        ///       Debug.Log($"登录成功: uid={resp.uid}");
-        ///   });
-        /// </summary>
-        public void On<T>(ushort msgID, Action<T> handler)
-        {
-            if (!_handlers.ContainsKey(msgID))
-            {
-                _handlers[msgID] = new List<Action<string>>();
-            }
-
-            // 包装：收到 JSON 字符串后，反序列化再调用 handler
-            _handlers[msgID].Add(body =>
-            {
+                T payload;
                 try
                 {
-                    T payload = JsonUtility.FromJson<T>(body);
-                    handler?.Invoke(payload);
+                    payload = JsonUtility.FromJson<T>(body);
                 }
-                catch (Exception ex)
+                catch (Exception exception)
                 {
-                    Debug.LogError($"[NetworkClient] 消息反序列化失败: msgID={msgID} error={ex.Message}");
+                    Debug.LogError(
+                        $"[NetworkClient] Failed to deserialize message {msgId} as {typeof(T).Name}: {exception.Message}");
+                    return;
                 }
-            });
+
+                handler?.Invoke(payload);
+            };
+
+            return AddSubscription(msgId, wrapper);
         }
 
-        /// <summary>
-        /// 注册消息监听（原始JSON字符串版本）
-        /// 适用于不需要反序列化的场景（如日志、转发）
-        /// </summary>
-        public void On(ushort msgID, Action<string> handler)
+        public IDisposable On(ushort msgId, Action<string> handler)
         {
-            if (!_handlers.ContainsKey(msgID))
+            return AddSubscription(msgId, handler);
+        }
+
+        public bool Send<T>(ushort msgId, T payload)
+        {
+            var transport = _transport;
+            if (transport == null || !transport.IsAlive)
             {
-                _handlers[msgID] = new List<Action<string>>();
+                LogDisconnectedSend(msgId);
+                return false;
             }
-            _handlers[msgID].Add(handler);
+
+            transport.Send(Codec.Encode(msgId, payload));
+            return true;
         }
 
-        /// <summary>
-        /// 移除消息监听
-        /// </summary>
-        public void Off(ushort msgID, Action<string> handler)
+        public bool Send(ushort msgId, string jsonBody)
         {
-            if (_handlers.ContainsKey(msgID))
+            var transport = _transport;
+            if (transport == null || !transport.IsAlive)
             {
-                _handlers[msgID].Remove(handler);
+                LogDisconnectedSend(msgId);
+                return false;
             }
+
+            transport.Send(Codec.Encode(msgId, jsonBody));
+            return true;
         }
 
-        // ========== 消息分发 ==========
-
-        private void DispatchMessage(ushort msgID, string body)
+        public void Connect(string url = null)
         {
-            // 特殊处理：错误消息
-            if (msgID == MsgID.Error)
+            if (!string.IsNullOrEmpty(url))
             {
-                var err = JsonUtility.FromJson<ErrorResp>(body);
-                Debug.LogWarning($"[NetworkClient] 服务器错误: code={err.code} msg={err.msg}");
-                HandleError(err);
+                serverUrl = url;
+            }
+
+            _connectionGateway.Connect(serverUrl);
+        }
+
+        public void Disconnect()
+        {
+            _connectionGateway.Disconnect();
+        }
+
+        public void ReceiveFrame(byte[] frame)
+        {
+            if (!Codec.TryDecode(frame, out var msgId, out var body))
+            {
+                Debug.LogWarning("[NetworkClient] Dropped malformed frame.");
                 return;
             }
 
-            // 分发到注册的回调
-            if (_handlers.TryGetValue(msgID, out var handlers))
+            if (!_handlers.TryGetValue(msgId, out var handlers))
             {
-                // 复制一份再遍历，防止回调中修改列表
-                var handlersCopy = new List<Action<string>>(handlers);
-                foreach (var handler in handlersCopy)
+                return;
+            }
+
+            var snapshot = handlers.ToArray();
+            foreach (var subscription in snapshot)
+            {
+                if (!subscription.IsActive)
                 {
-                    try
-                    {
-                        handler.Invoke(body);
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.LogError($"[NetworkClient] 消息处理异常: msgID={msgID} error={ex.Message}");
-                    }
+                    continue;
+                }
+
+                try
+                {
+                    subscription.Handler?.Invoke(body);
+                }
+                catch (Exception exception)
+                {
+                    Debug.LogError($"[NetworkClient] Message handler failed for {msgId}: {exception.Message}");
                 }
             }
-            else
-            {
-                Debug.LogWarning($"[NetworkClient] 未注册的消息ID: {msgID}");
-            }
         }
 
-        /// <summary>
-        /// 处理服务器错误响应
-        /// 根据错误码展示对应的提示
-        /// </summary>
-        private void HandleError(ErrorResp err)
+        public void SetTransport(IWebSocketTransport transport)
         {
-            switch (err.code)
-            {
-                case ErrCode.Unauthorized:
-                case ErrCode.LoginTokenExpired:
-                    Debug.Log("[NetworkClient] 会话过期，需要重新登录");
-                    _uid = 0;
-                    _token = null;
-                    // TODO: 跳转到登录界面
-                    break;
-
-                case ErrCode.TooFrequent:
-                    Debug.Log("[NetworkClient] 请求过于频繁");
-                    // TODO: 显示提示 "操作过于频繁，请稍后再试"
-                    break;
-
-                default:
-                    Debug.Log($"[NetworkClient] 服务器错误: {err.msg}");
-                    break;
-            }
+            _transport = transport;
         }
 
-        // ========== 登录状态管理 ==========
-
-        /// <summary>
-        /// 设置登录信息（登录成功后调用）
-        /// </summary>
         public void SetLoginInfo(long uid, string token)
         {
             _uid = uid;
             _token = token;
-            Debug.Log($"[NetworkClient] 登录状态已更新: uid={uid}");
         }
 
-        /// <summary>
-        /// 清除登录信息（登出时调用）
-        /// </summary>
         public void ClearLoginInfo()
         {
             _uid = 0;
             _token = null;
+        }
+
+        public void Dispose()
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+            foreach (var handlers in _handlers.Values)
+            {
+                foreach (var subscription in handlers)
+                {
+                    subscription.Invalidate(this);
+                }
+            }
+
+            _handlers.Clear();
+            ClearLoginInfo();
+            _transport = null;
+            _connectionGateway = NoOpNetworkConnectionGateway.Instance;
+            OnConnected = null;
+            OnDisconnected = null;
+            OnError = null;
+        }
+
+        internal void NotifyConnected()
+        {
+            OnConnected?.Invoke();
+        }
+
+        internal void NotifyDisconnected()
+        {
+            OnDisconnected?.Invoke();
+        }
+
+        internal void NotifyError(string message)
+        {
+            OnError?.Invoke(message);
+        }
+
+        private IDisposable AddSubscription(ushort msgId, Action<string> handler)
+        {
+            if (_disposed)
+            {
+                throw new ObjectDisposedException(nameof(NetworkClient));
+            }
+
+            if (!_handlers.TryGetValue(msgId, out var handlers))
+            {
+                handlers = new List<Subscription>();
+                _handlers.Add(msgId, handlers);
+            }
+
+            var subscription = new Subscription(this, msgId, handler);
+            handlers.Add(subscription);
+            return subscription;
+        }
+
+        private void Remove(Subscription subscription)
+        {
+            if (!_handlers.TryGetValue(subscription.MsgId, out var handlers))
+            {
+                return;
+            }
+
+            handlers.Remove(subscription);
+            if (handlers.Count == 0)
+            {
+                _handlers.Remove(subscription.MsgId);
+            }
+        }
+
+        private void MoveActiveSubscriptionsTo(NetworkClient destination)
+        {
+            if (ReferenceEquals(this, destination))
+            {
+                return;
+            }
+
+            foreach (var pair in _handlers)
+            {
+                foreach (var subscription in pair.Value)
+                {
+                    if (!subscription.IsActive)
+                    {
+                        continue;
+                    }
+
+                    destination.AddSubscription(subscription);
+                    subscription.MoveTo(destination);
+                }
+            }
+
+            _handlers.Clear();
+        }
+
+        private void AddSubscription(Subscription subscription)
+        {
+            if (_disposed)
+            {
+                throw new ObjectDisposedException(nameof(NetworkClient));
+            }
+
+            if (!_handlers.TryGetValue(subscription.MsgId, out var handlers))
+            {
+                handlers = new List<Subscription>();
+                _handlers.Add(subscription.MsgId, handlers);
+            }
+
+            if (!handlers.Contains(subscription))
+            {
+                handlers.Add(subscription);
+            }
+        }
+
+        private static void LogDisconnectedSend(ushort msgId)
+        {
+            Debug.LogWarning(
+                $"[NetworkClient] Send dropped because transport is disconnected. msgId={msgId}");
+        }
+
+        private sealed class Subscription : IDisposable
+        {
+            private NetworkClient _owner;
+
+            internal Subscription(NetworkClient owner, ushort msgId, Action<string> handler)
+            {
+                _owner = owner;
+                MsgId = msgId;
+                Handler = handler;
+                IsActive = true;
+            }
+
+            internal ushort MsgId { get; }
+
+            internal Action<string> Handler { get; }
+
+            internal bool IsActive { get; private set; }
+
+            public void Dispose()
+            {
+                if (!IsActive)
+                {
+                    return;
+                }
+
+                IsActive = false;
+                var owner = _owner;
+                _owner = null;
+                owner?.Remove(this);
+            }
+
+            internal void Invalidate(NetworkClient owner)
+            {
+                if (!ReferenceEquals(_owner, owner))
+                {
+                    return;
+                }
+
+                IsActive = false;
+                _owner = null;
+            }
+
+            internal void MoveTo(NetworkClient owner)
+            {
+                _owner = owner;
+            }
         }
     }
 }

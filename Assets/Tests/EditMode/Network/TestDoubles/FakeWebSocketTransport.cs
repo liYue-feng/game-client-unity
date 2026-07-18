@@ -15,15 +15,15 @@ namespace Game.Tests.EditMode.Network.TestDoubles
 
         public List<NetworkCloseInfo> CloseCalls { get; } = new List<NetworkCloseInfo>();
 
-        public int ConnectAsyncCalls { get; private set; }
+        public int ConnectCalls { get; private set; }
 
         public int DisposeCalls { get; private set; }
 
-        public bool IsAlive { get; set; }
+        public bool IsAlive { get; private set; }
 
         public void ConnectAsync()
         {
-            ConnectAsyncCalls++;
+            ConnectCalls++;
         }
 
         public void Send(byte[] payload)
@@ -33,6 +33,7 @@ namespace Game.Tests.EditMode.Network.TestDoubles
 
         public void Close(ushort code, string reason)
         {
+            IsAlive = false;
             CloseCalls.Add(new NetworkCloseInfo(code, reason));
         }
 
@@ -43,6 +44,7 @@ namespace Game.Tests.EditMode.Network.TestDoubles
 
         public void RaiseOpened()
         {
+            IsAlive = true;
             Opened?.Invoke();
         }
 
@@ -53,6 +55,7 @@ namespace Game.Tests.EditMode.Network.TestDoubles
 
         public void RaiseClosed(ushort code = 1006, string reason = "closed")
         {
+            IsAlive = false;
             Closed?.Invoke(new NetworkCloseInfo(code, reason));
         }
 
