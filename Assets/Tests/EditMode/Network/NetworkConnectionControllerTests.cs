@@ -153,6 +153,63 @@ namespace Game.Tests.EditMode.Network
         }
 
         [Test]
+        public void ConnectWhileConnectingReplacesAndDisposesPreviousTransport()
+        {
+            using (var fixture = ControllerFixture.Create())
+            {
+                var disconnected = 0;
+                fixture.Client.OnDisconnected += () => disconnected++;
+                fixture.Controller.Connect(fixture.Settings.ServerUrl);
+                var first = fixture.Factory.LastTransport;
+
+                fixture.Controller.Connect(fixture.Settings.ServerUrl);
+
+                Assert.That(first.CloseCalls, Has.Count.EqualTo(1));
+                Assert.That(first.CloseCalls[0].Code, Is.EqualTo(1000));
+                Assert.That(first.CloseCalls[0].Reason, Is.EqualTo("Connection replaced"));
+                Assert.That(first.DisposeCalls, Is.EqualTo(1));
+                Assert.That(disconnected, Is.Zero);
+                Assert.That(fixture.Factory.Created.Count, Is.EqualTo(2));
+                Assert.That(fixture.Factory.LastTransport.ConnectCalls, Is.EqualTo(1));
+                Assert.That(fixture.Controller.State, Is.EqualTo(NetworkConnectionState.Connecting));
+            }
+        }
+
+        [Test]
+        public void ConnectWhileReadyNotifiesDisconnectAndIgnoresReplacedTransportCallbacks()
+        {
+            using (var fixture = ControllerFixture.Create())
+            {
+                var disconnected = 0;
+                var messages = 0;
+                fixture.Client.OnDisconnected += () => disconnected++;
+                fixture.Client.On(MsgID.HeartbeatResp, _ => messages++);
+                fixture.Controller.Connect(fixture.Settings.ServerUrl);
+                var first = fixture.Factory.LastTransport;
+                first.RaiseOpened();
+                fixture.Dispatcher.PumpAll();
+                fixture.Controller.BeginAuthentication();
+                fixture.Controller.MarkReady();
+
+                fixture.Controller.Connect("ws://replacement.example/ws");
+                first.RaiseOpened();
+                first.RaiseMessage(Codec.Encode(MsgID.HeartbeatResp, "{}"));
+                first.RaiseClosed();
+                first.RaiseError("stale error");
+                fixture.Dispatcher.PumpAll();
+
+                Assert.That(first.CloseCalls, Has.Count.EqualTo(1));
+                Assert.That(first.CloseCalls[0].Code, Is.EqualTo(1000));
+                Assert.That(first.CloseCalls[0].Reason, Is.EqualTo("Connection replaced"));
+                Assert.That(first.DisposeCalls, Is.EqualTo(1));
+                Assert.That(disconnected, Is.EqualTo(1));
+                Assert.That(messages, Is.Zero);
+                Assert.That(fixture.Factory.Created.Count, Is.EqualTo(2));
+                Assert.That(fixture.Controller.State, Is.EqualTo(NetworkConnectionState.Connecting));
+            }
+        }
+
+        [Test]
         public void HeartbeatUsesConfiguredCadenceOnlyInConnectedAuthenticationAndReady()
         {
             using (var fixture = ControllerFixture.Create(heartbeat: 3f, timeout: 31f))

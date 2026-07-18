@@ -60,10 +60,20 @@ namespace Game.Network
                 _nextBackoffSeconds = _settings.InitialReconnectBackoffSeconds;
             }
 
+            var replacingOpenTransport = _transport != null && IsConnected;
+            _generation++;
+            if (_transport != null)
+            {
+                CloseAndDisposeTransport(1000, "Connection replaced");
+                if (replacingOpenTransport)
+                {
+                    _client.NotifyDisconnected();
+                }
+            }
+
             _url = url;
             _intentionalClose = false;
             _terminalHandledForGeneration = false;
-            _generation++;
             var callbackGeneration = _generation;
             var transport = _factory.Create(url);
             _transport = transport;
