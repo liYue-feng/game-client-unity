@@ -44,7 +44,6 @@ public class WaveSpawner : MonoBehaviour
     private void RegisterPools()
     {
         if (_poolsRegistered) return;
-        _poolsRegistered = true;
 
         // 收集波次配置中所有用到的敌人类型
         var types = new HashSet<string>();
@@ -61,10 +60,15 @@ public class WaveSpawner : MonoBehaviour
             }
         }
 
+        // 动态添加组件时 Awake 早于外部配置，不能把空配置标记为已注册。
+        if (types.Count == 0) return;
+
         foreach (var type in types)
         {
             ObjectPool.Instance.Register(type, () => CreateEnemy(type), poolSizePerType);
         }
+
+        _poolsRegistered = true;
     }
 
     /// <summary>创建敌人（由 ObjectPool 调用）</summary>

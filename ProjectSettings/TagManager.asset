@@ -2,42 +2,46 @@
 %TAG !u! tag:unity3d.com,2011:
 --- !u!78 &1
 TagManager:
-  m_ObjectHideFlags: 0
   serializedVersion: 2
-  tags: []
+  tags:
+  - Player
+  - Enemy
+  - PlayerProjectile
+  - EnemyProjectile
+  - ParryZone
   layers:
   - Default
   - TransparentFX
   - Ignore Raycast
-  -
+  - ''
   - Water
   - UI
-  -
-  -
+  - ''
+  - ''
   - Ground
   - Enemy
   - Player
   - Projectile
-  -
-  -
-  -
-  -
-  -
-  -
-  -
-  -
-  -
-  -
-  -
-  -
-  -
-  -
-  -
-  -
-  -
-  -
-  -
-  -
+  - ''
+  - ''
+  - ''
+  - ''
+  - ''
+  - ''
+  - ''
+  - ''
+  - ''
+  - ''
+  - ''
+  - ''
+  - ''
+  - ''
+  - ''
+  - ''
+  - ''
+  - ''
+  - ''
+  - ''
   m_SortingLayers:
   - name: Default
     uniqueID: 0

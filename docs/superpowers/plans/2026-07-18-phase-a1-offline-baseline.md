@@ -32,8 +32,8 @@
 - `Assets/Resources/Sounds.meta`: Assign a unique directory GUID.
 - `Assets/Resources/Sprites/Characters.meta`: Assign a unique directory GUID.
 - `Assets/Scripts/Game/Weapons.meta`: Assign a unique directory GUID.
-- `Packages/manifest.json`: Promote Unity Test Framework 1.1.33 to a direct project dependency.
-- `Packages/packages-lock.json`: Change Unity Test Framework dependency depth from 3 to 0.
+- `Packages/manifest.json`: Promote Unity Test Framework 1.1.33 to a direct project dependency and remove the unused Input System package that blocks PlayMode startup.
+- `Packages/packages-lock.json`: Resolve the direct test dependency and remove the unused Input System dependency graph.
 - `Assets/Tests/PlayMode/Game.PlayModeTests.asmdef`: PlayMode test assembly independent of the predefined gameplay assembly.
 - `Assets/Tests/PlayMode/BattleSceneOfflineSmokeTests.cs`: Loads the real scene and checks the offline battle object graph by GameObject name.
 - `Assets/Tests.meta`, `Assets/Tests/PlayMode.meta`, and the two test-file `.meta` files: Unity-generated identities created during the successful import preflight.
@@ -53,7 +53,7 @@
 - Produces: `Test-UnityAssetIntegrity -ProjectRoot <string>` returning an object with `IsValid`, `DuplicateGuids`, `InvalidScriptReferences`, and `MissingBuildScenes`.
 - Produces: `tools/validation/Test-UnityAssetIntegrity.ps1 -ProjectRoot <path>` with exit code 0 for a valid project and 1 for integrity failures.
 
-- [ ] **Step 1: Write the failing Pester tests**
+- [x] **Step 1: Write the failing Pester tests**
 
 Create `tools/validation/UnityAssetIntegrity.Tests.ps1`:
 
@@ -118,7 +118,7 @@ Describe 'Test-UnityAssetIntegrity' {
 }
 ```
 
-- [ ] **Step 2: Run the tests and verify RED**
+- [x] **Step 2: Run the tests and verify RED**
 
 Run:
 
@@ -128,7 +128,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "Import-Module Pester; In
 
 Expected: FAIL during `Import-Module` because `UnityAssetIntegrity.psm1` does not exist.
 
-- [ ] **Step 3: Implement the minimum scanner**
+- [x] **Step 3: Implement the minimum scanner**
 
 Create `tools/validation/UnityAssetIntegrity.psm1`:
 
@@ -241,13 +241,13 @@ Write-Output 'Unity asset integrity check passed.'
 exit 0
 ```
 
-- [ ] **Step 4: Run the tests and verify GREEN**
+- [x] **Step 4: Run the tests and verify GREEN**
 
 Run the same Pester command from Step 2.
 
 Expected: `Tests Passed: 4, Failed: 0` and process exit code 0.
 
-- [ ] **Step 5: Validate script formatting and commit**
+- [x] **Step 5: Validate script formatting and commit**
 
 Run:
 
@@ -273,7 +273,7 @@ Expected: commit succeeds with only the three validation files.
 - Consumes: `tools/validation/Test-UnityAssetIntegrity.ps1` from Task 1.
 - Produces: A project with unique asset GUIDs and one valid `BattleSceneSetup` script reference.
 
-- [ ] **Step 1: Run the repository validator and verify RED**
+- [x] **Step 1: Run the repository validator and verify RED**
 
 Run:
 
@@ -283,7 +283,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/validation/Test-UnityA
 
 Expected: exit code 1. Output reports duplicate GUID `a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6` and an invalid `m_Script` reference in `Assets/Scenes/BattleScene.unity:259`.
 
-- [ ] **Step 2: Replace the duplicate directory GUIDs**
+- [x] **Step 2: Replace the duplicate directory GUIDs**
 
 Set the `guid:` line in each file to the exact value below:
 
@@ -298,7 +298,7 @@ Assets/Scripts/Game/Weapons.meta
 guid: 531c314bfb2944b8a565476385337aec
 ```
 
-- [ ] **Step 3: Point the scene component to `BattleSceneSetup.cs.meta`**
+- [x] **Step 3: Point the scene component to `BattleSceneSetup.cs.meta`**
 
 Replace the `m_Script` line in `Assets/Scenes/BattleScene.unity` with:
 
@@ -306,13 +306,13 @@ Replace the `m_Script` line in `Assets/Scenes/BattleScene.unity` with:
   m_Script: {fileID: 11500000, guid: 534dec71e1d54924aba9bbd4233d1f93, type: 3}
 ```
 
-- [ ] **Step 4: Run the repository validator and verify GREEN**
+- [x] **Step 4: Run the repository validator and verify GREEN**
 
 Run the same command from Step 1.
 
 Expected: `Unity asset integrity check passed.` and process exit code 0.
 
-- [ ] **Step 5: Commit the asset repair**
+- [x] **Step 5: Commit the asset repair**
 
 ```powershell
 git diff --check
@@ -326,12 +326,19 @@ Expected: commit succeeds with exactly four asset serialization files.
 
 ### Task 3: Offline Battle PlayMode Smoke Test
 
+> Execution note: The first PlayMode RED run exposed an unused `com.unity.inputsystem` editor-initialization failure before scene loading. Source search confirmed all active input code uses `UnityEngine.Input`; Task 3 therefore removes that unused package and defers a correctly configured Input System to the later platform-input phase.
+>
+> Subsequent RED runs exposed and fixed four additional baseline blockers: invalid TagManager serialization and missing gameplay tags, the obsolete `m_ActiveInputHandler` property name, `Hitbox` being added before its required Collider2D, and `WaveSpawner` marking an empty pre-configuration pool scan as complete. These are required for the real scene smoke test to reach GREEN.
+
 **Files:**
 - Modify: `Packages/manifest.json`
 - Modify: `Packages/packages-lock.json`
 - Create: `Assets/Tests/PlayMode/Game.PlayModeTests.asmdef`
 - Create: `Assets/Tests/PlayMode/BattleSceneOfflineSmokeTests.cs`
 - Modify: `Assets/Scripts/Game/BattleSceneSetup.cs:45-70,343-369`
+- Modify: `Assets/Scripts/Game/Dungeon/WaveSpawner.cs:44-72`
+- Modify: `ProjectSettings/TagManager.asset`
+- Modify: `ProjectSettings/ProjectSettings.asset`
 - Modify: `.claude/memory/project-overview.md`
 
 **Interfaces:**
@@ -339,17 +346,17 @@ Expected: commit succeeds with exactly four asset serialization files.
 - Produces: `BattleSceneOfflineSmokeTests.BattleSceneStartsOfflineAndCreatesCoreObjects()`.
 - Produces: `BattleSceneSetup.InitializeUpgradeManager()` which performs player-dependent initialization after `CreatePlayer()`.
 
-- [ ] **Step 1: Promote the test framework to a direct dependency**
+- [x] **Step 1: Promote the test framework to a direct dependency**
 
-Add this dependency to `Packages/manifest.json` after `com.unity.inputsystem`:
+Replace the unused `com.unity.inputsystem` dependency in `Packages/manifest.json` with:
 
 ```json
 "com.unity.test-framework": "1.1.33",
 ```
 
-In `Packages/packages-lock.json`, change only `com.unity.test-framework.depth` from `3` to `0`.
+In `Packages/packages-lock.json`, remove the `com.unity.inputsystem` entry, change `com.unity.test-framework.depth` from `3` to `0`, and accept Unity Package Manager's recalculated depths for its remaining transitive dependencies.
 
-- [ ] **Step 2: Write the PlayMode smoke test**
+- [x] **Step 2: Write the PlayMode smoke test**
 
 Create `Assets/Tests/PlayMode/Game.PlayModeTests.asmdef`:
 
@@ -416,7 +423,7 @@ namespace Game.Tests.PlayMode
 }
 ```
 
-- [ ] **Step 3: Run Unity licensing and import preflight**
+- [x] **Step 3: Run Unity licensing and import preflight**
 
 Run:
 
@@ -428,7 +435,7 @@ if ($log -notmatch 'Exiting batchmode successfully') { throw 'Unity did not comp
 
 Expected: the log contains a successful project import and `Exiting batchmode successfully`. If it still ends at `Access token is unavailable`, stop Unity-dependent steps and restore the license through Unity Hub; do not treat exit code 0 as success.
 
-- [ ] **Step 4: Run the PlayMode test and verify RED**
+- [x] **Step 4: Run the PlayMode test and verify RED**
 
 ```powershell
 & 'D:\Unity_Soft\2022\Editor\Unity.exe' -batchmode -nographics -projectPath 'E:\Own_project\game-client-unity' -runTests -testPlatform PlayMode -testFilter 'Game.Tests.PlayMode.BattleSceneOfflineSmokeTests' -testResults 'E:\Own_project\game-client-unity\Logs\A1-playmode-red.xml' -logFile 'E:\Own_project\game-client-unity\Logs\A1-playmode-red.log'
@@ -436,7 +443,7 @@ Expected: the log contains a successful project import and `Exiting batchmode su
 
 Expected: FAIL. `BattleSceneSetup.Start()` throws because `CreateUpgradeManager()` accesses `_player` before `CreatePlayer()` assigns it; the object assertions therefore do not all pass.
 
-- [ ] **Step 5: Separate creation from player-dependent initialization**
+- [x] **Step 5: Separate creation from player-dependent initialization**
 
 Change the relevant part of `BattleSceneSetup.Start()` to:
 
@@ -492,13 +499,13 @@ private void InitializeUpgradeManager()
 }
 ```
 
-- [ ] **Step 6: Run the focused PlayMode test and verify GREEN**
+- [x] **Step 6: Run the focused PlayMode test and verify GREEN**
 
 Repeat the Unity command from Step 4 with result file `Logs/A1-playmode-green.xml` and log file `Logs/A1-playmode-green.log`.
 
 Expected: test result XML reports 1 passed, 0 failed; the log contains no compilation error or unhandled exception.
 
-- [ ] **Step 7: Update project memory with the verified A1 state**
+- [x] **Step 7: Update project memory with the verified A1 state**
 
 In `.claude/memory/project-overview.md`, replace the two resolved issue bullets with:
 
@@ -515,7 +522,7 @@ Replace the stale test-status bullet with:
 
 Keep the remaining network and architecture risks unchanged.
 
-- [ ] **Step 8: Commit the offline baseline**
+- [x] **Step 8: Commit the offline baseline**
 
 ```powershell
 git diff --check

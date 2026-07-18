@@ -60,6 +60,7 @@ public class BattleSceneSetup : MonoBehaviour
         CreateGround();
         CreateUpgradeManager();  // 先创建UpgradeManager，WeaponSystem可以找到它
         CreatePlayer();
+        InitializeUpgradeManager();
         _inputMediator = _player.GetComponent<InputMediator>();
         ApplyTalentBonuses();
         SummonManager.Instance.InitializeForBattle(_player);
@@ -168,11 +169,11 @@ public class BattleSceneSetup : MonoBehaviour
         var hitboxObj = new GameObject("AttackHitbox");
         hitboxObj.transform.SetParent(_player.transform);
         hitboxObj.transform.localPosition = new Vector3(0.5f, 0.2f, 0f);
+        var hitboxCol = hitboxObj.AddComponent<BoxCollider2D>();
         var hitbox = hitboxObj.AddComponent<Hitbox>();
         hitbox.damage = 10;
         hitbox.owner = _player;
         hitbox.autoDisableTime = 0.15f;
-        var hitboxCol = hitboxObj.AddComponent<BoxCollider2D>();
         hitboxCol.isTrigger = true;
         hitboxCol.size = new Vector2(0.6f, 0.4f);
         hitboxCol.offset = Vector2.zero;
@@ -340,12 +341,20 @@ public class BattleSceneSetup : MonoBehaviour
         };
     }
 
-    /// <summary>创建升级管理器</summary>
+    /// <summary>
+    /// 创建升级管理器，使玩家创建期间的武器系统能够找到它。
+    /// </summary>
     private void CreateUpgradeManager()
     {
         var managerObj = new GameObject("UpgradeManager");
         _upgradeManager = managerObj.AddComponent<UpgradeManager>();
+    }
 
+    /// <summary>
+    /// 在玩家创建完成后绑定角色属性和升级追踪。
+    /// </summary>
+    private void InitializeUpgradeManager()
+    {
         var stats = _player.GetComponent<CharacterStats>();
         if (stats != null)
         {
@@ -360,11 +369,15 @@ public class BattleSceneSetup : MonoBehaviour
         {
             if (item == null) return;
             if (item.category.Contains("elemental") || item.id.StartsWith("elem_"))
+            {
                 _elementalUpgradeCount = Mathf.Max(_elementalUpgradeCount,
                     CountCategoryInInventory("elemental"));
+            }
             if (item.category.Contains("summon") || item.id.StartsWith("summon_"))
+            {
                 _summonUpgradeCount = Mathf.Max(_summonUpgradeCount,
                     CountCategoryInInventory("summon"));
+            }
         };
     }
 

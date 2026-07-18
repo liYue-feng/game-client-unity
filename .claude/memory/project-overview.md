@@ -17,7 +17,7 @@ Unity C# 游戏客户端，面向"吸血鬼幸存者"类微信小游戏（代号
 - Unity 2022.3 LTS + C#
 - WebSocketSharp（WebSocket客户端）
 - JsonUtility（序列化）
-- Unity Input System + 手势识别
+- Unity Legacy Input + 自定义手势识别（Input System 延后到平台适配阶段）
 - 协议: 二进制帧头(4B+2B) + JSON载荷（与服务器完全一致）
 
 **已完成模块**:
@@ -35,9 +35,10 @@ Unity C# 游戏客户端，面向"吸血鬼幸存者"类微信小游戏（代号
 
 **当前工程状态（2026-07-18 已核对）**:
 - `ProjectSettings/`、`Assets/Scenes/` 和 `Assets/Plugins/websocket-sharp.dll` 已存在
-- 当前有 1 个战斗场景，但场景中的 `BattleSceneSetup` 脚本 GUID 引用错误
-- 3 个目录 `.meta` 文件存在重复 GUID
-- 当前没有 Prefab、自动测试或自有程序集定义，仍属于代码生成原型阶段
+- Phase A1 已修复战斗场景脚本引用和重复资源 GUID，并由自动资源检查验证
+- `BattleScene` 已通过离线 PlayMode 冒烟测试，可创建地面、玩家、刷怪器和战斗 HUD，且不会启动网络或登录流程
+- 当前仍没有 Prefab；A1 已建立 PlayMode 测试程序集，网络和玩法的完整自动测试将在后续阶段补齐
+- 当前战斗代码只使用旧输入 API；未使用且阻塞 PlayMode 的 Input System 包已移除，后续平台适配时按真实需求重新接入
 - 网络心跳/重连职责重复，部分 WebSocket 回调尚未统一切回 Unity 主线程
 - 现代化顺序为 Phase A 工程基础、Phase B 战斗体验、Phase C UI/资源工程化
 - Phase A 设计见 `docs/superpowers/specs/2026-07-18-unity-client-modernization-phase-a-design.md`

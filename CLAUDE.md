@@ -13,7 +13,7 @@ Unity C# 游戏客户端，面向"吸血鬼幸存者"类微信小游戏（代号
 - **语言**: C#
 - **网络**: WebSocketSharp（WebSocket 客户端）
 - **序列化**: JsonUtility（Unity 内置）
-- **输入**: Unity Input System + 手势识别
+- **输入**: Unity Legacy Input + 自定义手势识别（Input System 延后到平台适配阶段）
 - **协议**: 二进制帧头(4B长度+2B消息ID) + JSON载荷（与服务器完全一致）
 
 ## 核心原则
@@ -77,7 +77,8 @@ game_client_unity/
 | 包 | 用途 |
 |----|------|
 | WebSocketSharp | WebSocket 客户端（需放入 Assets/Plugins/） |
-| Unity Input System | 手势识别 + 操作输入 |
+
+当前战斗使用 `UnityEngine.Input` 和自定义 `GestureInput`。未使用的 Input System 包会破坏当前手写 ProjectSettings 下的 PlayMode 初始化，因此 Phase A1 已移除；需要新输入后端时必须连同有效配置和回归测试一起接入。
 
 ## 服务器仓库
 
