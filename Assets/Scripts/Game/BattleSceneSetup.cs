@@ -49,12 +49,11 @@ public class BattleSceneSetup : MonoBehaviour
 
         // 初始化全局系统
         AiSpriteLoader.PreloadAllSprites();
-        AudioManager.Instance.PlayBGM("dash");
+        RequireService(AudioManager.Instance, nameof(AudioManager)).PlayBGM("dash");
         var _ = DamageNumberPool.Instance;
         var __ = ElementalEffectManager.Instance;
         var ___ = SummonManager.Instance;
-        var ____ = AchievementManager.Instance; // 初始化成就追踪
-        LoadingScreen.Instance.Hide();
+        RequireService(LoadingScreen.Instance, nameof(LoadingScreen)).Hide();
 
         CreateCamera();
         CreateGround();
@@ -69,6 +68,17 @@ public class BattleSceneSetup : MonoBehaviour
         CreateInventoryUI();
         CreatePauseMenu();
         SetupEffectListeners();
+    }
+
+    private static T RequireService<T>(T service, string serviceName) where T : UnityEngine.Object
+    {
+        if (service == null)
+        {
+            throw new System.InvalidOperationException(
+                $"BattleScene initialization requires preinstalled {serviceName} service.");
+        }
+
+        return service;
     }
 
     /// <summary>创建主相机，挂载屏幕震动和卡帧</summary>

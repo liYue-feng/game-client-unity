@@ -67,7 +67,7 @@ game_client_unity/
 
 - 遵循 Unity C# 命名规范：PascalCase 类/方法，camelCase 私有字段
 - 注释写好 WHY，新手需要参考学习
-- 单例模式用 `Instance` 属性，自动创建 GameObject + DontDestroyOnLoad
+- Phase A2 跨场景服务的 `Instance` 只返回 `GameApplication` 已安装实例，不得自行创建 GameObject；仅 `[GameApplication]` 使用 `DontDestroyOnLoad`
 - WebSocket 回调在工作线程，UI 操作必须通过 MainThreadDispatcher 切回主线程
 - 网络消息通过 On<T>() 注册监听，不直接在 NetworkClient 中写业务逻辑
 - JsonUtility 不支持 camelCase，字段名用 snake_case 与服务器 JSON tag 一致
@@ -79,6 +79,14 @@ game_client_unity/
 | WebSocketSharp | WebSocket 客户端（需放入 Assets/Plugins/） |
 
 当前战斗使用 `UnityEngine.Input` 和自定义 `GestureInput`。未使用的 Input System 包会破坏当前手写 ProjectSettings 下的 PlayMode 初始化，因此 Phase A1 已移除；需要新输入后端时必须连同有效配置和回归测试一起接入。
+
+## Phase A2 应用生命周期（2026-07-18 已验证）
+
+- `RuntimeBootstrap` 在场景加载前自动创建 Offline `[GameApplication]`，默认入口为 `BattleScene`
+- `[GameApplication]` 通过唯一 `[GameServices]` 根持有 `MainThreadDispatcher`、`SceneTransitionManager`、`AudioManager`、`LoadingScreen`、`AchievementManager`
+- `BattleScene` 重载时应用根、服务根和五个服务实例保持不变，场景内 `Player` 使用新实例，Offline 禁止类型未创建
+- Unity EditMode `54/54`、PlayMode `9/9` 通过；Pester 资源验证 `5/5` 通过，fresh compile 成功
+- 未执行手工可视化试玩；Phase A3 仍需统一网络连接、心跳、重连和 WebSocket 主线程回调边界
 
 ## 服务器仓库
 

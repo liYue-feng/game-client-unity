@@ -436,7 +436,7 @@ git commit -m "feat: 建立统一应用启动与服务根"
 - Consumes: automatic application and service root from Task 3.
 - Produces: verified scene reload behavior and final A2 evidence.
 
-- [ ] **Step 1: Extend the PlayMode test to verify scene reload stability**
+- [x] **Step 1: Extend the PlayMode test to verify scene reload stability**
 
 Capture instance IDs of `[GameApplication]`, `[GameServices]`, and all five services. Capture the current `Player` instance ID, reload `BattleScene` with `SceneManager.LoadSceneAsync`, wait two frames and for application Ready, then assert:
 
@@ -450,19 +450,19 @@ Assert.That(GameObject.Find("[NetworkClient]"), Is.Null);
 
 Repeat uniqueness assertions for every A2 service.
 
-- [ ] **Step 2: Run the reload integration test and record the actual result**
+- [x] **Step 2: Run the reload integration test and record the actual result**
 
 Expected after Task 3: PASS. If it fails, preserve the XML and log, trace the duplicate or stale owner, and apply the smallest lifecycle fix before continuing. Do not change the assertion to accept duplicate services.
 
-- [ ] **Step 3: Remove cross-scene prewarming from `BattleSceneSetup`**
+- [x] **Step 3: Remove cross-scene prewarming from `BattleSceneSetup`**
 
 Keep `AiSpriteLoader.PreloadAllSprites`, gameplay pools, and `SummonManager`. Remove the standalone `AchievementManager.Instance` prewarm. Continue calling preinstalled `AudioManager.Instance.PlayBGM` and `LoadingScreen.Instance.Hide`; if either is unexpectedly null, throw an initialization error naming the missing service instead of creating it.
 
-- [ ] **Step 4: Preserve and strengthen the original offline smoke test**
+- [x] **Step 4: Preserve and strengthen the original offline smoke test**
 
 Keep assertions for Ground, Player, WaveSpawner, HUD, and absence of network/login/bootstrap. Preserve `LogAssert.ignoreFailingMessages` state and capture `Error`, `Exception`, and `Assert` logs. Add application Ready and active scene assertions so the original A1 contract remains covered by the A2 entry.
 
-- [ ] **Step 5: Run complete EditMode and PlayMode suites**
+- [x] **Step 5: Run complete EditMode and PlayMode suites**
 
 Run separate fresh Unity processes and XML files:
 
@@ -473,15 +473,17 @@ Unity.exe -batchmode -nographics -projectPath <root> -runTests -testPlatform Pla
 
 Expected: every XML root reports `result="Passed"` and `failed="0"`; logs contain no `error CS`, `Scripts have compiler errors`, `NullReferenceException`, ProjectSettings parse failure, or batchmode abort.
 
-- [ ] **Step 6: Run non-Unity validation and a fresh compile**
+- [x] **Step 6: Run non-Unity validation and a fresh compile**
 
 Run Pester and assert exactly 5 passed, run `Test-UnityAssetIntegrity.ps1`, run `git diff --check`, then a fresh Unity `-quit` compile with a success marker.
 
-- [ ] **Step 7: Update project documentation with verified facts only**
+- [x] **Step 7: Update project documentation with verified facts only**
 
 Record the automatic Offline entry, five owned services, EditMode/PlayMode counts, and remaining A3 network work. Do not claim manual visual play unless it was actually performed.
 
-- [ ] **Step 8: Commit A2 integration**
+Verified 2026-07-18: reload integration `1/1`, complete EditMode `54/54`, complete PlayMode `9/9`, Pester `5/5`, asset integrity and fresh Unity compile passed. No manual visual play was performed; Phase A3 network lifecycle work remains open.
+
+- [x] **Step 8: Commit A2 integration**
 
 ```powershell
 git commit -m "test: 验证应用生命周期与场景重载"

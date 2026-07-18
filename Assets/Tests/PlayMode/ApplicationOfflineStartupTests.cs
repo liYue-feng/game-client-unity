@@ -193,6 +193,21 @@ namespace Game.Tests.PlayMode
         }
 
         [Test]
+        public void BattleSceneServiceGuardNamesTheMissingPreinstalledService()
+        {
+            var application = GetApplicationComponent(GameObject.Find("[GameApplication]"));
+            var setupType = application.GetType().Assembly.GetType("BattleSceneSetup");
+            var guard = setupType?.GetMethod("RequireService", BindingFlags.Static | BindingFlags.NonPublic);
+
+            Assert.That(guard, Is.Not.Null,
+                "BattleSceneSetup must guard every preinstalled service dependency.");
+            var invocation = Assert.Throws<TargetInvocationException>(() =>
+                guard.MakeGenericMethod(typeof(GameObject)).Invoke(null, new object[] { null, "AudioManager" }));
+            Assert.That(invocation.InnerException, Is.TypeOf<InvalidOperationException>());
+            StringAssert.Contains("AudioManager", invocation.InnerException.Message);
+        }
+
+        [Test]
         public void FailureReasonFormatter_IncludesServiceRootCauseAndRollbackErrors()
         {
             var application = GetApplicationComponent(GameObject.Find("[GameApplication]"));
