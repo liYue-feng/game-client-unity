@@ -54,6 +54,7 @@ public class AudioManager : MonoBehaviour, IGameService
     private readonly HashSet<string> _loadedFromResources = new HashSet<string>();
     private readonly HashSet<AudioClip> _generatedRuntimeClips = new HashSet<AudioClip>();
     private bool _initialized;
+    private bool _initializing;
 
     /// <summary>已加载的clip名称列表</summary>
     public IReadOnlyCollection<string> LoadedClipNames => _clips.Keys;
@@ -82,39 +83,61 @@ public class AudioManager : MonoBehaviour, IGameService
 
     public void Initialize()
     {
-        if (_initialized)
+        if (_initialized || _initializing)
         {
             return;
         }
 
-        _bgmSource = gameObject.AddComponent<AudioSource>();
-        _bgmSource.loop = true;
-        _bgmSource.playOnAwake = false;
-        _bgmSource.volume = bgmVolume * masterVolume;
-
-        for (int i = 0; i < MaxSfxSources; i++)
+        _initializing = true;
+        try
         {
-            var src = gameObject.AddComponent<AudioSource>();
-            src.loop = false;
-            src.playOnAwake = false;
-            _sfxPool.Enqueue(src);
-        }
+            _bgmSource = gameObject.AddComponent<AudioSource>();
+            _bgmSource.loop = true;
+            _bgmSource.playOnAwake = false;
+            _bgmSource.volume = bgmVolume * masterVolume;
 
-        LoadAllSounds();
-        _initialized = true;
+            for (int i = 0; i < MaxSfxSources; i++)
+            {
+                var src = gameObject.AddComponent<AudioSource>();
+                src.loop = false;
+                src.playOnAwake = false;
+                _sfxPool.Enqueue(src);
+            }
+
+            LoadAllSounds();
+            _initialized = true;
+        }
+        catch
+        {
+            CleanupRuntimeState();
+            throw;
+        }
+        finally
+        {
+            _initializing = false;
+        }
     }
 
     public void Shutdown()
     {
-        if (!_initialized)
+        CleanupRuntimeState();
+    }
+
+    private void CleanupRuntimeState()
+    {
+        if (_bgmSource != null)
         {
-            return;
+            _bgmSource.Stop();
+            _bgmSource.clip = null;
         }
 
-        _bgmSource?.Stop();
         foreach (var source in _sfxPool)
         {
-            source?.Stop();
+            if (source != null)
+            {
+                source.Stop();
+                source.clip = null;
+            }
         }
 
         foreach (var clip in _generatedRuntimeClips)

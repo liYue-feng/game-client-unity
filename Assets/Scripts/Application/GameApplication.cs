@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using Game.Core;
 using Game.Network;
 using UnityEngine;
@@ -124,11 +125,58 @@ namespace Game
 
         private void FailInitialization(Exception exception)
         {
-            FailureReason = exception.Message;
+            FailureReason = FormatFailureReason(exception);
             _services?.Shutdown();
             _services = null;
             _lifecycle.MarkFailed();
             Debug.LogError($"[GameApplication] Initialization failed at {FailureStage}: {FailureReason}");
+            Debug.LogException(exception);
+        }
+
+        private static string FormatFailureReason(Exception exception)
+        {
+            if (exception == null)
+            {
+                return "Unknown failure.";
+            }
+
+            var parts = new List<string>();
+            if (exception is GameServiceInitializationException serviceFailure)
+            {
+                parts.Add($"Service '{serviceFailure.ServiceName}' failed.");
+                parts.Add($"Root cause: {GetInnermostMessage(serviceFailure.InnerException)}.");
+                if (serviceFailure.RollbackErrors.Count > 0)
+                {
+                    var rollbackMessages = new List<string>();
+                    foreach (var rollbackError in serviceFailure.RollbackErrors)
+                    {
+                        rollbackMessages.Add(GetInnermostMessage(rollbackError));
+                    }
+
+                    parts.Add($"Rollback errors: {string.Join("; ", rollbackMessages)}.");
+                }
+            }
+            else
+            {
+                parts.Add($"Root cause: {GetInnermostMessage(exception)}.");
+            }
+
+            return string.Join(" ", parts);
+        }
+
+        private static string GetInnermostMessage(Exception exception)
+        {
+            if (exception == null)
+            {
+                return "Unknown failure";
+            }
+
+            while (exception.InnerException != null)
+            {
+                exception = exception.InnerException;
+            }
+
+            return exception.Message;
         }
 
         private void ReleaseCore()

@@ -85,3 +85,36 @@ git diff --check
 - 所有服务 `ResetStaticState` 只清静态字段；Unity 对象销毁只发生在正常关闭/`OnDestroy` 路径。
 - Review Important 已闭环：shutdown 同帧重建不会复用旧 stopped service，新服务均挂在新 root 下，旧对象销毁不会误清新静态 owner。
 - Unity License client 仍有既有握手噪声，但编辑器最终获得许可，测试与 compile 均正常完成；未据此修改产品代码。
+
+## 独立 Review 第二轮修复
+
+提交 `a85de1e` 的独立 Task 3 review 提出 4 个 Important，均按 RED-GREEN 修复：
+
+1. `AudioManager` 部分初始化释放：新增 `_initializing` 阶段和共享 `CleanupRuntimeState`。`Initialize` catch 统一清理后 rethrow，`Shutdown` 即使 `_initialized == false` 也能清理 BGM/SFX source、clip 引用、pool、cache 与 generated runtime clips。
+2. `GameApplication` 失败原因：新增确定性 `FormatFailureReason`，包含失败 service、最内层 root cause 与全部 rollback error message；`FailInitialization` 另用 `Debug.LogException` 保留完整异常。
+3. 同帧重建测试：移除全局 `LogAssert.ignoreFailingMessages`，反射验证五个 `Instance` 均严格指向新 root 下的 replacement component，旧 `OnDestroy` 不得清空或替换新 owner。
+4. Offline 黑盒：按组件类型名扫描所有有效 scene object，覆盖 `NetworkClient`、`LoginManager`、`GameBootstrap`、`ArchiveManager`、`RankManager`、`HeartbeatManager`、`ReconnectionManager`。
+
+### 第二轮 RED 证据
+
+| 测试 | RED |
+|---|---|
+| `AudioShutdown_CleansPartiallyInitializedRuntimeState` | `0/1`；generated runtime clip 未销毁，`Expected null`，实际仍为 `partial-generated` |
+| `AudioInitializeFailure_CleansThroughSharedPartialStatePath` | `0/1`；catch 后 generated clip 仍为 `failed-init-generated`，证明失败 service 未自清理 |
+| `FailureReasonFormatter_IncludesServiceRootCauseAndRollbackErrors` | `0/1`；反射找不到 `FormatFailureReason`，`Expected not null, But was null` |
+| Audio source clip 引用加固 | `0/1`；Shutdown 后 source 仍引用 `partial-resource-reference` |
+
+首轮 Audio GREEN 中，Unity 已销毁的 `AudioClip` 表现为 fake-null wrapper，NUnit `Is.Null` 显示 `But was: <null>`。测试改为 Unity 的 `clip == null` 判定；该调整只适配 Unity 对象语义，没有删除或放宽 cache、pool、source、state、resource ownership 断言。
+
+### 第二轮最终 GREEN
+
+| 验证 | 结果 |
+|---|---|
+| Focused `ApplicationOfflineStartupTests` | `Passed 6/6`，failed `0` |
+| Complete EditMode | `Passed 54/54`，failed `0`，skipped `0`，inconclusive `0` |
+| Complete PlayMode | `Passed 7/7`，failed `0`，skipped `0`，inconclusive `0` |
+| Unity compile | exit `0`，compiler errors `0` |
+| Settings / asset integrity | exact defaults matched；`Unity asset integrity check passed.` |
+| Cleanup audit | project Unity processes `0`；temporary `InitTestScene` files `0` |
+
+最终日志：`Logs/A2-task3-review4-focused-final.xml`、`A2-task3-review4-editmode-final.xml`、`A2-task3-review4-playmode-final.xml`、`A2-task3-review4-compile-final.log`。Unity License client 仍输出签名/握手噪声，但随后成功连接 2022.3 licensing client；上述测试和 compile 均正常结束，因此未把环境噪声当作产品缺陷处理。
