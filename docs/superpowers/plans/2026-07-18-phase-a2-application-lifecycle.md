@@ -62,7 +62,7 @@
 - Produces: `RuntimeMode`, `GameApplicationState`, `GameApplicationLifecycle`, `GameRuntimeSettings.TryValidate(Func<string,bool>, out string)`, `IGameService`, and `GameServiceCollection`.
 - Consumes: Unity `ScriptableObject`, `Uri`, and NUnit only in tests.
 
-- [ ] **Step 1: Create assembly definitions and write failing settings/state tests**
+- [x] **Step 1: Create assembly definitions and write failing settings/state tests**
 
 Create `Game.Core.asmdef`:
 
@@ -116,13 +116,13 @@ public void LifecycleRejectsReadyBeforeInitialization()
 
 The EditMode test helper uses `UnityEditor.SerializedObject` to set `_runtimeMode`, `_startupSceneName`, `_serverUrl`, and `_mainThreadMaxTasksPerFrame`, then calls `ApplyModifiedPropertiesWithoutUndo`. It leaves all other fields at their valid serialized defaults; production code receives no test-only setter.
 
-- [ ] **Step 2: Run EditMode tests and verify RED**
+- [x] **Step 2: Run EditMode tests and verify RED**
 
 Run Unity with `-runTests -testPlatform EditMode -testFilter Game.Tests.EditMode.GameRuntimeSettingsTests -testResults Logs/A2-task1-red.xml -logFile Logs/A2-task1-red.log`.
 
 Expected: compilation/test failure because the `Game.Core` types do not exist.
 
-- [ ] **Step 3: Implement settings and guarded lifecycle**
+- [x] **Step 3: Implement settings and guarded lifecycle**
 
 Implement the exact public surface:
 
@@ -158,7 +158,7 @@ namespace Game.Core
 
 Declare the serialized defaults explicitly: Offline, `BattleScene`, `ws://localhost:8080/ws`, heartbeat `30`, timeout `10`, retries `5`, initial backoff `1`, max backoff `30`, and main-thread budget `64`. Expose getters only.
 
-- [ ] **Step 4: Write failing service order and rollback tests**
+- [x] **Step 4: Write failing service order and rollback tests**
 
 Use a `RecordingService : IGameService` with optional initialization failure. Assert exact order:
 
@@ -171,7 +171,7 @@ Assert.That(collection.IsInitialized, Is.False);
 
 Also call `ShutdownAll()` twice after success and assert every service receives one shutdown call.
 
-- [ ] **Step 5: Implement `IGameService` and `GameServiceCollection`**
+- [x] **Step 5: Implement `IGameService` and `GameServiceCollection`**
 
 ```csharp
 public interface IGameService
@@ -184,13 +184,13 @@ public interface IGameService
 
 `GameServiceCollection.InitializeAll()` initializes in list order. On failure it shuts down only the successful prefix in reverse order, preserves the original exception as `InnerException`, records the failed service name, and leaves `IsInitialized == false`. `ShutdownAll()` is idempotent, continues after individual shutdown errors, and returns the collected exceptions for logging by `GameApplication`.
 
-- [ ] **Step 6: Run the complete EditMode assembly and verify GREEN**
+- [x] **Step 6: Run the complete EditMode assembly and verify GREEN**
 
 Run Unity with `-runTests -testPlatform EditMode -testFilter Game.Tests.EditMode -testResults Logs/A2-task1-green.xml -logFile Logs/A2-task1-green.log`.
 
 Expected: all Task 1 tests pass with 0 failures and no C# compiler errors.
 
-- [ ] **Step 7: Import Unity-generated `.meta` files and commit**
+- [x] **Step 7: Import Unity-generated `.meta` files and commit**
 
 Run a Unity `-batchmode -nographics -quit` import, run `tools/validation/Test-UnityAssetIntegrity.ps1`, then commit only Task 1 files and their generated `.meta` files:
 
@@ -211,19 +211,19 @@ git commit -m "feat: 建立应用生命周期核心模型"
 - Consumes: `IGameService` from Task 1.
 - Produces: public `MainThreadDispatcher.Install(Transform, int)`, `bool Enqueue(Action)`, `PendingCount`, and public `ResetStaticState()`.
 
-- [ ] **Step 1: Preserve the dispatcher GUID while moving it into `Game.Core`**
+- [x] **Step 1: Preserve the dispatcher GUID while moving it into `Game.Core`**
 
 Use `Move-Item` for both `.cs` and `.meta`; do not create a new `.meta`. Keep namespace `Game.Network` so existing call sites remain source-compatible.
 
-- [ ] **Step 2: Write failing dispatcher lifecycle tests**
+- [x] **Step 2: Write failing dispatcher lifecycle tests**
 
 Create a GameObject, add/install the dispatcher, initialize with budget `2`, enqueue three counters, invoke one processing tick through an explicit testable `ProcessPending()` method, and assert two ran and one remains. Add tests that one throwing task does not block the next and `Shutdown()` clears the queue and makes `Enqueue` return `false`.
 
-- [ ] **Step 3: Run focused EditMode tests and verify RED**
+- [x] **Step 3: Run focused EditMode tests and verify RED**
 
 Expected: failure because install, budget, pending count, shutdown, and bounded processing are not implemented.
 
-- [ ] **Step 4: Implement bounded processing without invoking actions under the queue lock**
+- [x] **Step 4: Implement bounded processing without invoking actions under the queue lock**
 
 Use this processing shape:
 
@@ -248,7 +248,7 @@ public void ProcessPending()
 
 `Install` and `ResetStaticState` are public because their callers live in predefined `Assembly-CSharp` and the EditMode test assembly, while the dispatcher itself lives in `Game.Core`.
 
-- [ ] **Step 5: Run focused and complete EditMode tests, compile, and commit**
+- [x] **Step 5: Run focused and complete EditMode tests, compile, and commit**
 
 Expected: dispatcher tests and all Task 1 tests pass; Unity compile succeeds; resource validator passes.
 
@@ -278,7 +278,7 @@ git commit -m "refactor: 收束主线程调度器生命周期"
 - Consumes: Task 1 lifecycle/settings/service collection and Task 2 dispatcher.
 - Produces: `GameApplication.Instance`, `HasInstance`, `State`, `FailureStage`, `FailureReason`, `Shutdown()`, and one persistent `[GameServices]` hierarchy.
 
-- [ ] **Step 1: Write the failing automatic-start PlayMode test**
+- [x] **Step 1: Write the failing automatic-start PlayMode test**
 
 Because the test assembly cannot reference predefined `Assembly-CSharp`, inspect `GameApplication` state through `Component.GetType().GetProperty("State")`. Wait up to 120 frames for `Ready`, then assert these exact objects:
 
@@ -306,11 +306,11 @@ private static List<GameObject> FindAll(string objectName)
 }
 ```
 
-- [ ] **Step 2: Run the PlayMode test and verify RED**
+- [x] **Step 2: Run the PlayMode test and verify RED**
 
 Expected: no `[GameApplication]` exists.
 
-- [ ] **Step 3: Refactor the four existing services to explicit lifecycle ownership**
+- [x] **Step 3: Refactor the four existing services to explicit lifecycle ownership**
 
 For each service, replace lazy creation with an installed-instance getter:
 
@@ -346,7 +346,7 @@ Use these exact lifecycle boundaries:
 
 Every service tracks `_initialized`; repeated `Initialize` or `Shutdown` is a no-op.
 
-- [ ] **Step 4: Implement `GameServices`**
+- [x] **Step 4: Implement `GameServices`**
 
 `GameServices.Create(Transform applicationRoot, GameRuntimeSettings settings)` creates `[GameServices]`, installs the five services in the design order, adds them to `GameServiceCollection`, and calls `InitializeAll`. `Shutdown` delegates to the collection, logs every returned shutdown exception, destroys the service root, and is idempotent.
 
@@ -365,7 +365,7 @@ _lifecycle = new GameServiceCollection(new IGameService[]
 _lifecycle.InitializeAll();
 ```
 
-- [ ] **Step 5: Implement runtime bootstrap and application state flow**
+- [x] **Step 5: Implement runtime bootstrap and application state flow**
 
 `RuntimeBootstrap` uses:
 
@@ -387,7 +387,7 @@ private static void CreateApplication()
 
 `Shutdown` uses a re-entry guard. Explicit shutdown releases services, transitions to Stopped, clears the singleton, and destroys the application GameObject. `OnDestroy` calls the same core release path without scheduling another destroy.
 
-- [ ] **Step 6: Make legacy bootstraps inert under the new application**
+- [x] **Step 6: Make legacy bootstraps inert under the new application**
 
 At the first line of both legacy entry methods:
 
@@ -402,19 +402,19 @@ if (GameApplication.HasInstance)
 
 Use `nameof(MenuSceneSetup)` in the menu component. Do not delete their legacy code in A2.
 
-- [ ] **Step 7: Add deterministic settings asset creation**
+- [x] **Step 7: Add deterministic settings asset creation**
 
 The editor utility creates `Assets/Resources/GameRuntimeSettings.asset` only when absent using `ScriptableObject.CreateInstance<GameRuntimeSettings>()` and `AssetDatabase.CreateAsset`. Expose both a `MenuItem("Game/Create Default Runtime Settings")` and public static `CreateDefaultAsset` for batch `-executeMethod`.
 
 Run Unity import once, invoke the execute method, and confirm the asset serializes Offline, `BattleScene`, `ws://localhost:8080/ws`, positive timeout values, non-negative retries, and main-thread budget `64`.
 
-- [ ] **Step 8: Run PlayMode startup test and verify GREEN**
+- [x] **Step 8: Run PlayMode startup test and verify GREEN**
 
 Expected: application reaches Ready, one service root exists, all five services exist, and no network/login/bootstrap object exists.
 
 Add a second PlayMode test that invokes `GameApplication.Shutdown` by reflection, waits one frame, and asserts the application, service root, and five service objects are gone. In `finally`, invoke the internal static `RuntimeBootstrap.EnsureApplication` by reflection and wait for Ready so the test does not pollute later tests.
 
-- [ ] **Step 9: Run all EditMode tests, compile, resource validation, and commit**
+- [x] **Step 9: Run all EditMode tests, compile, resource validation, and commit**
 
 ```powershell
 git commit -m "feat: 建立统一应用启动与服务根"
@@ -481,7 +481,7 @@ Run Pester and assert exactly 5 passed, run `Test-UnityAssetIntegrity.ps1`, run 
 
 Record the automatic Offline entry, five owned services, EditMode/PlayMode counts, and remaining A3 network work. Do not claim manual visual play unless it was actually performed.
 
-Verified 2026-07-18: reload integration `1/1`, complete EditMode `54/54`, complete PlayMode `9/9`, Pester `5/5`, asset integrity and fresh Unity compile passed. No manual visual play was performed; Phase A3 network lifecycle work remains open.
+Verified 2026-07-18: reload integration `1/1`, complete EditMode `54/54`, complete PlayMode `10/10`, Pester `5/5`, asset integrity and fresh Unity compile passed. No manual visual play was performed; Phase A3 network lifecycle work remains open.
 
 - [x] **Step 8: Commit A2 integration**
 
@@ -489,6 +489,6 @@ Verified 2026-07-18: reload integration `1/1`, complete EditMode `54/54`, comple
 git commit -m "test: 验证应用生命周期与场景重载"
 ```
 
-- [ ] **Step 9: Review, integrate, and push**
+- [x] **Step 9: Review, integrate, and push**
 
 Perform an inline spec/code review because subagents require explicit user authorization in this environment. Use `verification-before-completion`, then `finishing-a-development-branch`. After the chosen integration path, verify `git rev-parse HEAD`, `git rev-parse origin/master`, and `git ls-remote origin refs/heads/master` are identical before reporting completion.

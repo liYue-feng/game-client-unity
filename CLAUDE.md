@@ -34,8 +34,9 @@ game_client_unity/
 │   │   │   ├── Messages.cs    #   请求/响应结构体
 │   │   │   └── Codec.cs       #   二进制帧编解码
 │   │   ├── Network/           # 网络层
-│   │   │   ├── NetworkClient.cs         # WebSocket 客户端
-│   │   │   └── MainThreadDispatcher.cs  # 主线程调度
+│   │   │   └── NetworkClient.cs         # WebSocket 客户端
+│   │   ├── Core/              # 生命周期核心 + 主线程调度
+│   │   ├── Application/       # 自动入口 + 服务组合根
 │   │   ├── Managers/          # 业务管理器
 │   │   │   ├── LoginManager.cs   # 登录管理
 │   │   │   ├── ArchiveManager.cs # 存档管理
@@ -44,7 +45,7 @@ game_client_unity/
 │   │   │   ├── State/         #   角色状态机
 │   │   │   └── Combat/        #   战斗系统
 │   │   ├── UI/                # UI 界面
-│   │   └── GameBootstrap.cs   # 启动入口
+│   │   └── GameBootstrap.cs   # 旧在线入口（A2 下保持惰性）
 │   ├── Plugins/               # 第三方插件
 │   ├── Scenes/                # 场景
 │   └── Resources/             # 资源文件
@@ -85,7 +86,8 @@ game_client_unity/
 - `RuntimeBootstrap` 在场景加载前自动创建 Offline `[GameApplication]`，默认入口为 `BattleScene`
 - `[GameApplication]` 通过唯一 `[GameServices]` 根持有 `MainThreadDispatcher`、`SceneTransitionManager`、`AudioManager`、`LoadingScreen`、`AchievementManager`
 - `BattleScene` 重载时应用根、服务根和五个服务实例保持不变，场景内 `Player` 使用新实例，Offline 禁止类型未创建
-- Unity EditMode `54/54`、PlayMode `9/9` 通过；Pester 资源验证 `5/5` 通过，fresh compile 成功
+- Unity EditMode `54/54`、PlayMode `10/10` 通过；Pester 资源验证 `5/5` 通过，fresh compile 成功
+- `Online` 模式在 A2 阶段明确失败关闭；A3 完成网络整合后再启用在线启动
 - 未执行手工可视化试玩；Phase A3 仍需统一网络连接、心跳、重连和 WebSocket 主线程回调边界
 
 ## 服务器仓库

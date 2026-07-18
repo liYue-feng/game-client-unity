@@ -40,7 +40,8 @@ Unity C# 游戏客户端，面向"吸血鬼幸存者"类微信小游戏（代号
 - Phase A2 已建立自动 Offline 入口：`RuntimeBootstrap` 在场景加载前创建唯一 `[GameApplication]`，默认进入 `BattleScene`
 - `[GameApplication]` 通过 `[GameServices]` 持有 `MainThreadDispatcher`、`SceneTransitionManager`、`AudioManager`、`LoadingScreen`、`AchievementManager` 五个跨场景服务
 - 自动重载测试已验证应用、服务根和五个服务实例保持，`Player` 重建，静态 `Instance` 仍指向存活 owner，Offline 禁止类型缺席
-- Phase A2 最终自动验证：EditMode `54/54`、PlayMode `9/9`、Pester `5/5`，资源完整性与 fresh Unity compile 通过；未执行手工可视化试玩
+- Phase A2 最终自动验证：EditMode `54/54`、PlayMode `10/10`、Pester `5/5`，资源完整性与 fresh Unity compile 通过；未执行手工可视化试玩
+- `Online` 模式在 Phase A2 明确 fail-closed，不会伪装为 Ready；真实联网启动由 Phase A3 实现
 - 当前仍没有 Prefab；A1 已建立 PlayMode 测试程序集，网络和玩法的完整自动测试将在后续阶段补齐
 - 当前战斗代码只使用旧输入 API；未使用且阻塞 PlayMode 的 Input System 包已移除，后续平台适配时按真实需求重新接入
 - Phase A3 仍需处理网络连接、心跳/重连职责重复及部分 WebSocket 回调未统一切回 Unity 主线程的问题
