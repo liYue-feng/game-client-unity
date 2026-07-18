@@ -11,6 +11,7 @@
 //   RankManager.Instance.SubmitScore(9999, "{\"kills\":50,\"time\":180}");
 
 using System;
+using System.Collections.Generic;
 using Game.Network;
 using Game.Protocol;
 using UnityEngine;
@@ -20,6 +21,7 @@ namespace Game.Managers
     public class RankManager : MonoBehaviour
     {
         private static RankManager _instance;
+        private readonly List<IDisposable> _networkSubscriptions = new List<IDisposable>();
         public static RankManager Instance
         {
             get
@@ -66,8 +68,22 @@ namespace Game.Managers
             DontDestroyOnLoad(gameObject);
 
             var client = NetworkClient.Instance;
-            client.On<GetRankResp>(MsgID.GetRankResp, HandleGetRankResp);
-            client.On<SubmitScoreResp>(MsgID.SubmitScoreResp, HandleSubmitScoreResp);
+            _networkSubscriptions.Add(client.On<GetRankResp>(MsgID.GetRankResp, HandleGetRankResp));
+            _networkSubscriptions.Add(client.On<SubmitScoreResp>(MsgID.SubmitScoreResp, HandleSubmitScoreResp));
+        }
+
+        private void OnDestroy()
+        {
+            foreach (var subscription in _networkSubscriptions)
+            {
+                subscription.Dispose();
+            }
+
+            _networkSubscriptions.Clear();
+            if (ReferenceEquals(_instance, this))
+            {
+                _instance = null;
+            }
         }
 
         /// <summary>

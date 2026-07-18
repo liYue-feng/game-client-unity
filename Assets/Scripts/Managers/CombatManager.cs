@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using UnityEngine;
 using Game.Network;
 using Game.Protocol;
@@ -16,6 +18,7 @@ using Game.Protocol;
 public class CombatManager : MonoBehaviour
 {
     private static CombatManager _instance;
+    private readonly List<IDisposable> _networkSubscriptions = new List<IDisposable>();
     public static CombatManager Instance
     {
         get
@@ -42,13 +45,27 @@ public class CombatManager : MonoBehaviour
 
         // 注册网络消息监听
         var client = NetworkClient.Instance;
-        client.On<CombatResultResp>(MsgID.CombatResultResp, HandleCombatResultResp);
-        client.On<GetEnemyConfigsResp>(MsgID.GetEnemyConfigsResp, HandleGetEnemyConfigsResp);
-        client.On<GetDungeonConfigResp>(MsgID.GetDungeonConfigResp, HandleGetDungeonConfigResp);
-        client.On<GetStyleConfigsResp>(MsgID.GetStyleConfigsResp, HandleGetStyleConfigsResp);
-        client.On<UnlockStyleResp>(MsgID.UnlockStyleResp, HandleUnlockStyleResp);
-        client.On<GetPlayerStatsResp>(MsgID.GetPlayerStatsResp, HandleGetPlayerStatsResp);
-        client.On<UpdatePlayerStatsResp>(MsgID.UpdatePlayerStatsResp, HandleUpdatePlayerStatsResp);
+        _networkSubscriptions.Add(client.On<CombatResultResp>(MsgID.CombatResultResp, HandleCombatResultResp));
+        _networkSubscriptions.Add(client.On<GetEnemyConfigsResp>(MsgID.GetEnemyConfigsResp, HandleGetEnemyConfigsResp));
+        _networkSubscriptions.Add(client.On<GetDungeonConfigResp>(MsgID.GetDungeonConfigResp, HandleGetDungeonConfigResp));
+        _networkSubscriptions.Add(client.On<GetStyleConfigsResp>(MsgID.GetStyleConfigsResp, HandleGetStyleConfigsResp));
+        _networkSubscriptions.Add(client.On<UnlockStyleResp>(MsgID.UnlockStyleResp, HandleUnlockStyleResp));
+        _networkSubscriptions.Add(client.On<GetPlayerStatsResp>(MsgID.GetPlayerStatsResp, HandleGetPlayerStatsResp));
+        _networkSubscriptions.Add(client.On<UpdatePlayerStatsResp>(MsgID.UpdatePlayerStatsResp, HandleUpdatePlayerStatsResp));
+    }
+
+    private void OnDestroy()
+    {
+        foreach (var subscription in _networkSubscriptions)
+        {
+            subscription.Dispose();
+        }
+
+        _networkSubscriptions.Clear();
+        if (ReferenceEquals(_instance, this))
+        {
+            _instance = null;
+        }
     }
 
     // ========== 本地状态 ==========

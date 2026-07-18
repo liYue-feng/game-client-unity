@@ -13,6 +13,7 @@
 // 开发阶段可以先使用测试 code 进行调试。
 
 using System;
+using System.Collections.Generic;
 using Game.Network;
 using Game.Protocol;
 using UnityEngine;
@@ -22,6 +23,7 @@ namespace Game.Managers
     public class LoginManager : MonoBehaviour
     {
         private static LoginManager _instance;
+        private readonly List<IDisposable> _networkSubscriptions = new List<IDisposable>();
         public static LoginManager Instance
         {
             get
@@ -66,7 +68,21 @@ namespace Game.Managers
 
             // 注册消息监听
             var client = NetworkClient.Instance;
-            client.On<LoginResp>(MsgID.LoginResp, HandleLoginResp);
+            _networkSubscriptions.Add(client.On<LoginResp>(MsgID.LoginResp, HandleLoginResp));
+        }
+
+        private void OnDestroy()
+        {
+            foreach (var subscription in _networkSubscriptions)
+            {
+                subscription.Dispose();
+            }
+
+            _networkSubscriptions.Clear();
+            if (ReferenceEquals(_instance, this))
+            {
+                _instance = null;
+            }
         }
 
         /// <summary>

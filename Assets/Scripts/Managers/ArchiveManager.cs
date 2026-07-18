@@ -14,6 +14,7 @@
 //   - 游戏体验：保存是低优先级操作，不应影响游戏流畅度
 
 using System;
+using System.Collections.Generic;
 using Game.Network;
 using Game.Protocol;
 using UnityEngine;
@@ -23,6 +24,7 @@ namespace Game.Managers
     public class ArchiveManager : MonoBehaviour
     {
         private static ArchiveManager _instance;
+        private readonly List<IDisposable> _networkSubscriptions = new List<IDisposable>();
         public static ArchiveManager Instance
         {
             get
@@ -64,8 +66,22 @@ namespace Game.Managers
 
             // 注册消息监听
             var client = NetworkClient.Instance;
-            client.On<SaveArchiveResp>(MsgID.SaveArchiveResp, HandleSaveResp);
-            client.On<LoadArchiveResp>(MsgID.LoadArchiveResp, HandleLoadResp);
+            _networkSubscriptions.Add(client.On<SaveArchiveResp>(MsgID.SaveArchiveResp, HandleSaveResp));
+            _networkSubscriptions.Add(client.On<LoadArchiveResp>(MsgID.LoadArchiveResp, HandleLoadResp));
+        }
+
+        private void OnDestroy()
+        {
+            foreach (var subscription in _networkSubscriptions)
+            {
+                subscription.Dispose();
+            }
+
+            _networkSubscriptions.Clear();
+            if (ReferenceEquals(_instance, this))
+            {
+                _instance = null;
+            }
         }
 
         /// <summary>
