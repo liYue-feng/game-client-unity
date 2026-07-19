@@ -15,7 +15,6 @@ public class DamageNumberPool : MonoBehaviour
             if (_instance == null)
             {
                 var go = new GameObject("[DamageNumberPool]");
-                DontDestroyOnLoad(go);
                 _instance = go.AddComponent<DamageNumberPool>();
             }
             return _instance;
@@ -36,7 +35,6 @@ public class DamageNumberPool : MonoBehaviour
             return;
         }
         _instance = this;
-        DontDestroyOnLoad(gameObject);
 
         _poolRoot = new GameObject("DamageNumbers");
         _poolRoot.transform.SetParent(transform);
@@ -88,5 +86,15 @@ public class DamageNumberPool : MonoBehaviour
     {
         var dn = Instance.Get();
         dn.Init(text, worldPos, type);
+    }
+
+    private void OnDestroy()
+    {
+        _pool.Clear();
+        _poolRoot = null;
+        if (ReferenceEquals(_instance, this))
+        {
+            _instance = null;
+        }
     }
 }

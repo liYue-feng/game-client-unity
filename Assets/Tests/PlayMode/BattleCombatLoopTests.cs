@@ -207,16 +207,37 @@ namespace Game.Tests.PlayMode
             var oldRun = FindActiveSceneComponent("BattleRunController");
             var oldSpawner = FindActiveSceneComponent("WaveSpawner");
             var oldPool = FindUniqueLoadedComponent("ObjectPool");
+            var oldDamageNumberPool = FindUniqueLoadedComponent("DamageNumberPool");
             var oldPlayer = GameObject.Find("Player");
             var oldPlayerController = FindComponent(oldPlayer, "PlayerController");
+            var oldHurtbox = FindComponent(oldPlayer, "Hurtbox");
             var oldRunId = oldRun.GetInstanceID();
             var oldSpawnerId = oldSpawner.GetInstanceID();
             var oldPoolId = oldPool.GetInstanceID();
+            var oldDamageNumberPoolId = oldDamageNumberPool.GetInstanceID();
             var oldPlayerId = oldPlayer.GetInstanceID();
 
-            InvokeRunWaveCompletion(oldSpawner, oldRun);
+            Assert.That(
+                ReceiveCombatHit(
+                    oldHurtbox,
+                    new CombatHit(100000, 1f, 3f, false, new RecordingParryResponder())),
+                Is.EqualTo(CombatHitResult.Damaged));
+            Assert.That(Time.timeScale, Is.EqualTo(0f).Within(0.0001f));
             Assert.That(((Behaviour)oldPlayerController).enabled, Is.False,
                 "Terminal completion must disable the old PlayerController before restart.");
+            var oldActiveDamageNumbers = FindLoadedComponents("DamageNumber")
+                .Where(number => number.gameObject.activeInHierarchy)
+                .Where(number =>
+                {
+                    var textMesh = number.GetComponentInChildren<TextMesh>(true);
+                    return textMesh != null && textMesh.text.Contains("100000");
+                })
+                .ToArray();
+            Assert.That(oldActiveDamageNumbers, Is.Not.Empty,
+                "Real lethal damage must leave an active 100000 number while BattleResult freezes time.");
+            var oldActiveDamageNumberIds = oldActiveDamageNumbers
+                .Select(number => number.GetInstanceID())
+                .ToArray();
             var oldGameOver = FindActiveSceneComponent("GameOverUI");
             var restartObject = FindDescendant(oldGameOver.transform, "BtnRestart");
             Assert.That(restartObject, Is.Not.Null);
@@ -235,6 +256,7 @@ namespace Game.Tests.PlayMode
 
             var newSpawner = FindActiveSceneComponent("WaveSpawner");
             var newPool = FindUniqueLoadedComponent("ObjectPool");
+            var newDamageNumberPool = FindUniqueLoadedComponent("DamageNumberPool");
             var newPlayer = GameObject.Find("Player");
             var newSetup = FindActiveSceneComponent("BattleSceneSetup");
             var newInputBridge = FindComponent(newPlayer, "PlayerInputBridge");
@@ -244,11 +266,27 @@ namespace Game.Tests.PlayMode
             Assert.That(oldRun == null, Is.True);
             Assert.That(oldSpawner == null, Is.True);
             Assert.That(oldPool == null, Is.True);
+            Assert.That(oldDamageNumberPool == null, Is.True,
+                $"Restart must destroy old DamageNumberPool {oldDamageNumberPoolId}.");
+            for (var index = 0; index < oldActiveDamageNumbers.Length; index++)
+            {
+                Assert.That(oldActiveDamageNumbers[index] == null, Is.True,
+                    $"Restart must destroy old active DamageNumber {oldActiveDamageNumberIds[index]}.");
+            }
             Assert.That(oldPlayer == null, Is.True);
             Assert.That(oldGameOver == null, Is.True);
             Assert.That(newRun.GetInstanceID(), Is.Not.EqualTo(oldRunId));
             Assert.That(newSpawner.GetInstanceID(), Is.Not.EqualTo(oldSpawnerId));
             Assert.That(newPool.GetInstanceID(), Is.Not.EqualTo(oldPoolId));
+            Assert.That(newDamageNumberPool.GetInstanceID(), Is.Not.EqualTo(oldDamageNumberPoolId));
+            Assert.That(newDamageNumberPool.gameObject.scene, Is.EqualTo(SceneManager.GetActiveScene()),
+                "The replacement DamageNumberPool must belong to the new BattleScene.");
+            Assert.That(
+                FindLoadedComponents("DamageNumber")
+                    .Where(number => number.gameObject.activeInHierarchy)
+                    .ToArray(),
+                Is.Empty,
+                "A fresh battle must not inherit active transient damage numbers.");
             Assert.That(newPlayer.GetInstanceID(), Is.Not.EqualTo(oldPlayerId));
             Assert.That(GetPropertyValue(newRun, "State").ToString(), Is.EqualTo("Running"));
             Assert.That(GetPropertyValue(newRun, "Outcome").ToString(), Is.EqualTo("None"));
