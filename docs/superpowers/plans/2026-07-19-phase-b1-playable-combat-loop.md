@@ -259,6 +259,22 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "Import-Module Pester; In
 - Result-UI probe: trigger a real Defeat, find the GameOverUI Canvas, temporarily switch that Canvas from ScreenSpaceOverlay to ScreenSpaceCamera with `Camera.main`, render into a separate 960x540 RenderTexture, require both dark overlay and light result-panel pixel populations, write `Logs/phase-b1-result.png`, and restore Canvas render mode/camera in `finally`.
 - The parent agent opens both PNGs. It checks player/enemy/world framing in the combat image and verifies title/buttons fit without overlap in the result image.
 
+**Task 7 evidence (2026-07-19)**
+
+- Delivery base: `c8b3f07a1d61efc735086d5af75ed6d8742712ad`; required Task 7 subject: `docs: record phase b1 combat verification`.
+- Task 7 was paused when the first full-run combat PNG exposed a stale lethal `100000` number. The scene-lifetime fix `c8b3f07` made `DamageNumberPool` scene-owned, added real Restart regression coverage, and was independently reviewed before visual verification resumed.
+- Visual fixture: `Assets/Tests/PlayMode/BattleVisualEvidenceTests.cs`; it deletes stale output, uses real `BattleScene` objects and canonical Attack1/Hurtbox paths, and restores Camera/Canvas/render-target state in `finally`.
+- Initial probe evidence: v1/v2 exposed the test-asmdef PNG API boundary; v3 exposed insufficient Attack1 time accumulation; v4 correctly rejected a 10px world framing; v6 retained the final 1% dark-population experiment before the stable 0.5% dark plus >=24px projection gate was selected.
+- Post-fix focused visual runs: `Logs/B1-task7-postfix-visual-{1,2}.xml`, each `2/2`, failed `0`; both runs produced a clean combat frame without stale `100000` text.
+- Final combat PNG: `Logs/phase-b1-combat.png`, 960x540, 104606 bytes. Full-run metrics were opaque `518400`, dark `2640`, light `514564`, chromatic `117834`, colors `46`, variance `304.71`, Player `57.60px`, Grunt `48.00px`; SHA-256 `4ABA4F3D402E90DE4C44ADE8DF66365135851CAD72008BE4A808049D714AE3A7`.
+- Final result PNG: `Logs/phase-b1-result.png`, 960x540, 143809 bytes. Full-run metrics were opaque `518400`, dark `297973`, light `217068`, colors `41`, variance `6281.16`; SHA-256 `BC3D66DE6BC1F51227588119B4C4595E4FDE4D0D955B676809CB9FAA02CB40FD`.
+- Parent final visual verdict: APPROVED. The exact final combat frame showed Player, Grunt, and ground clearly in frame with no stale `100000`, transient residue, or text overlap; the result title, four statistics, and single Restart button all fit inside the panel without overlap.
+- Focused combat: `Logs/B1-task7-postfix2-combat.xml`, `31/31`; five-reload smoke: `Logs/B1-task7-postfix2-smoke.xml`, `3/3`.
+- Complete EditMode: `Logs/B1-task7-postfix2-full-editmode.xml`, `111/111`; complete PlayMode: `Logs/B1-task7-postfix2-full-playmode.xml`, `45/45`.
+- Asset integrity passed; Pester passed `5/5`; only `BattleTimeController` writes `Time.timeScale`; every gameplay `ReceiveHit` caller supplies `CombatHit`; no `ParryHitbox` or test-side direct `ImageConversion` dependency remains.
+- Independent Task 7 review PASS: no Critical, Important, or Minor findings; real-path capture, stale-output prevention, cleanup, framing gates, scope, and documentation boundaries were confirmed.
+- Final repository hygiene passed before commit. A commit cannot truthfully embed its own final SHA; the ignored Task 7 report records the exact head after commit.
+
 **Final gates**
 
 1. Asset integrity passes.

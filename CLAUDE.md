@@ -81,14 +81,16 @@ game_client_unity/
 
 当前战斗使用 `UnityEngine.Input` 和自定义 `GestureInput`。未使用的 Input System 包会破坏当前手写 ProjectSettings 下的 PlayMode 初始化，因此 Phase A1 已移除；需要新输入后端时必须连同有效配置和回归测试一起接入。
 
-## Phase A2 应用生命周期（2026-07-18 已验证）
+## 当前工程阶段（2026-07-19 已验证）
 
-- `RuntimeBootstrap` 在场景加载前自动创建 Offline `[GameApplication]`，默认入口为 `BattleScene`
-- `[GameApplication]` 通过唯一 `[GameServices]` 根持有 `MainThreadDispatcher`、`SceneTransitionManager`、`AudioManager`、`LoadingScreen`、`AchievementManager`
-- `BattleScene` 重载时应用根、服务根和五个服务实例保持不变，场景内 `Player` 使用新实例，Offline 禁止类型未创建
-- Unity EditMode `54/54`、PlayMode `10/10` 通过；Pester 资源验证 `5/5` 通过，fresh compile 成功
-- `Online` 模式在 A2 阶段明确失败关闭；A3 完成网络整合后再启用在线启动
-- 未执行手工可视化试玩；Phase A3 仍需统一网络连接、心跳、重连和 WebSocket 主线程回调边界
+- Phase A2 已建立自动 Offline 生命周期：`RuntimeBootstrap -> [GameApplication] -> [GameServices]`，仅应用根跨场景持久化，默认进入 `BattleScene`
+- Phase A3 已完成 service-owned 网络边界：`NetworkClient`、WebSocket transport、主线程 dispatcher、连接 host 及唯一心跳/重连策略均有自动测试；A3 收口验证为 EditMode `88/88`、PlayMode `11/11`
+- Phase A4 当前只有设计与实施计划，尚未在本分支交付 Online 会话、`MenuScene`、真实后端登录/存档联调；Offline 仍是默认且唯一已交付用户路径
+- Phase B1 已建立可玩的离线战斗权威：`CombatHit` 是命中/弹反唯一契约，`BattleTimeController` 是唯一 `Time.timeScale` 写入者，场景内 `ObjectPool`/`DamageNumberPool`/`WaveSpawner` 随战局释放；`c8b3f07` 修复了终局零倍速伤害字跨 Restart 残留
+- `BattleRunController` 统一 Victory/Defeat/Restart；终局冻结动作、移动与热键，结果 UI 只提供 Restart，重开后 Player、Pool、Spawner、UI、EventSystem 和时间状态均为新战局
+- B1 自动截图探针已生成并由父级最终批准 `Logs/phase-b1-combat.png` 与 `Logs/phase-b1-result.png`，两图均为 960x540；combat 为 dark `2640`、chromatic `117834`、variance `304.71`、Player `57.60px`、Grunt `48.00px`、SHA-256 `4ABA4F3D402E90DE4C44ADE8DF66365135851CAD72008BE4A808049D714AE3A7`，result 为 dark `297973`、light `217068`、variance `6281.16`、SHA-256 `BC3D66DE6BC1F51227588119B4C4595E4FDE4D0D955B676809CB9FAA02CB40FD`
+- 在 `c8b3f07` 基线上，B1 最终有效回归为 focused visual `2/2` 连续两次、combat `31/31`、五次重载 smoke `3/3`、EditMode `111/111`、PlayMode `45/45`、Pester `5/5`；资源完整性、canonical hit/parry、唯一时间写入和场景重载门禁均通过
+- 后续工作为 Phase B2 战斗表现/敌人体验，以及 Phase C UI、Prefab、动画、资源加载和打包工程化
 
 ## 服务器仓库
 
