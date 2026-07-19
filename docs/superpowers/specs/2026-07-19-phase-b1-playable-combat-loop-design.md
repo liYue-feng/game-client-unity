@@ -43,7 +43,7 @@ Phase B1 把当前“场景能创建玩家、敌人和 HUD”的离线基线提�
 
 新增 `Assets/Scripts/Gameplay/Game.Gameplay.asmdef`，包含：
 
-- `CombatHit`：伤害、X 方向、击退、是否可弹反、`IParryResponder` 来源。
+- `CombatHit`：伤害、X 方向、击退、是否可弹反、`IParryResponder` 来源；`Hurtbox.ReceiveHit` 返回 `CombatHitResult`（Damaged/Parried/Ignored），让弹丸等调用者决定后续生命周期。
 - `IParryResponder`：来源收到成功弹反后的唯一回调。
 - `AttackTimeline`：前摇、有效帧、恢复帧；根据 elapsed 返回 `Windup/Active/Recovery/Complete`。
 - `CombatActionPolicy`：只接收 `transitionAllowed`、`onCooldown`、当前耐力和费用等核心值，不引用仍位于 `Assembly-CSharp` 的 `PlayerState`；不直接修改 Unity 组件。
@@ -70,6 +70,7 @@ Phase B1 把当前“场景能创建玩家、敌人和 HUD”的离线基线提�
 - 不可弹攻击或不在窗口时走正常伤害、受击和击退。
 - `EnemyBase` 实现 `IParryResponder`，成功弹反进入 Stunned。
 - `Projectile` 实现 `IParryResponder`，成功弹反调用现有 `Deflect`。
+- Projectile 收到 `CombatHitResult.Parried` 后不得执行原命中销毁分支；它必须以反向后的状态继续存活，后续命中敌人才回收。
 - 玩家 Hitbox、Grunt、Archer、Elite、Boss 和 Projectile 都构造完整 `CombatHit`，禁止再传 `null` 表达攻击语义。
 - 删除 `ParryHitbox.OnTriggerEnter2D` 直接调用 `OnParrySuccess` 的第二入口，并从 `BattleSceneSetup` 移除该组件。成功弹反只能发生在 `Hurtbox.ReceiveHit(CombatHit)`，每次成功只回调来源一次。
 
