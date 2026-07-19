@@ -1,6 +1,7 @@
 using UnityEngine;
 using System.Collections;
 using System.Collections.Generic;
+using Game.Gameplay;
 
 /// <summary>
 /// 波次刷怪器：管理战斗房间内的敌人波次。
@@ -33,6 +34,10 @@ public class WaveSpawner : MonoBehaviour, System.IDisposable
         new Dictionary<EnemyBase, System.Action<EnemyBase>>();
     private bool _poolsRegistered;
     private bool _disposed;
+    private BattleArenaBounds _arenaBounds;
+    private Transform _player;
+    private Camera _camera;
+    private bool _arenaConfigured;
 
     /// <summary>所有波次完成事件</summary>
     public event System.Action OnAllWavesComplete;
@@ -128,7 +133,20 @@ public class WaveSpawner : MonoBehaviour, System.IDisposable
                 break;
         }
 
+        enemyBase.InitializeCombatBaseline();
+
         return obj;
+    }
+
+    /// <summary>
+    /// 显式绑定当前战局的世界边界、玩家与相机，避免 Spawner Transform 再充当第二套坐标权威。
+    /// </summary>
+    public void ConfigureArena(BattleArenaBounds bounds, Transform player, Camera camera)
+    {
+        _arenaBounds = bounds;
+        _player = player;
+        _camera = camera;
+        _arenaConfigured = player != null && camera != null;
     }
 
     /// <summary>开始第一波</summary>
@@ -178,23 +196,42 @@ public class WaveSpawner : MonoBehaviour, System.IDisposable
     /// <summary>从对象池取出一个敌人</summary>
     private void SpawnEnemy(EnemySpawnEntry entry)
     {
-        if (_disposed) return;
+        if (_disposed || !_arenaConfigured) return;
         GameObject enemyObj = ObjectPool.Instance.Get(entry.enemyType);
         if (enemyObj == null) return;
 
-        // 重置位置
-        enemyObj.transform.position = transform.position + new Vector3(entry.spawnX, 0f, 0f);
-        enemyObj.transform.rotation = Quaternion.identity;
-
-        // 重置敌人状态（池复用时的关键步骤）
         var enemyBase = enemyObj.GetComponent<EnemyBase>();
         if (enemyBase != null)
         {
             UnbindDeathHandler(enemyBase);
-            enemyBase.ResetForPool();
+            enemyBase.InitializeCombatBaseline();
+            var waveStats = EnemyWaveScaling.Calculate(
+                enemyBase.Baseline,
+                _currentWave,
+                new EnemyWaveMultipliers(
+                    enemyHpMultiplier,
+                    enemyDamageMultiplier,
+                    enemySpeedMultiplier));
+            enemyBase.PrepareForSpawn(waveStats);
 
-            // 应用波次属性增长
-            ApplyWaveScaling(enemyBase, _currentWave);
+            // Spawn entry 只表达侧别，最终位置由战场世界坐标权威统一规划。
+            var cameraHalfWidth = _camera.orthographicSize * _camera.aspect;
+            var verticalDistance = (double)transform.position.y - _player.position.y;
+            var chaseDistance = System.Math.Max(0d, enemyBase.chaseRange);
+            // Enemy AI 使用二维距离；先扣除固定出生高度差，避免横向预算取满后落在追击半径外。
+            var horizontalChaseRange = (float)System.Math.Sqrt(System.Math.Max(
+                0d,
+                chaseDistance * chaseDistance - verticalDistance * verticalDistance));
+            var spawnX = ArenaSpawnPlanner.PlanX(
+                _arenaBounds,
+                _player.position.x,
+                entry.preferredSide,
+                cameraHalfWidth,
+                0.5f,
+                horizontalChaseRange);
+            enemyObj.transform.SetPositionAndRotation(
+                new Vector3(spawnX, transform.position.y, 0f),
+                Quaternion.identity);
 
             // 监听死亡 — 使用局部变量避免闭包问题
             string typeKey = entry.enemyType;
@@ -215,6 +252,11 @@ public class WaveSpawner : MonoBehaviour, System.IDisposable
         var pool = ObjectPool.ExistingInstance;
         if (pool != null)
         {
+            var enemy = obj.GetComponent<EnemyBase>();
+            if (enemy != null)
+            {
+                enemy.CancelActiveLease();
+            }
             pool.Return(key, obj);
         }
     }
@@ -255,6 +297,18 @@ public class WaveSpawner : MonoBehaviour, System.IDisposable
 
         _disposed = true;
         StopAllCoroutines();
+        foreach (var enemyObject in new List<GameObject>(_aliveEnemies))
+        {
+            if (enemyObject != null)
+            {
+                var enemy = enemyObject.GetComponent<EnemyBase>();
+                if (enemy != null)
+                {
+                    enemy.CancelActiveLease();
+                }
+            }
+        }
+
         foreach (var registration in new List<KeyValuePair<EnemyBase, System.Action<EnemyBase>>>(_deathHandlers))
         {
             if (registration.Key != null)
@@ -280,6 +334,9 @@ public class WaveSpawner : MonoBehaviour, System.IDisposable
 
         _registeredPoolKeys.Clear();
         _poolsRegistered = false;
+        _player = null;
+        _camera = null;
+        _arenaConfigured = false;
     }
 
     private void OnDestroy()
@@ -287,20 +344,6 @@ public class WaveSpawner : MonoBehaviour, System.IDisposable
         Dispose();
     }
 
-    /// <summary>根据当前波次对敌人属性进行增长</summary>
-    private void ApplyWaveScaling(EnemyBase enemy, int waveIndex)
-    {
-        if (waveIndex <= 0) return;
-
-        float hpScale = Mathf.Pow(enemyHpMultiplier, waveIndex);
-        float dmgScale = Mathf.Pow(enemyDamageMultiplier, waveIndex);
-        float spdScale = Mathf.Pow(enemySpeedMultiplier, waveIndex);
-
-        enemy.maxHp = Mathf.RoundToInt(enemy.maxHp * hpScale);
-        enemy.hp = enemy.maxHp;
-        enemy.damage = Mathf.RoundToInt(enemy.damage * dmgScale);
-        enemy.moveSpeed *= spdScale;
-    }
 }
 
 /// <summary>
@@ -325,6 +368,6 @@ public class EnemySpawnEntry
     public string enemyType = "grunt";
     [Tooltip("数量")]
     public int count = 1;
-    [Tooltip("生成位置X偏移")]
-    public float spawnX = 5f;
+    [Tooltip("优先生成侧别；最终世界坐标由战场规划器计算")]
+    public ArenaSpawnSide preferredSide = ArenaSpawnSide.Right;
 }

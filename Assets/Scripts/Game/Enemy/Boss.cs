@@ -47,6 +47,12 @@ public class Boss : EnemyBase
         base.Awake();
     }
 
+    protected override void ResetSubclassState()
+    {
+        _isEnraged = false;
+        _attackPattern = 0;
+    }
+
     protected override void Update()
     {
         // 检测阶段切换

@@ -19,7 +19,9 @@ public sealed class BattleRunController : MonoBehaviour, IDisposable
     private Func<CombatResultData> _resultDataProvider;
     private TimeScaleRequestToken _battleResultToken;
     private bool _configured;
+    private bool _cameraRigConfigured;
     private bool _disposed;
+    private BattleCameraRig _cameraRig;
 
     public BattleRunState State => _runState.State;
     public BattleRunOutcome Outcome => _runState.Outcome;
@@ -73,6 +75,26 @@ public sealed class BattleRunController : MonoBehaviour, IDisposable
         _configured = true;
     }
 
+    /// <summary>
+    /// 在既有战局配置后注入场景相机所有者，保持 B1 Configure 契约不变并让终局先停止跟随。
+    /// </summary>
+    public void ConfigureCameraRig(BattleCameraRig rig)
+    {
+        if (!_configured)
+        {
+            throw new InvalidOperationException(
+                "BattleRunController must be configured before its camera rig.");
+        }
+
+        if (_cameraRigConfigured)
+        {
+            throw new InvalidOperationException("BattleRunController camera rig can only be configured once.");
+        }
+
+        _cameraRig = rig != null ? rig : throw new ArgumentNullException(nameof(rig));
+        _cameraRigConfigured = true;
+    }
+
     private void HandlePlayerDeath()
     {
         Complete(BattleRunOutcome.Defeat);
@@ -94,6 +116,10 @@ public sealed class BattleRunController : MonoBehaviour, IDisposable
         _playerController.enabled = false;
         _playerBody.velocity = Vector2.zero;
         _battleHotkeyOwner.BattleHotkeysEnabled = false;
+        if (_cameraRig != null)
+        {
+            _cameraRig.SetFollowEnabled(false);
+        }
         _battleResultToken = _battleTimeController.RequestTimeScale(
             BattleTimeController.BattleResultReason,
             0f);
@@ -128,6 +154,11 @@ public sealed class BattleRunController : MonoBehaviour, IDisposable
         }
 
         _disposed = true;
+        if (_cameraRig != null)
+        {
+            _cameraRig.SetFollowEnabled(false);
+        }
+
         if (_configured)
         {
             _playerStats.OnDeath -= HandlePlayerDeath;

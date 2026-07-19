@@ -38,6 +38,11 @@ public class Archer : EnemyBase
         base.Update();
     }
 
+    protected override void ResetSubclassState()
+    {
+        _shootCooldownTimer = 0f;
+    }
+
     protected override void UpdateChase()
     {
         if (_player == null) return;

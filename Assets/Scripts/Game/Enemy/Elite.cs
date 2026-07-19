@@ -41,6 +41,12 @@ public class Elite : EnemyBase
         base.Awake();
     }
 
+    protected override void ResetSubclassState()
+    {
+        _currentCombo = 0;
+        _isHeavyAttack = false;
+    }
+
     protected override void UpdateTelegraph()
     {
         _rb.velocity = Vector2.zero;

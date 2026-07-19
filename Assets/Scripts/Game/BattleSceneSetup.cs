@@ -1,3 +1,4 @@
+using Game.Gameplay;
 using UnityEngine;
 using UnityEngine.EventSystems;
 
@@ -30,6 +31,7 @@ public class BattleSceneSetup : MonoBehaviour
     private WaveSpawner _waveSpawner;
     private BattleRunController _battleRunController;
     private GameOverUI _gameOverUI;
+    private BattleCameraRig _battleCameraRig;
 
     // 战斗统计
     private int _killCount;
@@ -161,7 +163,10 @@ public class BattleSceneSetup : MonoBehaviour
             camObj.AddComponent<Camera>();
         }
 
-        camObj.transform.position = new Vector3(0f, 0f, -10f);
+        var rigObject = new GameObject("[BattleCameraRig]");
+        _battleCameraRig = rigObject.AddComponent<BattleCameraRig>();
+        camObj.transform.SetParent(rigObject.transform, false);
+        camObj.transform.localPosition = new Vector3(0f, 0f, -10f);
         camObj.tag = "MainCamera";
 
         // 水墨风格：相机背景设为宣纸色
@@ -294,11 +299,16 @@ public class BattleSceneSetup : MonoBehaviour
     private void CreateWaveSpawner()
     {
         var spawnerObj = new GameObject("WaveSpawner");
-        spawnerObj.transform.position = new Vector3(6f, 1f, 0f);
+        spawnerObj.transform.position = new Vector3(0f, 1f, 0f);
         _waveSpawner = spawnerObj.AddComponent<WaveSpawner>();
 
         // 配置波次（代码配置，无需场景文件）
         ConfigureWaves();
+
+        var arenaBounds = new BattleArenaBounds(-groundWidth * 0.5f, groundWidth * 0.5f);
+        var battleCamera = Camera.main;
+        _battleCameraRig.Configure(_player.transform, arenaBounds, battleCamera);
+        _waveSpawner.ConfigureArena(arenaBounds, _player.transform, battleCamera);
 
         // 开始刷怪
     }
@@ -329,6 +339,7 @@ public class BattleSceneSetup : MonoBehaviour
             _gameOverUI,
             this,
             CaptureCombatResultData);
+        _battleRunController.ConfigureCameraRig(_battleCameraRig);
     }
 
     private void ConfigureWaves()
@@ -347,22 +358,45 @@ public class BattleSceneSetup : MonoBehaviour
             int bossCount = (w + 1) % 5 == 0 ? 1 : 0;
 
             var entries = new System.Collections.Generic.List<EnemySpawnEntry>();
+            ArenaSpawnSide NextSide() => ((w + entries.Count) & 1) == 0
+                ? ArenaSpawnSide.Right
+                : ArenaSpawnSide.Left;
 
             if (gruntCount > 0)
             {
-                entries.Add(new EnemySpawnEntry { enemyType = "grunt", count = gruntCount, spawnX = Random.Range(4f, 8f) * (Random.value > 0.5f ? 1 : -1) });
+                entries.Add(new EnemySpawnEntry
+                {
+                    enemyType = "grunt",
+                    count = gruntCount,
+                    preferredSide = NextSide()
+                });
             }
             if (archerCount > 0)
             {
-                entries.Add(new EnemySpawnEntry { enemyType = "archer", count = archerCount, spawnX = Random.Range(6f, 10f) * (Random.value > 0.5f ? 1 : -1) });
+                entries.Add(new EnemySpawnEntry
+                {
+                    enemyType = "archer",
+                    count = archerCount,
+                    preferredSide = NextSide()
+                });
             }
             if (eliteCount > 0)
             {
-                entries.Add(new EnemySpawnEntry { enemyType = "elite", count = eliteCount, spawnX = Random.Range(5f, 9f) * (Random.value > 0.5f ? 1 : -1) });
+                entries.Add(new EnemySpawnEntry
+                {
+                    enemyType = "elite",
+                    count = eliteCount,
+                    preferredSide = NextSide()
+                });
             }
             if (bossCount > 0)
             {
-                entries.Add(new EnemySpawnEntry { enemyType = "boss", count = bossCount, spawnX = 0f });
+                entries.Add(new EnemySpawnEntry
+                {
+                    enemyType = "boss",
+                    count = bossCount,
+                    preferredSide = NextSide()
+                });
             }
 
             wave.enemies = entries.ToArray();

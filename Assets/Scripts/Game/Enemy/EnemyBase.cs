@@ -66,6 +66,12 @@ public abstract class EnemyBase : MonoBehaviour, IParryResponder
 
     private HitEffectPlayer _hitEffect;
     private Hurtbox _hurtbox;
+    private bool _baselineInitialized;
+    private Color _baselineColor;
+    private bool _baselineParryable;
+
+    /// <summary>实例首次工厂初始化后冻结的战斗基线，后续波次不得从运行时字段继续缩放。</summary>
+    public EnemyStatBaseline Baseline { get; private set; }
 
     protected virtual void Awake()
     {
@@ -93,9 +99,107 @@ public abstract class EnemyBase : MonoBehaviour, IParryResponder
     {
         var playerObj = GameObject.FindGameObjectWithTag("Player");
         if (playerObj != null) _player = playerObj.transform;
+    }
 
-        // 根据一级属性计算基础属性
+    /// <summary>
+    /// 在工厂完成子类默认配置后捕获一次战斗基线。
+    /// </summary>
+    public void InitializeCombatBaseline()
+    {
+        if (_baselineInitialized)
+        {
+            return;
+        }
+
         RecalculateStats();
+        hp = maxHp;
+        _baselineColor = _sprite != null ? _sprite.color : Color.white;
+        _baselineParryable = isCurrentAttackParryable;
+        Baseline = new EnemyStatBaseline(
+            maxHp,
+            damage,
+            moveSpeed,
+            damageReduction,
+            telegraphDuration,
+            attackDuration);
+        _baselineInitialized = true;
+    }
+
+    /// <summary>
+    /// 从不可变基线应用本次波次快照，并清除上一次池租约留下的状态。
+    /// </summary>
+    public void PrepareForSpawn(EnemyWaveStats stats)
+    {
+        if (!_baselineInitialized)
+        {
+            InitializeCombatBaseline();
+        }
+
+        // Task 4 会把攻击生命周期收窄为唯一 owned routine；当前先阻止旧协程越过池租约。
+        StopAllCoroutines();
+        IsDead = false;
+        CurrentState = EnemyState.Idle;
+        maxHp = stats.MaxHp;
+        hp = stats.MaxHp;
+        damage = stats.Damage;
+        moveSpeed = stats.MoveSpeed;
+        damageReduction = Baseline.DamageReduction;
+        telegraphDuration = Baseline.TelegraphDuration;
+        attackDuration = Baseline.AttackDuration;
+        isCurrentAttackParryable = _baselineParryable;
+        _stateTimer = 0f;
+        _decisionTimer = 0f;
+        _distanceToPlayer = 0f;
+        _facingDirection = 1;
+
+        if (_sprite != null)
+        {
+            _sprite.color = _baselineColor;
+            _sprite.flipX = false;
+        }
+
+        if (_rb != null)
+        {
+            _rb.velocity = Vector2.zero;
+            _rb.angularVelocity = 0f;
+        }
+
+        var collider = GetComponent<Collider2D>();
+        if (collider != null)
+        {
+            collider.enabled = true;
+        }
+
+        ResetSubclassState();
+        enabled = true;
+    }
+
+    /// <summary>清理仅由派生敌人拥有、不能包含在通用属性快照中的单次租约状态。</summary>
+    protected virtual void ResetSubclassState()
+    {
+    }
+
+    /// <summary>
+    /// 在归池或战局销毁前关闭当前租约，避免场景切换恢复时间后旧攻击和移动继续执行。
+    /// </summary>
+    internal void CancelActiveLease()
+    {
+        StopAllCoroutines();
+        CurrentState = EnemyState.Idle;
+        _stateTimer = 0f;
+        _decisionTimer = 0f;
+        if (_rb != null)
+        {
+            _rb.velocity = Vector2.zero;
+            _rb.angularVelocity = 0f;
+        }
+
+        if (_baselineInitialized && _sprite != null)
+        {
+            _sprite.color = _baselineColor;
+        }
+
+        enabled = false;
     }
 
     /// <summary>根据一级属性重新计算二级属性和HP</summary>
@@ -361,22 +465,15 @@ public abstract class EnemyBase : MonoBehaviour, IParryResponder
     /// </summary>
     public virtual void ResetForPool()
     {
-        IsDead = false;
-        CurrentState = EnemyState.Idle;
-        hp = maxHp;
-        _stateTimer = 0f;
-        _decisionTimer = 0f;
-
-        // 重置精灵颜色（池中可能保留了淡出后的透明色）
-        if (_sprite != null)
+        if (!_baselineInitialized)
         {
-            Color c = _sprite.color;
-            c.a = 1f;
-            _sprite.color = c;
+            InitializeCombatBaseline();
         }
 
-        // 停止所有协程（包括淡出等残留效果）
-        StopAllCoroutines();
+        PrepareForSpawn(new EnemyWaveStats(
+            Baseline.MaxHp,
+            Baseline.Damage,
+            Baseline.MoveSpeed));
     }
 
     /// <summary>面向玩家</summary>
