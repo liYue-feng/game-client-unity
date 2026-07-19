@@ -143,6 +143,151 @@ namespace Game.Tests.PlayMode
         }
 
         [UnityTest]
+        public IEnumerator VictoryCancelsEliteCommitBeforeBattleResultFreeze()
+        {
+            yield return LoadBattleScene();
+
+            DisableActiveEnemyBehaviours();
+            var run = FindActiveSceneComponent("BattleRunController");
+            var spawner = FindActiveSceneComponent("WaveSpawner");
+            var timeController = FindActiveSceneComponent("BattleTimeController");
+            var player = GameObject.Find("Player");
+            var stats = FindComponent(player, "CharacterStats");
+            var elite = SpawnTrackedEnemy(spawner, "elite", "Elite");
+            try
+            {
+                (elite as Behaviour).enabled = false;
+                elite.transform.position = player.transform.position - new Vector3(0.7f, 0.2f, 0f);
+                SetFieldValue(elite, "_player", player.transform);
+                SetFieldValue(elite, "heavyAttackChance", 0f);
+                SetFieldValue(elite, "telegraphDuration", 0.01f);
+                SetFieldValue(elite, "comboCount", 3);
+                SetFieldValue(elite, "comboInterval", 0.08f);
+                Invoke(elite, "FacePlayer");
+                Physics2D.SyncTransforms();
+                Assert.That((bool)InvokeWithArguments(elite, "TryStartPreparedAttack"), Is.True);
+                yield return WaitForAttackPhase(elite, "Commit", 120);
+
+                InvokeRunWaveCompletion(spawner, run);
+
+                Assert.That(GetPropertyValue(run, "Outcome").ToString(), Is.EqualTo("Victory"));
+                AssertAttackCancelled(elite);
+                var hpAtCompletion = GetIntField(stats, "currentHp");
+                ReleaseBattleResultTime(run, timeController);
+                yield return new WaitForSecondsRealtime(0.2f);
+                Assert.That(Time.timeScale, Is.EqualTo(1f).Within(0.0001f));
+                yield return new WaitForSeconds(0.4f);
+                Assert.That(GetIntField(stats, "currentHp"), Is.EqualTo(hpAtCompletion),
+                    "Victory cancellation must prevent the remaining Elite combo hits after time resumes.");
+            }
+            finally
+            {
+                if (elite != null)
+                {
+                    UnityEngine.Object.Destroy(elite.gameObject);
+                }
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator VictoryCancelsArcherProjectileBeforeBattleResultFreeze()
+        {
+            yield return LoadBattleScene();
+
+            DisableActiveEnemyBehaviours();
+            var run = FindActiveSceneComponent("BattleRunController");
+            var spawner = FindActiveSceneComponent("WaveSpawner");
+            var timeController = FindActiveSceneComponent("BattleTimeController");
+            var player = GameObject.Find("Player");
+            var stats = FindComponent(player, "CharacterStats");
+            var archer = SpawnTrackedEnemy(spawner, "archer", "Archer");
+            GameObject arrow = null;
+            try
+            {
+                (archer as Behaviour).enabled = false;
+                archer.transform.position = player.transform.position - new Vector3(4f, 0f, 0f);
+                SetFieldValue(archer, "_player", player.transform);
+                SetFieldValue(archer, "telegraphDuration", 0.01f);
+                Invoke(archer, "FacePlayer");
+                Assert.That((bool)InvokeWithArguments(archer, "TryStartPreparedAttack"), Is.True);
+                yield return WaitForAttackPhase(archer, "Commit", 120);
+                arrow = GameObject.Find("Arrow");
+                Assert.That(arrow, Is.Not.Null, "The real Archer commit must launch a live projectile.");
+
+                InvokeRunWaveCompletion(spawner, run);
+
+                Assert.That(GetPropertyValue(run, "Outcome").ToString(), Is.EqualTo("Victory"));
+                AssertAttackCancelled(archer);
+                var hpAtCompletion = GetIntField(stats, "currentHp");
+                yield return null;
+                Assert.That(arrow == null, Is.True,
+                    "B2_TASK4_QUALITY_RED_TERMINAL_PROJECTILE: terminal cancellation must destroy detached Archer projectiles.");
+                ReleaseBattleResultTime(run, timeController);
+                yield return new WaitForSeconds(0.8f);
+                Assert.That(GetIntField(stats, "currentHp"), Is.EqualTo(hpAtCompletion),
+                    "A cancelled Archer projectile must not resume damage after BattleResult time is released.");
+                var ownedProjectiles = (IEnumerable)GetInheritedFieldValue(archer, "_ownedProjectiles");
+                Assert.That(ownedProjectiles.Cast<object>(), Is.Empty,
+                    "Terminal cancellation must clear Archer projectile ownership idempotently.");
+            }
+            finally
+            {
+                if (arrow != null)
+                {
+                    UnityEngine.Object.Destroy(arrow);
+                }
+                if (archer != null)
+                {
+                    UnityEngine.Object.Destroy(archer.gameObject);
+                }
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator DefeatCancelsBossTelegraphBeforeBattleResultFreeze()
+        {
+            yield return LoadBattleScene();
+
+            DisableActiveEnemyBehaviours();
+            var run = FindActiveSceneComponent("BattleRunController");
+            var spawner = FindActiveSceneComponent("WaveSpawner");
+            var timeController = FindActiveSceneComponent("BattleTimeController");
+            var player = GameObject.Find("Player");
+            var stats = FindComponent(player, "CharacterStats");
+            var boss = SpawnTrackedEnemy(spawner, "boss", "Boss");
+            try
+            {
+                (boss as Behaviour).enabled = false;
+                boss.transform.position = player.transform.position + new Vector3(1f, 0f, 0f);
+                SetFieldValue(boss, "_player", player.transform);
+                SetFieldValue(boss, "_attackPattern", 3);
+                Invoke(boss, "FacePlayer");
+                Assert.That((bool)InvokeWithArguments(boss, "TryStartPreparedAttack"), Is.True);
+                yield return WaitForAttackPhase(boss, "Telegraph", 30);
+                Assert.That(GetBoolProperty((Component)GetInheritedFieldValue(boss, "_telegraphView"), "IsVisible"), Is.True);
+
+                InvokeWithArguments(stats, "TakeDamage", 100000);
+
+                Assert.That(GetPropertyValue(run, "Outcome").ToString(), Is.EqualTo("Defeat"));
+                AssertAttackCancelled(boss);
+                var hpAtCompletion = GetIntField(stats, "currentHp");
+                ReleaseBattleResultTime(run, timeController);
+                yield return new WaitForSecondsRealtime(0.2f);
+                Assert.That(Time.timeScale, Is.EqualTo(1f).Within(0.0001f));
+                yield return new WaitForSeconds(0.8f);
+                Assert.That(GetIntField(stats, "currentHp"), Is.EqualTo(hpAtCompletion),
+                    "Defeat cancellation must prevent the prepared Boss AoE after time resumes.");
+            }
+            finally
+            {
+                if (boss != null)
+                {
+                    UnityEngine.Object.Destroy(boss.gameObject);
+                }
+            }
+        }
+
+        [UnityTest]
         public IEnumerator TerminalResultBlocksPlayerAndBattleHotkeysAtZeroScale()
         {
             yield return LoadBattleScene();
@@ -303,6 +448,39 @@ namespace Game.Tests.PlayMode
             var instance = newGameOver.GetType().GetProperty("Instance", BindingFlags.Static | BindingFlags.Public)
                 ?.GetValue(null);
             Assert.That(instance, Is.SameAs(newGameOver));
+
+            DisableActiveEnemyBehaviours();
+            var replacementEnemy = SpawnTrackedEnemy(newSpawner, "grunt", "Grunt");
+            try
+            {
+                (replacementEnemy as Behaviour).enabled = false;
+                replacementEnemy.transform.position = newPlayer.transform.position - new Vector3(0.6f, 0.2f, 0f);
+                SetFieldValue(replacementEnemy, "_player", newPlayer.transform);
+                SetFieldValue(replacementEnemy, "telegraphDuration", 0.01f);
+                Invoke(replacementEnemy, "FacePlayer");
+                Physics2D.SyncTransforms();
+                var replacementStats = FindComponent(newPlayer, "CharacterStats");
+                var hpBeforeReplacementAttack = GetIntField(replacementStats, "currentHp");
+
+                Assert.That((bool)InvokeWithArguments(replacementEnemy, "TryStartPreparedAttack"), Is.True);
+                Assert.That(GetPropertyValue(replacementEnemy, "CurrentAttackPhase")?.ToString(), Is.EqualTo("Telegraph"));
+                var replacementView = (Component)GetInheritedFieldValue(replacementEnemy, "_telegraphView");
+                Assert.That(GetBoolProperty(replacementView, "IsVisible"), Is.True,
+                    "A replacement scene enemy must not inherit the old terminal hidden-view state.");
+                yield return WaitForAttackPhase(replacementEnemy, "Commit", 120);
+
+                Assert.That(GetIntField(replacementStats, "currentHp"), Is.LessThan(hpBeforeReplacementAttack),
+                    "A freshly spawned replacement enemy must still resolve its owned attack.");
+                Assert.That(GetPropertyValue(newRun, "State").ToString(), Is.EqualTo("Running"));
+                Assert.That(GetPropertyValue(newRun, "Outcome").ToString(), Is.EqualTo("None"));
+            }
+            finally
+            {
+                if (replacementEnemy != null)
+                {
+                    UnityEngine.Object.Destroy(replacementEnemy.gameObject);
+                }
+            }
         }
 
         [UnityTest]
@@ -1262,6 +1440,9 @@ namespace Game.Tests.PlayMode
             SetFieldValue(stateMachine, "counterWindowDuration", 0.05f);
             var elite = CreateEnemyProbe(stateMachine, "Elite", "EliteComboProbe");
             elite.transform.position = player.transform.position - new Vector3(0.7f, 0.2f, 0f);
+            SetFieldValue(elite, "_player", player.transform);
+            SetFieldValue(elite, "heavyAttackChance", 0f);
+            SetFieldValue(elite, "telegraphDuration", 0.01f);
             SetFieldValue(elite, "comboCount", 3);
             SetFieldValue(elite, "comboInterval", 0.05f);
             Physics2D.SyncTransforms();
@@ -1275,11 +1456,14 @@ namespace Game.Tests.PlayMode
             {
                 var hpBeforeParry = GetIntField(stats, "currentHp");
                 Invoke(stateMachine, "RequestParry");
-                Invoke(elite, "OnAttackStart");
+                Invoke(elite, "FacePlayer");
+                Assert.That((bool)InvokeWithArguments(elite, "TryStartPreparedAttack"), Is.True);
+                yield return WaitForEnemyState(elite, "Stunned", 120);
 
                 Assert.That(GetStateName(stateMachine), Is.EqualTo("ParrySuccess"),
                     "The first real Elite combo strike must be consumed by the live parry window.");
                 Assert.That(GetPropertyValue(elite, "CurrentState")?.ToString(), Is.EqualTo("Stunned"));
+                Assert.That(GetPropertyValue(elite, "CurrentAttackPhase")?.ToString(), Is.EqualTo("Complete"));
 
                 yield return new WaitForSecondsRealtime(0.8f);
 
@@ -1308,8 +1492,8 @@ namespace Game.Tests.PlayMode
                     Is.True,
                     "The recovered Elite's real melee attack box must overlap the Player fixture.");
                 var hpBeforeLaterAttack = GetIntField(stats, "currentHp");
-                Invoke(elite, "OnAttackStart");
-                yield return null;
+                Assert.That((bool)InvokeWithArguments(elite, "TryStartPreparedAttack"), Is.True);
+                yield return WaitForAttackPhase(elite, "Commit", 120);
 
                 Assert.That(GetIntField(stats, "currentHp"), Is.LessThan(hpBeforeLaterAttack),
                     "Stopping the parried coroutine must not permanently disable future attacks after recovery.");
@@ -1502,6 +1686,86 @@ namespace Game.Tests.PlayMode
             Assert.That(handlers, Has.Length.EqualTo(1),
                 "WaveSpawner must expose exactly one BattleRunController completion handler.");
             handlers.Single().DynamicInvoke();
+        }
+
+        private static Component SpawnTrackedEnemy(Component spawner, string poolKey, string typeName)
+        {
+            var waves = (Array)GetFieldValue(spawner, "waves");
+            var firstWave = waves.GetValue(0);
+            var entries = (Array)firstWave.GetType().GetField("enemies").GetValue(firstWave);
+            var entry = entries.GetValue(0);
+            entry.GetType().GetField("enemyType").SetValue(entry, poolKey);
+            InvokeWithArguments(spawner, "SpawnEnemy", entry);
+            var enemyObject = GetEnumerableFieldValues(spawner, "_aliveEnemies")
+                .Cast<GameObject>()
+                .Last();
+            var enemy = enemyObject.GetComponents<Component>()
+                .Single(component => component.GetType().Name == typeName);
+            Assert.That(enemy, Is.Not.Null, $"WaveSpawner must track the spawned {typeName}.");
+            return enemy;
+        }
+
+        private static IEnumerator WaitForAttackPhase(Component enemy, string phaseName, int maxFrames)
+        {
+            for (var frame = 0; frame < maxFrames; frame++)
+            {
+                if (GetPropertyValue(enemy, "CurrentAttackPhase")?.ToString() == phaseName)
+                {
+                    yield break;
+                }
+
+                yield return null;
+            }
+
+            Assert.Fail($"{enemy.GetType().Name} did not enter attack phase {phaseName}.");
+        }
+
+        private static IEnumerator WaitForEnemyState(Component enemy, string stateName, int maxFrames)
+        {
+            for (var frame = 0; frame < maxFrames; frame++)
+            {
+                if (GetPropertyValue(enemy, "CurrentState")?.ToString() == stateName)
+                {
+                    yield break;
+                }
+
+                yield return null;
+            }
+
+            Assert.Fail($"{enemy.GetType().Name} did not enter state {stateName}.");
+        }
+
+        private static void AssertAttackCancelled(Component enemy)
+        {
+            Assert.That(GetPropertyValue(enemy, "CurrentAttackPhase")?.ToString(), Is.EqualTo("Complete"));
+            Assert.That(GetInheritedFieldValue(enemy, "_attackRoutine"), Is.Null);
+            var view = (Component)GetInheritedFieldValue(enemy, "_telegraphView");
+            Assert.That(GetBoolProperty(view, "IsVisible"), Is.False);
+        }
+
+        private static void ReleaseBattleResultTime(Component run, Component timeController)
+        {
+            var token = GetFieldValue(run, "_battleResultToken");
+            Assert.That(token, Is.Not.Null);
+            InvokeWithArguments(timeController, "ReleaseTimeScale", token);
+            SetFieldValue(run, "_battleResultToken", Activator.CreateInstance(token.GetType()));
+        }
+
+        private static object GetInheritedFieldValue(Component component, string fieldName)
+        {
+            for (var type = component.GetType(); type != null; type = type.BaseType)
+            {
+                var field = type.GetField(
+                    fieldName,
+                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly);
+                if (field != null)
+                {
+                    return field.GetValue(component);
+                }
+            }
+
+            Assert.Fail($"Expected {component.GetType().Name}.{fieldName}.");
+            return null;
         }
 
         private static GameObject FindDescendant(Transform root, string objectName)

@@ -1,21 +1,17 @@
+using System.Collections;
+using System.Collections.Generic;
+using Game.Gameplay;
 using UnityEngine;
 
-/// <summary>
-/// 弓手：远程敌人，保持距离射箭。
-/// 追击到射程 → 前摇(0.6s黄闪) → 射箭 → 后退 → 再次射击。
-/// 箭矢可被弹反（反弹回弓手自身）。
-/// </summary>
 public class Archer : EnemyBase
 {
-    [Header("弓手特有参数")]
-    [Tooltip("箭矢预制体（运行时创建）")]
+    [Header("Archer")]
     public GameObject projectilePrefab;
-    [Tooltip("射箭冷却时间")]
     public float shootCooldown = 2f;
-    [Tooltip("保持的理想距离")]
     public float preferredDistance = 5f;
 
     private float _shootCooldownTimer;
+    private readonly HashSet<Projectile> _ownedProjectiles = new HashSet<Projectile>();
 
     protected override void Awake()
     {
@@ -23,12 +19,11 @@ public class Archer : EnemyBase
         maxHp = 20;
         moveSpeed = 1.5f;
         damage = 8;
-        attackRange = 6f;    // 远程攻击范围
+        attackRange = 6f;
         chaseRange = 10f;
         telegraphDuration = 0.6f;
         attackDuration = 0.2f;
         isCurrentAttackParryable = true;
-
         base.Awake();
     }
 
@@ -45,28 +40,26 @@ public class Archer : EnemyBase
 
     protected override void UpdateChase()
     {
-        if (_player == null) return;
+        if (_player == null)
+        {
+            return;
+        }
 
         FacePlayer();
-
-        float dist = _distanceToPlayer;
-
-        // 太近 → 后退
-        if (dist < preferredDistance - 1f)
+        var distance = _distanceToPlayer;
+        if (distance < preferredDistance - 1f)
         {
-            float dir = _player.position.x > transform.position.x ? -1f : 1f;
-            _rb.velocity = new Vector2(dir * moveSpeed, _rb.velocity.y);
+            var direction = _player.position.x > transform.position.x ? -1f : 1f;
+            _rb.velocity = new Vector2(direction * moveSpeed, _rb.velocity.y);
         }
-        // 在射程内且冷却完成 → 开始前摇
-        else if (dist <= attackRange && _shootCooldownTimer <= 0)
+        else if (distance <= attackRange && _shootCooldownTimer <= 0f)
         {
-            ChangeState(EnemyState.Telegraph);
+            TryStartPreparedAttack();
         }
-        // 太远 → 追击
-        else if (dist > attackRange)
+        else if (distance > attackRange)
         {
-            float dir = _player.position.x > transform.position.x ? 1f : -1f;
-            _rb.velocity = new Vector2(dir * moveSpeed, _rb.velocity.y);
+            var direction = _player.position.x > transform.position.x ? 1f : -1f;
+            _rb.velocity = new Vector2(direction * moveSpeed, _rb.velocity.y);
         }
         else
         {
@@ -74,38 +67,118 @@ public class Archer : EnemyBase
         }
     }
 
-    protected override void OnAttackStart()
+    protected override EnemyAttackPlan PrepareAttackPlan()
     {
-        // 发射箭矢
-        ShootArrow();
-        _shootCooldownTimer = shootCooldown;
+        var aimDirection = _player != null
+            ? ((Vector2)(_player.position - transform.position)).normalized
+            : new Vector2(_facingDirection, 0f);
+        if (aimDirection == Vector2.zero)
+        {
+            aimDirection = new Vector2(_facingDirection, 0f);
+        }
+
+        var facing = aimDirection.x < 0f ? -1 : 1;
+        var localOffset = (Vector2)transform.InverseTransformVector(aimDirection * 1.5f);
+        return EnemyAttackPlan.Box(
+            "archer_shot",
+            telegraphDuration,
+            attackDuration,
+            0.15f,
+            true,
+            localOffset,
+            new Vector2(3f, 0.6f),
+            facing,
+            aimDirection,
+            1,
+            0f,
+            damage,
+            3f);
     }
 
-    private void ShootArrow()
+    protected override IEnumerator ExecuteAttackPlan(EnemyAttackPlan plan)
     {
-        if (_player == null) return;
+        ShootArrow(plan);
+        _shootCooldownTimer = shootCooldown;
+        yield break;
+    }
 
-        // 创建箭矢（运行时生成，无需预制体）
-        GameObject arrow = new GameObject("Arrow");
-        arrow.transform.position = transform.position + new Vector3(_facingDirection * 0.3f, 0.2f, 0f);
+    private void ShootArrow(EnemyAttackPlan plan)
+    {
+        var arrow = projectilePrefab != null
+            ? Instantiate(projectilePrefab)
+            : CreateRuntimeArrow();
+        arrow.name = "Arrow";
+        arrow.transform.position = transform.position + (Vector3)(plan.AimDirection * 0.3f);
         arrow.layer = LayerMask.NameToLayer("Default");
-
-        // 精灵
-        var sr = arrow.AddComponent<SpriteRenderer>();
-        sr.sprite = PlaceholderSpriteFactory.CreateCircle(3, ShuiMoPalette.Vermillion);
-        sr.sortingOrder = 5;
-
-        // 碰撞
-        var col = arrow.AddComponent<BoxCollider2D>();
-        col.isTrigger = true;
-        col.size = new Vector2(0.3f, 0.1f);
-
-        // 弹丸脚本
-        var projectile = arrow.AddComponent<Projectile>();
-        Vector2 dir = (_player.position - transform.position).normalized;
-        projectile.Launch(dir, gameObject);
-
-        // 标记
         arrow.tag = "EnemyProjectile";
+
+        var projectile = arrow.GetComponent<Projectile>();
+        if (projectile == null)
+        {
+            projectile = arrow.AddComponent<Projectile>();
+        }
+
+        projectile.Launch(
+            plan.AimDirection,
+            gameObject,
+            plan.Damage,
+            plan.IsParryable,
+            plan.Knockback);
+        TrackProjectile(projectile);
+    }
+
+    private static GameObject CreateRuntimeArrow()
+    {
+        var arrow = new GameObject("Arrow");
+        var renderer = arrow.AddComponent<SpriteRenderer>();
+        renderer.sprite = PlaceholderSpriteFactory.CreateCircle(3, ShuiMoPalette.Vermillion);
+        renderer.sortingOrder = 5;
+        var collider = arrow.AddComponent<BoxCollider2D>();
+        collider.isTrigger = true;
+        collider.size = new Vector2(0.3f, 0.1f);
+        return arrow;
+    }
+
+    protected override void OnOwnedAttackCancelled()
+    {
+        DestroyOwnedProjectiles();
+    }
+
+    private void TrackProjectile(Projectile projectile)
+    {
+        PruneOwnedProjectiles();
+        if (projectile == null || !_ownedProjectiles.Add(projectile))
+        {
+            return;
+        }
+
+        projectile.Destroyed += HandleProjectileDestroyed;
+    }
+
+    private void HandleProjectileDestroyed(Projectile projectile)
+    {
+        _ownedProjectiles.Remove(projectile);
+    }
+
+    private void PruneOwnedProjectiles()
+    {
+        _ownedProjectiles.RemoveWhere(projectile => projectile == null);
+    }
+
+    private void DestroyOwnedProjectiles()
+    {
+        PruneOwnedProjectiles();
+        foreach (var projectile in _ownedProjectiles)
+        {
+            if (projectile == null)
+            {
+                continue;
+            }
+
+            projectile.Destroyed -= HandleProjectileDestroyed;
+            Destroy(projectile.gameObject);
+        }
+
+        _ownedProjectiles.Clear();
     }
 }

@@ -288,6 +288,27 @@ public class WaveSpawner : MonoBehaviour, System.IDisposable
         _deathHandlers.Remove(enemy);
     }
 
+    /// <summary>
+    /// Stops attacks owned by the current scene without changing pool leases.
+    /// </summary>
+    public void CancelActiveCombatActions()
+    {
+        for (var index = _aliveEnemies.Count - 1; index >= 0; index--)
+        {
+            var enemyObject = _aliveEnemies[index];
+            if (enemyObject == null)
+            {
+                continue;
+            }
+
+            var enemy = enemyObject.GetComponent<EnemyBase>();
+            if (enemy != null)
+            {
+                enemy.CancelCombatActions();
+            }
+        }
+    }
+
     public void Dispose()
     {
         if (_disposed)
@@ -297,6 +318,7 @@ public class WaveSpawner : MonoBehaviour, System.IDisposable
 
         _disposed = true;
         StopAllCoroutines();
+        CancelActiveCombatActions();
         foreach (var enemyObject in new List<GameObject>(_aliveEnemies))
         {
             if (enemyObject != null)

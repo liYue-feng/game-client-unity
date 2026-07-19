@@ -1,26 +1,23 @@
-using UnityEngine;
+using System;
 using System.Collections;
 using Game.Gameplay;
+using UnityEngine;
 
-/// <summary>
-/// 敌人基类：所有敌人共享的核心逻辑。
-/// 子类（Grunt/Archer/Elite/Boss）通过重写虚方法定制行为。
-///
-/// 核心循环：Idle → Patrol → Chase → Telegraph → Attack → 回到Chase
-/// 前摇(Telegraph)是关键——必须给玩家可见的攻击预警，
-/// 黄色=可弹反，红色=不可弹反（必须闪避）。
-/// </summary>
 [RequireComponent(typeof(Rigidbody2D))]
 public abstract class EnemyBase : MonoBehaviour, IParryResponder
 {
-    [Header("一级属性")]
+    [Header("Primary Attributes")]
     public PrimaryAttributes primary = new PrimaryAttributes
     {
-        strength = 3, innerForce = 1, vitality = 2, spirit = 1, comprehension = 1
+        strength = 3,
+        innerForce = 1,
+        vitality = 2,
+        spirit = 1,
+        comprehension = 1
     };
     public CombatStyle combatStyle = CombatStyle.Sword;
 
-    [Header("基础属性")]
+    [Header("Base Combat")]
     public int hp = 30;
     public int maxHp = 30;
     public float moveSpeed = 2f;
@@ -28,34 +25,26 @@ public abstract class EnemyBase : MonoBehaviour, IParryResponder
     public float attackRange = 1.5f;
     public float chaseRange = 8f;
     public float attackDuration = 0.3f;
-    [Tooltip("死亡时掉落的经验值")]
     public int expValue = 1;
-    [Tooltip("伤害减免（0-1）")]
-    public float damageReduction = 0f;
+    public float damageReduction;
 
-    [Header("前摇参数")]
-    [Tooltip("出招前摇时间（秒），这是给玩家的反应时间")]
+    [Header("Telegraph")]
     public float telegraphDuration = 0.6f;
-    [Tooltip("本次攻击是否可被弹反")]
     public bool isCurrentAttackParryable = true;
-    [Tooltip("前摇颜色（黄=可弹反，红=不可弹反）")]
-    public Color parryableColor = new Color(1f, 0.9f, 0f);   // 黄色
-    public Color unparryableColor = new Color(1f, 0f, 0f);   // 红色
+    public Color parryableColor = new Color(1f, 0.9f, 0f);
+    public Color unparryableColor = new Color(1f, 0f, 0f);
 
-    [Header("AI决策")]
-    [Tooltip("AI决策间隔（秒）")]
+    [Header("AI")]
     public float decisionInterval = 0.5f;
-    [Tooltip("追击中随机停顿概率")]
     public float idleChance = 0.1f;
 
-    /// <summary>当前状态</summary>
     public EnemyState CurrentState { get; protected set; } = EnemyState.Idle;
-    /// <summary>是否已死亡</summary>
     public bool IsDead { get; protected set; }
-    /// <summary>死亡事件</summary>
-    public event System.Action<EnemyBase> OnDeath;
+    public EnemyStatBaseline Baseline { get; private set; }
+    public EnemyAttackPlan CurrentAttackPlan { get; private set; }
+    public EnemyAttackPhase CurrentAttackPhase { get; private set; } = EnemyAttackPhase.Complete;
+    public event Action<EnemyBase> OnDeath;
 
-    // 组件引用
     protected Rigidbody2D _rb;
     protected SpriteRenderer _sprite;
     protected Transform _player;
@@ -66,44 +55,46 @@ public abstract class EnemyBase : MonoBehaviour, IParryResponder
 
     private HitEffectPlayer _hitEffect;
     private Hurtbox _hurtbox;
+    private AttackTelegraphView _telegraphView;
+    private Coroutine _attackRoutine;
+    private Coroutine _deathFadeRoutine;
     private bool _baselineInitialized;
     private Color _baselineColor;
     private bool _baselineParryable;
-
-    /// <summary>实例首次工厂初始化后冻结的战斗基线，后续波次不得从运行时字段继续缩放。</summary>
-    public EnemyStatBaseline Baseline { get; private set; }
 
     protected virtual void Awake()
     {
         _rb = GetComponent<Rigidbody2D>();
         _sprite = GetComponent<SpriteRenderer>();
         _hitEffect = GetComponent<HitEffectPlayer>();
-
-        // 确保 Hurtbox 存在
         _hurtbox = GetComponent<Hurtbox>();
         if (_hurtbox == null)
         {
             _hurtbox = gameObject.AddComponent<Hurtbox>();
         }
 
-        // 初始化碰撞体
-        var col = GetComponent<Collider2D>();
-        if (col == null)
+        if (GetComponent<Collider2D>() == null)
         {
-            var boxCol = gameObject.AddComponent<BoxCollider2D>();
-            boxCol.size = new Vector2(0.32f, 0.48f);
+            var collider = gameObject.AddComponent<BoxCollider2D>();
+            collider.size = new Vector2(0.32f, 0.48f);
+        }
+
+        _telegraphView = GetComponent<AttackTelegraphView>();
+        if (_telegraphView == null)
+        {
+            _telegraphView = gameObject.AddComponent<AttackTelegraphView>();
         }
     }
 
     protected virtual void Start()
     {
-        var playerObj = GameObject.FindGameObjectWithTag("Player");
-        if (playerObj != null) _player = playerObj.transform;
+        var playerObject = GameObject.FindGameObjectWithTag("Player");
+        if (playerObject != null)
+        {
+            _player = playerObject.transform;
+        }
     }
 
-    /// <summary>
-    /// 在工厂完成子类默认配置后捕获一次战斗基线。
-    /// </summary>
     public void InitializeCombatBaseline()
     {
         if (_baselineInitialized)
@@ -125,9 +116,6 @@ public abstract class EnemyBase : MonoBehaviour, IParryResponder
         _baselineInitialized = true;
     }
 
-    /// <summary>
-    /// 从不可变基线应用本次波次快照，并清除上一次池租约留下的状态。
-    /// </summary>
     public void PrepareForSpawn(EnemyWaveStats stats)
     {
         if (!_baselineInitialized)
@@ -135,8 +123,8 @@ public abstract class EnemyBase : MonoBehaviour, IParryResponder
             InitializeCombatBaseline();
         }
 
-        // Task 4 会把攻击生命周期收窄为唯一 owned routine；当前先阻止旧协程越过池租约。
-        StopAllCoroutines();
+        CancelOwnedAttack();
+        StopDeathFade();
         IsDead = false;
         CurrentState = EnemyState.Idle;
         maxHp = stats.MaxHp;
@@ -147,6 +135,8 @@ public abstract class EnemyBase : MonoBehaviour, IParryResponder
         telegraphDuration = Baseline.TelegraphDuration;
         attackDuration = Baseline.AttackDuration;
         isCurrentAttackParryable = _baselineParryable;
+        CurrentAttackPlan = default;
+        CurrentAttackPhase = EnemyAttackPhase.Complete;
         _stateTimer = 0f;
         _decisionTimer = 0f;
         _distanceToPlayer = 0f;
@@ -174,17 +164,14 @@ public abstract class EnemyBase : MonoBehaviour, IParryResponder
         enabled = true;
     }
 
-    /// <summary>清理仅由派生敌人拥有、不能包含在通用属性快照中的单次租约状态。</summary>
     protected virtual void ResetSubclassState()
     {
     }
 
-    /// <summary>
-    /// 在归池或战局销毁前关闭当前租约，避免场景切换恢复时间后旧攻击和移动继续执行。
-    /// </summary>
     internal void CancelActiveLease()
     {
-        StopAllCoroutines();
+        CancelCombatActions();
+        StopDeathFade();
         CurrentState = EnemyState.Idle;
         _stateTimer = 0f;
         _decisionTimer = 0f;
@@ -202,36 +189,36 @@ public abstract class EnemyBase : MonoBehaviour, IParryResponder
         enabled = false;
     }
 
-    /// <summary>根据一级属性重新计算二级属性和HP</summary>
     public void RecalculateStats()
     {
-        var sec = PrimaryAttributeConverter.Convert(primary, 1);
-        maxHp = sec.maxHp;
-        if (hp > maxHp || hp == 0) hp = maxHp;
+        var secondary = PrimaryAttributeConverter.Convert(primary, 1);
+        maxHp = secondary.maxHp;
+        if (hp > maxHp || hp == 0)
+        {
+            hp = maxHp;
+        }
     }
 
-    /// <summary>获取对指定流派的防御力</summary>
     public int GetDefense(CombatStyle attackerStyle)
     {
-        var sec = PrimaryAttributeConverter.Convert(primary, 1);
-        return sec.GetDef(attackerStyle);
+        var secondary = PrimaryAttributeConverter.Convert(primary, 1);
+        return secondary.GetDef(attackerStyle);
     }
 
     protected virtual void Update()
     {
-        if (IsDead) return;
+        if (IsDead)
+        {
+            return;
+        }
 
-        // 更新与玩家的距离
         if (_player != null)
         {
             _distanceToPlayer = Vector2.Distance(transform.position, _player.position);
         }
 
-        // AI决策计时器
         _decisionTimer -= Time.deltaTime;
         _stateTimer -= Time.deltaTime;
-
-        // 状态机
         switch (CurrentState)
         {
             case EnemyState.Idle:
@@ -258,49 +245,45 @@ public abstract class EnemyBase : MonoBehaviour, IParryResponder
         }
     }
 
-    // ========== 状态更新（子类可重写） ==========
-
     protected virtual void UpdateIdle()
     {
-        if (_decisionTimer > 0) return;
-        _decisionTimer = decisionInterval;
+        if (_decisionTimer > 0f)
+        {
+            return;
+        }
 
-        if (_distanceToPlayer <= chaseRange)
-        {
-            ChangeState(EnemyState.Chase);
-        }
-        else
-        {
-            ChangeState(EnemyState.Patrol);
-        }
+        _decisionTimer = decisionInterval;
+        ChangeState(_distanceToPlayer <= chaseRange ? EnemyState.Chase : EnemyState.Patrol);
     }
 
     protected virtual void UpdatePatrol()
     {
-        if (_decisionTimer > 0) return;
-        _decisionTimer = decisionInterval;
+        if (_decisionTimer > 0f)
+        {
+            return;
+        }
 
+        _decisionTimer = decisionInterval;
         if (_distanceToPlayer <= chaseRange)
         {
             ChangeState(EnemyState.Chase);
             return;
         }
 
-        // 随机移动
         _rb.velocity = new Vector2(_facingDirection * moveSpeed * 0.5f, _rb.velocity.y);
     }
 
     protected virtual void UpdateChase()
     {
-        if (_player == null) return;
+        if (_player == null)
+        {
+            return;
+        }
 
-        // 朝向玩家
         FacePlayer();
-
         if (_distanceToPlayer <= attackRange)
         {
-            // 进入攻击范围，开始前摇
-            ChangeState(EnemyState.Telegraph);
+            TryStartPreparedAttack();
             return;
         }
 
@@ -310,36 +293,23 @@ public abstract class EnemyBase : MonoBehaviour, IParryResponder
             return;
         }
 
-        // 追击移动
-        float dir = _player.position.x > transform.position.x ? 1f : -1f;
-        _rb.velocity = new Vector2(dir * moveSpeed, _rb.velocity.y);
+        var direction = _player.position.x > transform.position.x ? 1f : -1f;
+        _rb.velocity = new Vector2(direction * moveSpeed, _rb.velocity.y);
     }
 
     protected virtual void UpdateTelegraph()
     {
-        // 前摇期间不移动，播放警示闪烁
         _rb.velocity = Vector2.zero;
-
-        if (_stateTimer <= 0)
-        {
-            ChangeState(EnemyState.Attack);
-        }
     }
 
     protected virtual void UpdateAttack()
     {
         _rb.velocity = Vector2.zero;
-
-        if (_stateTimer <= 0)
-        {
-            // 攻击结束，回到追击
-            ChangeState(EnemyState.Chase);
-        }
     }
 
     protected virtual void UpdateHurt()
     {
-        if (_stateTimer <= 0)
+        if (_stateTimer <= 0f)
         {
             ChangeState(EnemyState.Chase);
         }
@@ -347,34 +317,32 @@ public abstract class EnemyBase : MonoBehaviour, IParryResponder
 
     protected virtual void UpdateStunned()
     {
-        if (_stateTimer <= 0)
+        if (_stateTimer <= 0f)
         {
             ChangeState(EnemyState.Chase);
         }
     }
 
-    // ========== 核心方法 ==========
-
-    /// <summary>切换状态</summary>
     protected virtual void ChangeState(EnemyState newState)
     {
         CurrentState = newState;
-
         switch (newState)
         {
             case EnemyState.Telegraph:
-                _stateTimer = telegraphDuration;
-                ShowTelegraph();
+                _stateTimer = CurrentAttackPlan.IsValid
+                    ? CurrentAttackPlan.TelegraphDuration
+                    : telegraphDuration;
                 break;
             case EnemyState.Attack:
-                _stateTimer = attackDuration;
-                OnAttackStart();
+                _stateTimer = CurrentAttackPlan.IsValid
+                    ? CurrentAttackPlan.CommitDuration
+                    : attackDuration;
                 break;
             case EnemyState.Hurt:
                 _stateTimer = 0.3f;
                 break;
             case EnemyState.Stunned:
-                _stateTimer = 1.0f; // 弹反成功后眩晕1秒
+                _stateTimer = 1f;
                 break;
             default:
                 _stateTimer = 0f;
@@ -382,37 +350,187 @@ public abstract class EnemyBase : MonoBehaviour, IParryResponder
         }
     }
 
-    /// <summary>受到伤害。按设计文档公式：伤害经过防御减免。</summary>
+    protected bool TryStartPreparedAttack()
+    {
+        if (_attackRoutine != null || IsDead)
+        {
+            return false;
+        }
+
+        var plan = PrepareAttackPlan();
+        if (!plan.IsValid)
+        {
+            return false;
+        }
+
+        CurrentAttackPlan = plan;
+        CurrentAttackPhase = EnemyAttackPhase.Telegraph;
+        isCurrentAttackParryable = plan.IsParryable;
+        _attackRoutine = StartCoroutine(RunOwnedAttack(plan));
+        return true;
+    }
+
+    private IEnumerator RunOwnedAttack(EnemyAttackPlan plan)
+    {
+        CurrentAttackPhase = EnemyAttackPhase.Telegraph;
+        ChangeState(EnemyState.Telegraph);
+        _telegraphView.Show(plan);
+        var elapsed = 0f;
+        while (elapsed < plan.TelegraphDuration)
+        {
+            _telegraphView.SetProgress(
+                plan.TelegraphDuration <= 0f ? 1f : elapsed / plan.TelegraphDuration);
+            yield return null;
+            elapsed += Time.deltaTime;
+        }
+
+        _telegraphView.SetProgress(1f);
+        _telegraphView.Hide();
+        CurrentAttackPhase = EnemyAttackPhase.Commit;
+        ChangeState(EnemyState.Attack);
+        var commitStartedAt = Time.time;
+        yield return ExecuteAttackPlan(plan);
+        if (CurrentAttackPhase != EnemyAttackPhase.Commit)
+        {
+            yield break;
+        }
+
+        var remainingCommit = plan.CommitDuration - (Time.time - commitStartedAt);
+        if (remainingCommit > 0f)
+        {
+            yield return new WaitForSeconds(remainingCommit);
+        }
+
+        CurrentAttackPhase = EnemyAttackPhase.Recovery;
+        if (plan.RecoveryDuration > 0f)
+        {
+            yield return new WaitForSeconds(plan.RecoveryDuration);
+        }
+
+        _attackRoutine = null;
+        CurrentAttackPhase = EnemyAttackPhase.Complete;
+        ChangeState(EnemyState.Chase);
+    }
+
+    protected abstract EnemyAttackPlan PrepareAttackPlan();
+    protected abstract IEnumerator ExecuteAttackPlan(EnemyAttackPlan plan);
+
+    protected void ResolvePlanHit(EnemyAttackPlan plan)
+    {
+        var center = (Vector2)transform.TransformPoint(plan.LocalOffset);
+        Collider2D[] hits;
+        if (plan.Shape == EnemyTelegraphShape.Box)
+        {
+            var worldForward = plan.AimDirection.normalized;
+            var worldAngle = Mathf.Atan2(worldForward.y, worldForward.x) * Mathf.Rad2Deg;
+            hits = Physics2D.OverlapBoxAll(center, plan.Size, worldAngle);
+        }
+        else
+        {
+            hits = Physics2D.OverlapCircleAll(center, plan.Radius);
+        }
+        foreach (var hit in hits)
+        {
+            if (!hit.CompareTag("Player"))
+            {
+                continue;
+            }
+
+            var hurtbox = hit.GetComponent<Hurtbox>() ?? hit.GetComponentInParent<Hurtbox>();
+            if (hurtbox == null)
+            {
+                continue;
+            }
+
+            hurtbox.ReceiveHit(new CombatHit(
+                plan.Damage,
+                plan.FacingDirection,
+                plan.Knockback,
+                plan.IsParryable,
+                this));
+            return;
+        }
+    }
+
+    protected void CancelOwnedAttack()
+    {
+        if (_attackRoutine != null)
+        {
+            StopCoroutine(_attackRoutine);
+        }
+
+        _attackRoutine = null;
+        CurrentAttackPhase = EnemyAttackPhase.Complete;
+        if (_telegraphView != null)
+        {
+            _telegraphView.Hide();
+        }
+
+        if (_rb != null)
+        {
+            _rb.velocity = Vector2.zero;
+        }
+
+        OnOwnedAttackCancelled();
+    }
+
+    protected virtual void OnOwnedAttackCancelled()
+    {
+    }
+
+    public void CancelCombatActions()
+    {
+        CancelOwnedAttack();
+        if (_telegraphView != null)
+        {
+            _telegraphView.Hide();
+        }
+    }
+
     public virtual void TakeDamage(int amount, float knockbackDirX = 0f, float knockbackForce = 5f)
     {
-        if (IsDead) return;
+        if (IsDead)
+        {
+            return;
+        }
 
-        // 防御减免（使用平均防御值）
-        var sec = PrimaryAttributeConverter.Convert(primary, 1);
-        int avgDef = (sec.swordDef + sec.bladeDef + sec.sealDef + sec.poisonDef + sec.bloodDef) / 5;
-        float reduction = Mathf.Min(0.9f, avgDef * 0.001f);
-        int finalDamage = Mathf.Max(1, Mathf.RoundToInt(amount * (1f - reduction) * (1f - damageReduction)));
-
+        var secondary = PrimaryAttributeConverter.Convert(primary, 1);
+        var averageDefense =
+            (secondary.swordDef + secondary.bladeDef + secondary.sealDef +
+             secondary.poisonDef + secondary.bloodDef) / 5;
+        var reduction = Mathf.Min(0.9f, averageDefense * 0.001f);
+        var finalDamage = Mathf.Max(
+            1,
+            Mathf.RoundToInt(amount * (1f - reduction) * (1f - damageReduction)));
         hp = Mathf.Max(0, hp - finalDamage);
 
-        if (_hitEffect != null) _hitEffect.PlayHitEffect();
-
-        _rb.velocity = Vector2.zero;
-        _rb.AddForce(new Vector2(knockbackDirX * knockbackForce, 2f), ForceMode2D.Impulse);
+        if (_hitEffect != null)
+        {
+            _hitEffect.PlayHitEffect();
+        }
 
         if (hp <= 0)
         {
             Die();
+            ApplyHitImpulse(knockbackDirX, knockbackForce);
         }
         else
         {
+            CancelOwnedAttack();
+            ApplyHitImpulse(knockbackDirX, knockbackForce);
             ChangeState(EnemyState.Hurt);
         }
     }
 
-    /// <summary>眩晕（被弹反成功后触发）</summary>
+    private void ApplyHitImpulse(float knockbackDirX, float knockbackForce)
+    {
+        _rb.velocity = Vector2.zero;
+        _rb.AddForce(new Vector2(knockbackDirX * knockbackForce, 2f), ForceMode2D.Impulse);
+    }
+
     public virtual void Stun(float duration = 1f)
     {
+        CancelOwnedAttack();
         ChangeState(EnemyState.Stunned);
         _stateTimer = duration;
     }
@@ -424,45 +542,39 @@ public abstract class EnemyBase : MonoBehaviour, IParryResponder
             return;
         }
 
-        StopAllCoroutines();
         if (_rb != null)
         {
             _rb.velocity = Vector2.zero;
         }
+
         Stun();
     }
 
-    /// <summary>死亡</summary>
     protected virtual void Die()
     {
+        CancelOwnedAttack();
+        StopDeathFade();
         IsDead = true;
         CurrentState = EnemyState.Die;
         CombatEvents.InvokeEnemyDeath(gameObject);
         OnDeath?.Invoke(this);
-
-        // 掉落经验水晶
         DropExpCrystal();
-
-        // 简单消失
-        StartCoroutine(DieFadeCoroutine());
+        _deathFadeRoutine = StartCoroutine(DieFadeCoroutine());
     }
 
-    /// <summary>掉落经验水晶</summary>
     protected virtual void DropExpCrystal()
     {
-        if (expValue <= 0) return;
+        if (expValue <= 0)
+        {
+            return;
+        }
 
-        var crystalObj = new GameObject("ExpCrystal");
-        crystalObj.transform.position = transform.position + Vector3.up * 0.5f;
-
-        var crystal = crystalObj.AddComponent<ExpCrystal>();
+        var crystalObject = new GameObject("ExpCrystal");
+        crystalObject.transform.position = transform.position + Vector3.up * 0.5f;
+        var crystal = crystalObject.AddComponent<ExpCrystal>();
         crystal.expValue = expValue;
     }
 
-    /// <summary>
-    /// 重置状态以复用对象池。
-    /// 在 ObjectPool.Get() 返回对象后调用。
-    /// </summary>
     public virtual void ResetForPool()
     {
         if (!_baselineInitialized)
@@ -476,66 +588,54 @@ public abstract class EnemyBase : MonoBehaviour, IParryResponder
             Baseline.MoveSpeed));
     }
 
-    /// <summary>面向玩家</summary>
     protected void FacePlayer()
     {
-        if (_player == null) return;
-        _facingDirection = _player.position.x > transform.position.x ? 1 : -1;
-        if (_sprite != null) _sprite.flipX = _facingDirection == -1;
-    }
-
-    /// <summary>显示前摇警示</summary>
-    protected virtual void ShowTelegraph()
-    {
-        if (_sprite == null) return;
-
-        // 根据是否可弹反选择闪烁颜色
-        Color flashColor = isCurrentAttackParryable ? parryableColor : unparryableColor;
-        StartCoroutine(TelegraphFlashCoroutine(flashColor, telegraphDuration));
-    }
-
-    /// <summary>
-    /// 前摇闪烁协程：3次快闪 + 持续高亮。
-    /// 黄色=可弹反，红色=不可弹反——这是"见招拆招"的核心视觉语言。
-    /// </summary>
-    protected IEnumerator TelegraphFlashCoroutine(Color color, float duration)
-    {
-        Color original = _sprite.color;
-        float flashInterval = duration / 6f; // 3次闪+3次暗
-
-        for (int i = 0; i < 3; i++)
+        if (_player == null)
         {
-            _sprite.color = color;
-            yield return new WaitForSeconds(flashInterval);
-            _sprite.color = original;
-            yield return new WaitForSeconds(flashInterval);
+            return;
         }
 
-        // 最后持续高亮直到攻击
-        _sprite.color = color;
+        _facingDirection = _player.position.x > transform.position.x ? 1 : -1;
+        if (_sprite != null)
+        {
+            _sprite.flipX = _facingDirection == -1;
+        }
     }
 
-    /// <summary>攻击开始（子类重写以启用 hitbox）</summary>
-    protected virtual void OnAttackStart() { }
+    private void StopDeathFade()
+    {
+        if (_deathFadeRoutine == null)
+        {
+            return;
+        }
 
-    /// <summary>死亡淡出</summary>
+        StopCoroutine(_deathFadeRoutine);
+        _deathFadeRoutine = null;
+    }
+
     private IEnumerator DieFadeCoroutine()
     {
-        float duration = 0.5f;
-        float elapsed = 0f;
-
+        const float duration = 0.5f;
+        var elapsed = 0f;
         while (elapsed < duration)
         {
             elapsed += Time.deltaTime;
             if (_sprite != null)
             {
-                Color c = _sprite.color;
-                c.a = 1f - (elapsed / duration);
-                _sprite.color = c;
+                var color = _sprite.color;
+                color.a = 1f - elapsed / duration;
+                _sprite.color = color;
             }
+
             yield return null;
         }
 
+        _deathFadeRoutine = null;
         gameObject.SetActive(false);
+    }
+
+    protected virtual void OnDisable()
+    {
+        CancelOwnedAttack();
     }
 }

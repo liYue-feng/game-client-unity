@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 using Game.Gameplay;
 
@@ -8,6 +9,8 @@ using Game.Gameplay;
 /// </summary>
 public class Projectile : MonoBehaviour, IParryResponder
 {
+    private const float DefaultKnockbackForce = 3f;
+
     [Tooltip("飞行速度")]
     public float speed = 8f;
     [Tooltip("伤害值")]
@@ -22,12 +25,46 @@ public class Projectile : MonoBehaviour, IParryResponder
     private Vector2 _direction;
     private Rigidbody2D _rb;
     private bool _isDeflected;
+    private int _launchDamage;
+    private bool _launchIsParryable;
+    private float _launchKnockbackForce = DefaultKnockbackForce;
+
+    public event Action<Projectile> Destroyed;
 
     /// <summary>初始化弹丸方向</summary>
     public void Launch(Vector2 direction, GameObject source)
     {
+        Launch(direction, source, damage, isParryable, DefaultKnockbackForce);
+    }
+
+    /// <summary>Atomically applies the frozen attack snapshot for this launch.</summary>
+    public void Launch(
+        Vector2 direction,
+        GameObject source,
+        int launchDamage,
+        bool launchIsParryable)
+    {
+        Launch(
+            direction,
+            source,
+            launchDamage,
+            launchIsParryable,
+            DefaultKnockbackForce);
+    }
+
+    /// <summary>Atomically freezes every projectile field consumed on contact.</summary>
+    public void Launch(
+        Vector2 direction,
+        GameObject source,
+        int launchDamage,
+        bool launchIsParryable,
+        float launchKnockbackForce)
+    {
         _direction = direction.normalized;
         owner = source;
+        _launchDamage = Mathf.Max(0, launchDamage);
+        _launchIsParryable = launchIsParryable;
+        _launchKnockbackForce = Mathf.Max(0f, launchKnockbackForce);
         _isDeflected = false;
 
         _rb = GetComponent<Rigidbody2D>();
@@ -51,10 +88,10 @@ public class Projectile : MonoBehaviour, IParryResponder
             {
                 float dir = _direction.x > 0 ? 1f : -1f;
                 var result = hurtbox.ReceiveHit(new CombatHit(
-                    damage,
+                    _launchDamage,
                     dir,
-                    3f,
-                    isParryable,
+                    _launchKnockbackForce,
+                    _launchIsParryable,
                     this));
                 if (result == CombatHitResult.Parried)
                 {
@@ -73,9 +110,9 @@ public class Projectile : MonoBehaviour, IParryResponder
             {
                 float dir = _direction.x > 0 ? 1f : -1f;
                 var result = hurtbox.ReceiveHit(new CombatHit(
-                    damage,
+                    _launchDamage,
                     dir,
-                    3f,
+                    _launchKnockbackForce,
                     false,
                     this));
                 if (result == CombatHitResult.Damaged)
@@ -121,6 +158,9 @@ public class Projectile : MonoBehaviour, IParryResponder
 
     private void OnDestroy()
     {
+        var destroyed = Destroyed;
+        Destroyed = null;
+        destroyed?.Invoke(this);
         // 如果有对象池，归还而非销毁
     }
 }

@@ -112,6 +112,7 @@ public sealed class BattleRunController : MonoBehaviour, IDisposable
             return;
         }
 
+        _waveSpawner.CancelActiveCombatActions();
         _playerInputBridge.SetInputEnabled(false);
         _playerController.enabled = false;
         _playerBody.velocity = Vector2.zero;
