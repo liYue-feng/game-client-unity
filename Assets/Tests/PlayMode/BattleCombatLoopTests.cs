@@ -710,6 +710,82 @@ namespace Game.Tests.PlayMode
         }
 
         [UnityTest]
+        public IEnumerator WeaponTeardownDoesNotRecreateDestroyedObjectPool()
+        {
+            yield return LoadBattleScene();
+
+            DisableActiveEnemyBehaviours();
+            var pool = FindUniqueLoadedComponent("ObjectPool");
+            Assert.That(pool, Is.Not.Null);
+            var runtimeAssembly = pool.GetType().Assembly;
+            var autoWeaponType = runtimeAssembly.GetType("AutoWeapon");
+            var swirlBehaviourType = runtimeAssembly.GetType("InkSwirlBehaviour");
+            var swirlSpawnerType = runtimeAssembly.GetType("InkSwirlSpawner");
+            Assert.That(autoWeaponType, Is.Not.Null);
+            Assert.That(swirlBehaviourType, Is.Not.Null);
+            Assert.That(swirlSpawnerType, Is.Not.Null);
+            var existingInstance = pool.GetType().GetProperty(
+                "ExistingInstance",
+                BindingFlags.Static | BindingFlags.Public);
+            Assert.That(existingInstance, Is.Not.Null);
+            const string swirlKey = "teardown_swirl";
+            const string autoKey = "teardown_auto";
+            Assert.That((bool)InvokeWithArguments(pool, "Register", swirlKey, (Func<GameObject>)(() =>
+            {
+                var item = new GameObject("TeardownSwirl");
+                item.AddComponent<SpriteRenderer>();
+                item.AddComponent<CircleCollider2D>().isTrigger = true;
+                item.AddComponent<Rigidbody2D>().gravityScale = 0f;
+                item.AddComponent(autoWeaponType);
+                item.AddComponent(swirlBehaviourType);
+                return item;
+            }), 1), Is.True);
+            Assert.That((bool)InvokeWithArguments(pool, "Register", autoKey, (Func<GameObject>)(() =>
+            {
+                var item = new GameObject("TeardownAutoWeapon");
+                item.AddComponent<SpriteRenderer>();
+                item.AddComponent<CircleCollider2D>().isTrigger = true;
+                item.AddComponent<Rigidbody2D>().gravityScale = 0f;
+                item.AddComponent(autoWeaponType);
+                return item;
+            }), 1), Is.True);
+
+            var spawnerObject = new GameObject("TeardownSwirlSpawner");
+            var spawner = spawnerObject.AddComponent(swirlSpawnerType);
+            SetFieldValue(spawner, "weaponId", swirlKey);
+            var swirlObject = (GameObject)InvokeWithArguments(pool, "Get", swirlKey);
+            var swirlWeapon = swirlObject.GetComponent(autoWeaponType);
+            InvokeWithArguments(swirlWeapon, "SetParameters", 5, 999f, swirlKey, null, Color.white, null);
+            var swirlBehaviour = swirlObject.GetComponent(swirlBehaviourType);
+            InvokeWithArguments(swirlBehaviour, "Init", spawner.transform, 0f, 1f, 0f, spawner);
+            swirlObject.transform.SetParent(null);
+
+            var autoObject = (GameObject)InvokeWithArguments(pool, "Get", autoKey);
+            var autoWeapon = autoObject.GetComponent(autoWeaponType);
+            InvokeWithArguments(autoWeapon, "SetParameters", 5, 999f, autoKey, null, Color.white, null);
+            autoObject.transform.SetParent(null);
+
+            UnityEngine.Object.Destroy(pool.gameObject);
+            yield return null;
+            Assert.That(existingInstance.GetValue(null), Is.Null,
+                "Destroying the scene pool must clear its static owner before weapon teardown.");
+            Assert.That(swirlObject != null && swirlObject.activeSelf, Is.True);
+            Assert.That(autoObject != null && autoObject.activeSelf, Is.True);
+
+            Invoke(spawner, "ClearAllParticles");
+            Invoke(autoWeapon, "ReturnToPool");
+            UnityEngine.Object.Destroy(spawnerObject);
+            yield return null;
+
+            Assert.That(existingInstance.GetValue(null), Is.Null,
+                "Weapon cleanup must not lazily create a replacement ObjectPool during teardown.");
+            Assert.That(swirlObject == null || !swirlObject.activeSelf, Is.True,
+                "An orphaned swirl particle must be destroyed or inactive after cleanup.");
+            Assert.That(autoObject == null || !autoObject.activeSelf, Is.True,
+                "An orphaned AutoWeapon must be destroyed or inactive after return.");
+        }
+
+        [UnityTest]
         public IEnumerator LightAttackActivatesHitboxAndDamagesOneActiveGruntOnce()
         {
             yield return LoadBattleScene();
@@ -805,6 +881,69 @@ namespace Game.Tests.PlayMode
                 "AttackHitbox must be disabled after the active phase completes.");
             Assert.That(GetIntField(grunt, "hp"), Is.EqualTo(hpAfterActivePhase),
                 "One active window must damage the same Hurtbox only once.");
+        }
+
+        [UnityTest]
+        public IEnumerator LeftFacingLightAttackMirrorsHitboxAndDamagesLeftGruntOnce()
+        {
+            yield return LoadBattleScene();
+
+            var player = GameObject.Find("Player");
+            var stateMachine = FindComponent(player, "PlayerStateMachine");
+            var playerController = FindComponent(player, "PlayerController");
+            var inputMediator = FindComponent(player, "InputMediator");
+            var attackHitboxObject = GameObject.Find("AttackHitbox");
+            var attackHitbox = FindComponent(attackHitboxObject, "Hitbox");
+            Component grunt = null;
+            yield return WaitForActiveSceneComponent("Grunt", component => grunt = component);
+
+            DisableActiveEnemyBehaviours();
+            yield return WaitForPlayerIdle(stateMachine);
+            ((Behaviour)inputMediator).enabled = false;
+            SetFieldValue(inputMediator, "<MoveInput>k__BackingField", -1f);
+            Invoke(playerController, "Update");
+            Assert.That((int)GetPropertyValue(playerController, "FacingDirection"), Is.EqualTo(-1));
+            SetFieldValue(inputMediator, "<MoveInput>k__BackingField", 0f);
+
+            var baseLocalPosition = attackHitboxObject.transform.localPosition;
+            Assert.That(baseLocalPosition.x, Is.GreaterThan(0f),
+                "The real configured hitbox must start from its right-facing baseline.");
+            var expectedLeftLocalPosition = new Vector3(
+                -Mathf.Abs(baseLocalPosition.x),
+                baseLocalPosition.y,
+                baseLocalPosition.z);
+            FreezeEnemyAt(grunt, player.transform.TransformPoint(expectedLeftLocalPosition));
+            SetIntField(grunt, "maxHp", 500);
+            SetIntField(grunt, "hp", 500);
+            yield return new WaitForFixedUpdate();
+
+            Invoke(stateMachine, "RequestAttack");
+            Assert.That(GetStateName(stateMachine), Is.EqualTo("Attack1"));
+            for (var sample = 0; sample < 200; sample++)
+            {
+                if (GetFieldValue(stateMachine, "_attackPhase")?.ToString() == "Active")
+                {
+                    break;
+                }
+
+                yield return new WaitForSeconds(0.01f);
+            }
+
+            Assert.That(GetFieldValue(stateMachine, "_attackPhase")?.ToString(), Is.EqualTo("Active"));
+            Assert.That(attackHitboxObject.transform.localPosition.x, Is.LessThan(0f),
+                "A left-facing attack must mirror the configured hitbox before its active phase.");
+            Assert.That(
+                attackHitboxObject.transform.localPosition.x,
+                Is.EqualTo(expectedLeftLocalPosition.x).Within(0.0001f));
+
+            yield return new WaitForFixedUpdate();
+            var hpAfterFirstFixedStep = GetIntField(grunt, "hp");
+            Assert.That(hpAfterFirstFixedStep, Is.LessThan(500),
+                "The real left-side Grunt must be damaged during the mirrored active window.");
+
+            yield return new WaitForFixedUpdate();
+            Assert.That(GetIntField(grunt, "hp"), Is.EqualTo(hpAfterFirstFixedStep),
+                "One mirrored active window must damage the same Grunt only once.");
         }
 
         [UnityTest]

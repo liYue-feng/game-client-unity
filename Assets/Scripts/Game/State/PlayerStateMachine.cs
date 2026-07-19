@@ -55,6 +55,7 @@ public class PlayerStateMachine : MonoBehaviour
     private CharacterStats _stats;
     private PlayerController _controller;
     private Hitbox _attackHitbox;
+    private Vector3 _attackHitboxBaseLocalPosition;
     private BattleTimeController _battleTimeController;
 
     // 计时器
@@ -112,6 +113,14 @@ public class PlayerStateMachine : MonoBehaviour
 
         DisableAttackHitbox();
         _attackHitbox = hitbox;
+        if (_controller == null)
+        {
+            _controller = GetComponent<PlayerController>();
+        }
+        if (_attackHitbox != null)
+        {
+            _attackHitboxBaseLocalPosition = _attackHitbox.transform.localPosition;
+        }
         DisableAttackHitbox();
     }
 
@@ -586,6 +595,14 @@ public class PlayerStateMachine : MonoBehaviour
 
     private void BeginAttackTimeline(PlayerState state)
     {
+        if (_attackHitbox != null)
+        {
+            var attackLocalPosition = _attackHitboxBaseLocalPosition;
+            attackLocalPosition.x = Mathf.Abs(attackLocalPosition.x)
+                * (_controller != null && _controller.FacingDirection < 0 ? -1f : 1f);
+            _attackHitbox.transform.localPosition = attackLocalPosition;
+        }
+
         _attackTimeline = new AttackTimeline(
             GetStateDuration(state), attackWindupFraction, attackActiveFraction);
         _attackElapsed = 0f;

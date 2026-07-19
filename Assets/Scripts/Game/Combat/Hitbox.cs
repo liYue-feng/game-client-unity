@@ -4,13 +4,13 @@ using Game.Gameplay;
 
 /// <summary>
 /// 攻击判定框：挂在角色子 GameObject 上，配合 Trigger Collider2D 使用。
-/// 由动画事件（Animation Event）控制 Enable/Disable，只在攻击的命中帧激活。
+/// 当前玩家攻击由 PlayerStateMachine timeline 控制 Enable/Disable，只在攻击的命中帧激活。
 /// 使用 HashSet 防止同一 hitbox 对同一目标多段命中。
 ///
 /// 用法：
 /// 1. 创建子 GameObject，添加 BoxCollider2D (isTrigger=true) + Hitbox
-/// 2. 在攻击动画的命中帧调用 EnableHitbox()，恢复帧调用 DisableHitbox()
-/// 3. 或者直接在 Inspector 中配置 autoDisableTime 自动关闭
+/// 2. 由攻击 timeline 调用 EnableHitbox()/DisableHitbox()
+/// 3. Animation Event 与 Inspector autoDisableTime 保留为其他使用方式或兼容入口
 /// </summary>
 public class Hitbox : MonoBehaviour
 {

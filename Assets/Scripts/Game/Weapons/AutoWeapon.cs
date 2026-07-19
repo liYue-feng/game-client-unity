@@ -20,6 +20,7 @@ public class AutoWeapon : MonoBehaviour
     protected Rigidbody2D rb;
     protected SpriteRenderer sr;
     protected CharacterStats _playerStats;
+    private bool _returnRequested;
 
     private void Awake()
     {
@@ -43,6 +44,7 @@ public class AutoWeapon : MonoBehaviour
 
     private void OnEnable()
     {
+        _returnRequested = false;
         StartCoroutine(AutoReturn());
     }
 
@@ -107,9 +109,20 @@ public class AutoWeapon : MonoBehaviour
     /// <summary>归还对象池</summary>
     public void ReturnToPool()
     {
+        if (_returnRequested) return;
+        _returnRequested = true;
+
         if (!string.IsNullOrEmpty(poolKey))
         {
-            ObjectPool.Instance.Return(poolKey, gameObject);
+            var pool = ObjectPool.ExistingInstance;
+            if (pool != null)
+            {
+                pool.Return(poolKey, gameObject);
+            }
+            else
+            {
+                Destroy(gameObject);
+            }
         }
         else
         {

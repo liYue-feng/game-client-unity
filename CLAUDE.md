@@ -86,10 +86,10 @@ game_client_unity/
 - Phase A2 已建立自动 Offline 生命周期：`RuntimeBootstrap -> [GameApplication] -> [GameServices]`，仅应用根跨场景持久化，默认进入 `BattleScene`
 - Phase A3 已完成 service-owned 网络边界：`NetworkClient`、WebSocket transport、主线程 dispatcher、连接 host 及唯一心跳/重连策略均有自动测试；A3 收口验证为 EditMode `88/88`、PlayMode `11/11`
 - Phase A4 当前只有设计与实施计划，尚未在本分支交付 Online 会话、`MenuScene`、真实后端登录/存档联调；Offline 仍是默认且唯一已交付用户路径
-- Phase B1 已建立可玩的离线战斗权威：`CombatHit` 是命中/弹反唯一契约，`BattleTimeController` 是唯一 `Time.timeScale` 写入者，场景内 `ObjectPool`/`DamageNumberPool`/`WaveSpawner` 随战局释放；`c8b3f07` 修复了终局零倍速伤害字跨 Restart 残留
+- Phase B1 已建立可玩的离线战斗权威：`CombatHit` 是命中/弹反唯一契约，`BattleTimeController` 是唯一 `Time.timeScale` 写入者，场景内 `ObjectPool`/`DamageNumberPool`/`WaveSpawner` 随战局释放；左向攻击会在攻击开始时镜像真实 hitbox，武器 teardown 不会懒创建替代池
 - `BattleRunController` 统一 Victory/Defeat/Restart；终局冻结动作、移动与热键，结果 UI 只提供 Restart，重开后 Player、Pool、Spawner、UI、EventSystem 和时间状态均为新战局
-- B1 自动截图探针已生成并由父级最终批准 `Logs/phase-b1-combat.png` 与 `Logs/phase-b1-result.png`，两图均为 960x540；combat 为 dark `2640`、chromatic `117834`、variance `304.71`、Player `57.60px`、Grunt `48.00px`、SHA-256 `4ABA4F3D402E90DE4C44ADE8DF66365135851CAD72008BE4A808049D714AE3A7`，result 为 dark `297973`、light `217068`、variance `6281.16`、SHA-256 `BC3D66DE6BC1F51227588119B4C4595E4FDE4D0D955B676809CB9FAA02CB40FD`
-- 在 `c8b3f07` 基线上，B1 最终有效回归为 focused visual `2/2` 连续两次、combat `31/31`、五次重载 smoke `3/3`、EditMode `111/111`、PlayMode `45/45`、Pester `5/5`；资源完整性、canonical hit/parry、唯一时间写入和场景重载门禁均通过
+- B1 自动截图探针已生成并由父级最终批准 `Logs/phase-b1-combat.png` 与 `Logs/phase-b1-result.png`，两图均为 960x540；combat 为 dark `2639`、chromatic `117796`、variance `304.99`、Player `57.60px`、Grunt `48.00px`、SHA-256 `59E202689676AE66397A1315A4B014C0BF777FB890314AEDF61BD457F1941E93`，result 为 dark `297973`、light `217068`、variance `6281.16`、SHA-256 `9FA4EC1CCE2B36D3B935DC2D133A6B36445038446843AFCF6E3D52AC9932F966`
+- B1 最终有效回归为 focused visual `2/2` 连续三次、combat `33/33`、五次重载 smoke `3/3`、EditMode `111/111`、PlayMode `47/47` 连续两次、Pester `5/5`；资源完整性、canonical hit/parry、唯一时间写入和场景/武器 teardown 门禁均通过
 - 后续工作为 Phase B2 战斗表现/敌人体验，以及 Phase C UI、Prefab、动画、资源加载和打包工程化
 
 ## 服务器仓库

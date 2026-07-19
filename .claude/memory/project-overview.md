@@ -42,10 +42,10 @@ Unity C# 游戏客户端，面向"吸血鬼幸存者"类微信小游戏（代号
 - 自动重载测试已验证应用、服务根和五个服务实例保持，`Player` 重建，静态 `Instance` 仍指向存活 owner，Offline 禁止类型缺席
 - Phase A3 已完成 service-owned 网络栈、WebSocket transport、主线程回调、连接 host 以及唯一心跳/重连职责；阶段验证为 EditMode `88/88`、PlayMode `11/11`
 - Phase A4 已完成设计和实施计划，但 Online 会话、`MenuScene`、真实后端登录/存档联调尚未在本分支实现；当前默认路径仍是 Offline `BattleScene`
-- Phase B1 已完成真实攻击有效帧、canonical `CombatHit`/单一弹反入口、动作准入后耐力扣除、统一时间 token、场景内对象池/波次生命周期；`c8b3f07` 将 `DamageNumberPool` 收归战局场景，修复终局零倍速伤害字跨 Restart 残留
+- Phase B1 已完成真实攻击有效帧、canonical `CombatHit`/单一弹反入口、动作准入后耐力扣除、统一时间 token、场景内对象池/波次生命周期；左向攻击在 timeline 开始时镜像真实 hitbox，`InkSwirlSpawner`/`AutoWeapon` teardown 只读取现有池，不会在场景销毁时懒创建替代池
 - `BattleRunController` 统一 Victory/Defeat/Restart，终局冻结 PlayerInputBridge、PlayerController 和战斗热键，清零速度并显示单一 scene-owned 结果 UI；重开验证覆盖新 Player/Pool/Spawner/UI/EventSystem 和时间恢复
-- 在 `c8b3f07` 基线上，B1 最终有效自动验证为 focused visual `2/2` 连续两次、combat `31/31`、五次重载 smoke `3/3`、EditMode `111/111`、PlayMode `45/45`、Pester `5/5`，资源完整性与静态门禁通过
-- 父级已最终批准 960x540 自动证据图：`Logs/phase-b1-combat.png`（dark `2640`、chromatic `117834`、variance `304.71`、Player `57.60px`、Grunt `48.00px`、SHA-256 `4ABA4F3D402E90DE4C44ADE8DF66365135851CAD72008BE4A808049D714AE3A7`）和 `Logs/phase-b1-result.png`（dark `297973`、light `217068`、variance `6281.16`、SHA-256 `BC3D66DE6BC1F51227588119B4C4595E4FDE4D0D955B676809CB9FAA02CB40FD`）；combat 无旧 `100000` 或跨局残留，result 无文字/按钮重叠
+- B1 最终有效自动验证为 focused visual `2/2` 连续三次、combat `33/33`、五次重载 smoke `3/3`、EditMode `111/111`、PlayMode `47/47` 连续两次、Pester `5/5`，资源完整性与静态门禁通过
+- 父级已最终批准 960x540 自动证据图：`Logs/phase-b1-combat.png`（dark `2639`、chromatic `117796`、variance `304.99`、Player `57.60px`、Grunt `48.00px`、SHA-256 `59E202689676AE66397A1315A4B014C0BF777FB890314AEDF61BD457F1941E93`）和 `Logs/phase-b1-result.png`（dark `297973`、light `217068`、variance `6281.16`、SHA-256 `9FA4EC1CCE2B36D3B935DC2D133A6B36445038446843AFCF6E3D52AC9932F966`）；combat 无旧 `100000` 或跨局残留，result 无文字/按钮重叠
 - 当前仍没有 Prefab；Phase B2 继续战斗表现与敌人体验，Phase C 负责 UI、动画、Prefab、资源加载和打包工程化
 - 当前战斗代码只使用旧输入 API；未使用且阻塞 PlayMode 的 Input System 包已移除，后续平台适配时按真实需求重新接入
 - 现代化顺序为已完成的 Phase A 工程/网络基础、当前 Phase B 战斗体验、后续 Phase C UI/资源工程化

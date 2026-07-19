@@ -180,6 +180,8 @@ namespace Game.Tests.PlayMode
                 canvas.worldCamera = camera;
                 canvas.planeDistance = Mathf.Max(1f, camera.nearClipPlane + 0.1f);
                 Canvas.ForceUpdateCanvases();
+                yield return null;
+                yield return null;
 
                 var metrics = Capture(camera, outputPath);
                 AssertCaptureFile(outputPath, metrics);

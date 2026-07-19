@@ -88,10 +88,20 @@ public class InkSwirlSpawner : AutoWeaponSpawner
     public void ClearAllParticles()
     {
         var all = GameObject.FindObjectsOfType<InkSwirlBehaviour>();
+        var pool = ObjectPool.ExistingInstance;
         foreach (var b in all)
         {
-            if (b.spawner == this)
-                ObjectPool.Instance.Return(weaponId, b.gameObject);
+            if (b.spawner != this) continue;
+
+            b.spawner = null;
+            if (pool != null)
+            {
+                pool.Return(weaponId, b.gameObject);
+            }
+            else
+            {
+                Destroy(b.gameObject);
+            }
         }
     }
 
