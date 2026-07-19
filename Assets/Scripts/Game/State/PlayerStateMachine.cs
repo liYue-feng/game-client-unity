@@ -1,5 +1,6 @@
 using UnityEngine;
 using System.Collections;
+using Game.Gameplay;
 
 /// <summary>
 /// 玩家状态机：控制战斗状态转换、连击缓冲、动画取消规则。
@@ -37,6 +38,12 @@ public class PlayerStateMachine : MonoBehaviour
     public float hurtDuration = 0.3f;
     [Tooltip("各段攻击的基础持续时间（秒），Attack1/2/3/Heavy")]
     public float[] attackDurations = { 0.4f, 0.35f, 0.5f, 0.7f };
+    [Tooltip("攻击总时长中前摇阶段所占比例")]
+    [Range(0f, 1f)]
+    public float attackWindupFraction = 0.35f;
+    [Tooltip("攻击总时长中有效帧阶段所占比例")]
+    [Range(0f, 1f)]
+    public float attackActiveFraction = 0.3f;
 
     /// <summary>当前战斗状态</summary>
     public PlayerState CurrentState { get; private set; } = PlayerState.Idle;
@@ -47,12 +54,17 @@ public class PlayerStateMachine : MonoBehaviour
     // 组件引用
     private CharacterStats _stats;
     private PlayerController _controller;
+    private Hitbox _attackHitbox;
 
     // 计时器
     private float _stateTimer;
     private float _comboBufferTimer;
     private bool _comboBuffered;
     private float _dashCooldownTimer;
+    private AttackTimeline _attackTimeline;
+    private AttackPhase _attackPhase = AttackPhase.Complete;
+    private float _attackElapsed;
+    private bool _attackActiveFixedStepObserved;
 
     // 弹反相关
     private bool _isInParryWindow;
@@ -72,6 +84,18 @@ public class PlayerStateMachine : MonoBehaviour
     public bool IsDashOnCooldown => _dashCooldownTimer > 0;
     /// <summary>当前攻击是否已命中（用于连击判定）</summary>
     public bool HasHitThisAttack => _hasHitThisAttack;
+
+    public void ConfigureAttackHitbox(Hitbox hitbox)
+    {
+        if (_attackHitbox == hitbox)
+        {
+            return;
+        }
+
+        DisableAttackHitbox();
+        _attackHitbox = hitbox;
+        DisableAttackHitbox();
+    }
 
     private void Awake()
     {
@@ -112,7 +136,7 @@ public class PlayerStateMachine : MonoBehaviour
             _counterWindowTimer -= Time.deltaTime;
             if (_counterWindowTimer <= 0)
             {
-                _isInCounterWindow = false;
+                ClearCounterWindow();
             }
         }
 
@@ -185,6 +209,13 @@ public class PlayerStateMachine : MonoBehaviour
         // 反击窗口中，轻攻击优先
         if (_isInCounterWindow)
         {
+            if (!CanCancelTo(PlayerState.Attack1))
+            {
+                ClearCounterWindow();
+                return;
+            }
+
+            ClearCounterWindow();
             ChangeState(PlayerState.Attack1);
             return;
         }
@@ -207,55 +238,61 @@ public class PlayerStateMachine : MonoBehaviour
     /// <summary>请求重击。消耗耐力。</summary>
     public void RequestHeavyAttack()
     {
-        if (!_stats.TryUseStamina(30)) return;
-
-        // 反击窗口中，重击优先
-        if (_isInCounterWindow)
+        const int staminaCost = 30;
+        bool transitionAllowed = CanCancelTo(PlayerState.HeavyAttack);
+        var decision = CombatActionPolicy.Evaluate(
+            transitionAllowed, false, _stats.currentStamina, staminaCost);
+        if (!decision.Allowed)
         {
-            ChangeState(PlayerState.HeavyAttack);
+            if (_isInCounterWindow && !transitionAllowed)
+            {
+                ClearCounterWindow();
+            }
             return;
         }
+        if (!_stats.TryUseStamina(staminaCost)) return;
 
-        if (CanCancelTo(PlayerState.HeavyAttack))
-        {
-            ChangeState(PlayerState.HeavyAttack);
-        }
+        ClearCounterWindow();
+        ChangeState(PlayerState.HeavyAttack);
     }
 
     /// <summary>请求冲刺。消耗耐力，有冷却。</summary>
     public void RequestDash()
     {
-        if (IsDashOnCooldown) return;
-        if (!_stats.TryUseStamina(25)) return;
+        const int staminaCost = 25;
+        var decision = CombatActionPolicy.Evaluate(
+            CanCancelTo(PlayerState.Dash), IsDashOnCooldown, _stats.currentStamina, staminaCost);
+        if (!decision.Allowed || !_stats.TryUseStamina(staminaCost)) return;
 
-        if (CanCancelTo(PlayerState.Dash))
-        {
-            AudioManager.Instance.PlaySFX("dash");
-            ChangeState(PlayerState.Dash);
-        }
+        AudioManager.Instance.PlaySFX("dash");
+        ChangeState(PlayerState.Dash);
     }
 
     /// <summary>请求弹反。消耗少量耐力。</summary>
     public void RequestParry()
     {
-        if (!_stats.TryUseStamina(15)) return;
+        const int staminaCost = 15;
+        var decision = CombatActionPolicy.Evaluate(
+            CanCancelTo(PlayerState.Parry), false, _stats.currentStamina, staminaCost);
+        if (!decision.Allowed || !_stats.TryUseStamina(staminaCost)) return;
 
-        if (CanCancelTo(PlayerState.Parry))
-        {
-            ChangeState(PlayerState.Parry);
-        }
+        ChangeState(PlayerState.Parry);
     }
 
     /// <summary>受到伤害，强制进入受击状态。</summary>
     public void ForceHurt()
     {
         if (CurrentState == PlayerState.Die) return;
+        ClearCounterWindow();
+        DisableAttackHitbox();
         ChangeState(PlayerState.Hurt);
     }
 
     /// <summary>强制死亡。</summary>
     public void ForceDie()
     {
+        ClearCounterWindow();
+        DisableAttackHitbox();
         ChangeState(PlayerState.Die);
     }
 
@@ -300,11 +337,25 @@ public class PlayerStateMachine : MonoBehaviour
     /// </summary>
     private void OnDisable()
     {
+        DisableAttackHitbox();
         if (_isSlowMoActive)
         {
             Time.timeScale = 1f;
             _isSlowMoActive = false;
         }
+    }
+
+    private void FixedUpdate()
+    {
+        if (_attackPhase == AttackPhase.Active)
+        {
+            _attackActiveFixedStepObserved = true;
+        }
+    }
+
+    private void OnDestroy()
+    {
+        DisableAttackHitbox();
     }
 
     /// <summary>
@@ -337,6 +388,15 @@ public class PlayerStateMachine : MonoBehaviour
 
     private void OnEnterState(PlayerState state)
     {
+        if (IsAttackState(state))
+        {
+            BeginAttackTimeline(state);
+        }
+        else
+        {
+            DisableAttackHitbox();
+        }
+
         switch (state)
         {
             case PlayerState.Parry:
@@ -354,6 +414,11 @@ public class PlayerStateMachine : MonoBehaviour
 
     private void OnExitState(PlayerState state)
     {
+        if (IsAttackState(state))
+        {
+            EndAttackTimeline();
+        }
+
         switch (state)
         {
             case PlayerState.Parry:
@@ -422,7 +487,19 @@ public class PlayerStateMachine : MonoBehaviour
 
     private void UpdateAttackState()
     {
-        if (_stateTimer > 0) return;
+        float deltaTime = Time.deltaTime;
+        _attackElapsed += deltaTime;
+
+        var nextPhase = PreserveAttackPhaseOrder(_attackTimeline.Evaluate(_attackElapsed));
+        if (_attackPhase == AttackPhase.Active
+            && nextPhase != AttackPhase.Active
+            && !_attackActiveFixedStepObserved)
+        {
+            nextPhase = AttackPhase.Active;
+        }
+
+        ApplyAttackPhase(nextPhase);
+        if (_attackPhase != AttackPhase.Complete) return;
 
         // 攻击动画结束
         if (_comboBuffered)
@@ -462,10 +539,81 @@ public class PlayerStateMachine : MonoBehaviour
     /// <summary>判断是否处于攻击状态</summary>
     private bool IsInAttackState()
     {
-        return CurrentState == PlayerState.Attack1
-            || CurrentState == PlayerState.Attack2
-            || CurrentState == PlayerState.Attack3
-            || CurrentState == PlayerState.HeavyAttack;
+        return IsAttackState(CurrentState);
+    }
+
+    private static bool IsAttackState(PlayerState state)
+    {
+        return state == PlayerState.Attack1
+            || state == PlayerState.Attack2
+            || state == PlayerState.Attack3
+            || state == PlayerState.HeavyAttack;
+    }
+
+    private void BeginAttackTimeline(PlayerState state)
+    {
+        _attackTimeline = new AttackTimeline(
+            GetStateDuration(state), attackWindupFraction, attackActiveFraction);
+        _attackElapsed = 0f;
+        _attackPhase = AttackPhase.Complete;
+        _attackActiveFixedStepObserved = false;
+        ApplyAttackPhase(_attackTimeline.Evaluate(0f));
+    }
+
+    private void EndAttackTimeline()
+    {
+        DisableAttackHitbox();
+        _attackElapsed = 0f;
+        _attackPhase = AttackPhase.Complete;
+        _attackActiveFixedStepObserved = false;
+    }
+
+    private void ApplyAttackPhase(AttackPhase nextPhase)
+    {
+        if (_attackPhase == nextPhase)
+        {
+            return;
+        }
+
+        if (_attackPhase == AttackPhase.Active)
+        {
+            DisableAttackHitbox();
+        }
+
+        if (nextPhase == AttackPhase.Active)
+        {
+            _attackHitbox?.EnableHitbox();
+            _attackActiveFixedStepObserved = false;
+        }
+
+        _attackPhase = nextPhase;
+    }
+
+    private AttackPhase PreserveAttackPhaseOrder(AttackPhase evaluatedPhase)
+    {
+        if (_attackPhase == AttackPhase.Windup
+            && (evaluatedPhase == AttackPhase.Recovery || evaluatedPhase == AttackPhase.Complete))
+        {
+            return AttackPhase.Active;
+        }
+
+        if (_attackPhase == AttackPhase.Active && evaluatedPhase == AttackPhase.Complete)
+        {
+            return AttackPhase.Recovery;
+        }
+
+        return evaluatedPhase;
+    }
+
+    private void DisableAttackHitbox()
+    {
+        _attackHitbox?.DisableHitbox();
+    }
+
+    private void ClearCounterWindow()
+    {
+        _isInCounterWindow = false;
+        _counterWindowTimer = 0f;
     }
 
     /// <summary>获取各状态的持续时间</summary>

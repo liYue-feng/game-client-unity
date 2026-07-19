@@ -190,10 +190,11 @@ public class BattleSceneSetup : MonoBehaviour
         var hitbox = hitboxObj.AddComponent<Hitbox>();
         hitbox.damage = 10;
         hitbox.owner = _player;
-        hitbox.autoDisableTime = 0.15f;
+        hitbox.autoDisableTime = 0f;
         hitboxCol.isTrigger = true;
         hitboxCol.size = new Vector2(0.6f, 0.4f);
         hitboxCol.offset = Vector2.zero;
+        stateMachine.ConfigureAttackHitbox(hitbox);
 
         // 受击闪白效果
         _player.AddComponent<HitEffectPlayer>();

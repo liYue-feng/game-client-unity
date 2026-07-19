@@ -32,7 +32,7 @@ public class Hitbox : MonoBehaviour
     public GameObject owner;
 
     // 已命中的目标，防止多段命中
-    private HashSet<Collider2D> _hitTargets = new HashSet<Collider2D>();
+    private HashSet<Hurtbox> _hitTargets = new HashSet<Hurtbox>();
     private float _disableTimer;
     private Collider2D _collider;
 
@@ -49,6 +49,8 @@ public class Hitbox : MonoBehaviour
     /// <summary>启用 hitbox，开始检测命中</summary>
     public void EnableHitbox()
     {
+        if (IsActive) return;
+
         _hitTargets.Clear();
         _collider.enabled = true;
         _disableTimer = autoDisableTime;
@@ -57,6 +59,8 @@ public class Hitbox : MonoBehaviour
     /// <summary>禁用 hitbox</summary>
     public void DisableHitbox()
     {
+        if (!IsActive) return;
+
         _collider.enabled = false;
         _hitTargets.Clear();
     }
@@ -76,22 +80,21 @@ public class Hitbox : MonoBehaviour
 
     private void OnTriggerEnter2D(Collider2D other)
     {
-        if (_hitTargets.Contains(other)) return;
         if (targetLayer != -1 && ((1 << other.gameObject.layer) & targetLayer) == 0) return;
-        if (other.gameObject == owner) return;
 
-        Hurtbox hurtbox = other.GetComponent<Hurtbox>();
+        Hurtbox hurtbox = other.GetComponentInParent<Hurtbox>();
         if (hurtbox == null) return;
+        if (hurtbox.gameObject == owner) return;
+        if (!_hitTargets.Add(hurtbox)) return;
 
-        _hitTargets.Add(other);
-
-        Vector2 knockbackDir = (other.transform.position - transform.position).normalized;
+        Vector2 knockbackDir = (hurtbox.transform.position - transform.position).normalized;
         if (knockbackDir == Vector2.zero) knockbackDir = Vector2.right;
 
-        int finalDamage = CalculateDamage(other.gameObject);
+        int finalDamage = CalculateDamage(hurtbox.gameObject);
         hurtbox.ReceiveHit(finalDamage, knockbackDir.x, knockbackForce, this);
-        CombatEvents.InvokeHitLanded(other.transform.position, finalDamage);
-        ApplyElementalEffects(other.gameObject);
+        owner?.GetComponent<PlayerStateMachine>()?.MarkHit();
+        CombatEvents.InvokeHitLanded(hurtbox.transform.position, finalDamage);
+        ApplyElementalEffects(hurtbox.gameObject);
     }
 
     int CalculateDamage(GameObject target)
