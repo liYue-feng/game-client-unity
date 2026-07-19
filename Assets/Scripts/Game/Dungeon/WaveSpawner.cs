@@ -8,7 +8,7 @@ using System.Collections.Generic;
 ///
 /// 参考：SikPang/Unity_VampireSurvivors_Copy 的对象池设计
 /// </summary>
-public class WaveSpawner : MonoBehaviour
+public class WaveSpawner : MonoBehaviour, System.IDisposable
 {
     [Header("波次配置")]
     [Tooltip("波次列表")]
@@ -28,7 +28,11 @@ public class WaveSpawner : MonoBehaviour
 
     private int _currentWave;
     private List<GameObject> _aliveEnemies = new List<GameObject>();
+    private readonly HashSet<string> _registeredPoolKeys = new HashSet<string>();
+    private readonly Dictionary<EnemyBase, System.Action<EnemyBase>> _deathHandlers =
+        new Dictionary<EnemyBase, System.Action<EnemyBase>>();
     private bool _poolsRegistered;
+    private bool _disposed;
 
     /// <summary>所有波次完成事件</summary>
     public event System.Action OnAllWavesComplete;
@@ -43,7 +47,7 @@ public class WaveSpawner : MonoBehaviour
     /// <summary>向 ObjectPool 注册所有敌人类型的工厂</summary>
     private void RegisterPools()
     {
-        if (_poolsRegistered) return;
+        if (_disposed || _poolsRegistered) return;
 
         // 收集波次配置中所有用到的敌人类型
         var types = new HashSet<string>();
@@ -63,12 +67,16 @@ public class WaveSpawner : MonoBehaviour
         // 动态添加组件时 Awake 早于外部配置，不能把空配置标记为已注册。
         if (types.Count == 0) return;
 
+        var pool = ObjectPool.Instance;
         foreach (var type in types)
         {
-            ObjectPool.Instance.Register(type, () => CreateEnemy(type), poolSizePerType);
+            if (pool.Register(type, () => CreateEnemy(type), poolSizePerType))
+            {
+                _registeredPoolKeys.Add(type);
+            }
         }
 
-        _poolsRegistered = true;
+        _poolsRegistered = _registeredPoolKeys.Count > 0;
     }
 
     /// <summary>创建敌人（由 ObjectPool 调用）</summary>
@@ -126,13 +134,16 @@ public class WaveSpawner : MonoBehaviour
     /// <summary>开始第一波</summary>
     public void StartWaves()
     {
+        if (_disposed) return;
         RegisterPools();
+        if (!_poolsRegistered) return;
         _currentWave = 0;
         StartCoroutine(SpawnWaveCoroutine(0));
     }
 
     private IEnumerator SpawnWaveCoroutine(int waveIndex)
     {
+        if (_disposed) yield break;
         if (waveIndex >= waves.Length)
         {
             OnAllWavesComplete?.Invoke();
@@ -146,16 +157,19 @@ public class WaveSpawner : MonoBehaviour
         {
             for (int i = 0; i < entry.count; i++)
             {
+                if (_disposed) yield break;
                 SpawnEnemy(entry);
                 yield return new WaitForSeconds(wave.spawnDelay);
             }
         }
 
         // 等待当前波所有敌人死亡（或归还池）
-        yield return new WaitUntil(() => _aliveEnemies.Count == 0);
+        yield return new WaitUntil(() => _disposed || _aliveEnemies.Count == 0);
+        if (_disposed) yield break;
 
         // 波间延迟
         yield return new WaitForSeconds(waveDelay);
+        if (_disposed) yield break;
 
         _currentWave++;
         StartCoroutine(SpawnWaveCoroutine(_currentWave));
@@ -164,6 +178,7 @@ public class WaveSpawner : MonoBehaviour
     /// <summary>从对象池取出一个敌人</summary>
     private void SpawnEnemy(EnemySpawnEntry entry)
     {
+        if (_disposed) return;
         GameObject enemyObj = ObjectPool.Instance.Get(entry.enemyType);
         if (enemyObj == null) return;
 
@@ -175,6 +190,7 @@ public class WaveSpawner : MonoBehaviour
         var enemyBase = enemyObj.GetComponent<EnemyBase>();
         if (enemyBase != null)
         {
+            UnbindDeathHandler(enemyBase);
             enemyBase.ResetForPool();
 
             // 应用波次属性增长
@@ -182,13 +198,8 @@ public class WaveSpawner : MonoBehaviour
 
             // 监听死亡 — 使用局部变量避免闭包问题
             string typeKey = entry.enemyType;
-            System.Action<EnemyBase> onDeath = null;
-            onDeath = (e) =>
-            {
-                enemyBase.OnDeath -= onDeath;
-                _aliveEnemies.Remove(enemyObj);
-                StartCoroutine(ReturnToPool(typeKey, enemyObj, 0.6f));
-            };
+            System.Action<EnemyBase> onDeath = e => HandleEnemyDeath(e, typeKey, enemyObj);
+            _deathHandlers.Add(enemyBase, onDeath);
             enemyBase.OnDeath += onDeath;
         }
 
@@ -199,7 +210,81 @@ public class WaveSpawner : MonoBehaviour
     private IEnumerator ReturnToPool(string key, GameObject obj, float delay)
     {
         yield return new WaitForSeconds(delay);
-        if (obj != null) ObjectPool.Instance.Return(key, obj);
+        if (_disposed || obj == null) yield break;
+
+        var pool = ObjectPool.ExistingInstance;
+        if (pool != null)
+        {
+            pool.Return(key, obj);
+        }
+    }
+
+    private void HandleEnemyDeath(EnemyBase enemy, string key, GameObject enemyObject)
+    {
+        if (!_deathHandlers.TryGetValue(enemy, out var handler))
+        {
+            return;
+        }
+
+        enemy.OnDeath -= handler;
+        _deathHandlers.Remove(enemy);
+        _aliveEnemies.Remove(enemyObject);
+        if (!_disposed)
+        {
+            StartCoroutine(ReturnToPool(key, enemyObject, 0.6f));
+        }
+    }
+
+    private void UnbindDeathHandler(EnemyBase enemy)
+    {
+        if (enemy == null || !_deathHandlers.TryGetValue(enemy, out var handler))
+        {
+            return;
+        }
+
+        enemy.OnDeath -= handler;
+        _deathHandlers.Remove(enemy);
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        StopAllCoroutines();
+        foreach (var registration in new List<KeyValuePair<EnemyBase, System.Action<EnemyBase>>>(_deathHandlers))
+        {
+            if (registration.Key != null)
+            {
+                registration.Key.OnDeath -= registration.Value;
+            }
+        }
+
+        _deathHandlers.Clear();
+        _aliveEnemies.Clear();
+        _currentWave = 0;
+        OnAllWavesComplete = null;
+        OnWaveStart = null;
+
+        var pool = ObjectPool.ExistingInstance;
+        if (pool != null)
+        {
+            foreach (var key in _registeredPoolKeys)
+            {
+                pool.Clear(key);
+            }
+        }
+
+        _registeredPoolKeys.Clear();
+        _poolsRegistered = false;
+    }
+
+    private void OnDestroy()
+    {
+        Dispose();
     }
 
     /// <summary>根据当前波次对敌人属性进行增长</summary>

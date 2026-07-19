@@ -485,6 +485,11 @@ public class BattleSceneSetup : MonoBehaviour
 
     private void OnDestroy()
     {
+        if (_waveSpawner != null)
+        {
+            _waveSpawner.Dispose();
+        }
+
         UnsubscribeSceneListeners();
     }
 

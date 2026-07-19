@@ -19,13 +19,14 @@ public class ObjectPool : MonoBehaviour
             if (_instance == null)
             {
                 var go = new GameObject("[ObjectPool]");
-                DontDestroyOnLoad(go);
                 _instance = go.AddComponent<ObjectPool>();
             }
             return _instance;
         }
     }
     private static ObjectPool _instance;
+
+    public static ObjectPool ExistingInstance => _instance;
 
     /// <summary>池存储：Key -> 可用对象队列</summary>
     private Dictionary<string, Queue<GameObject>> _pools = new Dictionary<string, Queue<GameObject>>();
@@ -42,7 +43,6 @@ public class ObjectPool : MonoBehaviour
             return;
         }
         _instance = this;
-        DontDestroyOnLoad(gameObject);
     }
 
     /// <summary>
@@ -51,9 +51,9 @@ public class ObjectPool : MonoBehaviour
     /// <param name="key">池标识（如 "grunt", "archer", "arrow"）</param>
     /// <param name="factory">创建新对象的工厂方法</param>
     /// <param name="initialCount">预分配数量</param>
-    public void Register(string key, System.Func<GameObject> factory, int initialCount = 5)
+    public bool Register(string key, System.Func<GameObject> factory, int initialCount = 5)
     {
-        if (_pools.ContainsKey(key)) return;
+        if (_pools.ContainsKey(key)) return false;
 
         // 创建池根节点
         var root = new GameObject($"Pool_{key}");
@@ -72,6 +72,8 @@ public class ObjectPool : MonoBehaviour
             obj.SetActive(false);
             _pools[key].Enqueue(obj);
         }
+
+        return true;
     }
 
     /// <summary>
@@ -187,6 +189,17 @@ public class ObjectPool : MonoBehaviour
         if (deficit > 0)
         {
             PreWarm(key, deficit);
+        }
+    }
+
+    private void OnDestroy()
+    {
+        _pools.Clear();
+        _factories.Clear();
+        _poolRoots.Clear();
+        if (_instance == this)
+        {
+            _instance = null;
         }
     }
 }

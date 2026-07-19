@@ -232,6 +232,96 @@ namespace Game.Tests.PlayMode
             }
         }
 
+        [UnityTest]
+        public IEnumerator FiveBattleReloadsReplacePoolSpawnerEnemiesAndDelegates()
+        {
+            var failures = new List<string>();
+            void CaptureFailure(string condition, string stackTrace, LogType type)
+            {
+                if (type == LogType.Error || type == LogType.Exception || type == LogType.Assert)
+                {
+                    failures.Add($"{type}: {condition}\n{stackTrace}");
+                }
+            }
+
+            Application.logMessageReceived += CaptureFailure;
+            var previousIgnoreFailingMessages = LogAssert.ignoreFailingMessages;
+            LogAssert.ignoreFailingMessages = true;
+            try
+            {
+                yield return SceneManager.LoadSceneAsync("BattleScene", LoadSceneMode.Single);
+                yield return null;
+                yield return null;
+                yield return WaitForApplicationReady();
+
+                var currentPool = FindUniqueLoadedComponent("ObjectPool");
+                var currentSpawner = FindUniqueActiveSceneComponent("WaveSpawner");
+                List<GameObject> currentEnemies = null;
+                yield return WaitForSpawnerEnemies(currentSpawner, enemies => currentEnemies = enemies);
+
+                var expectedKeys = new[] { "archer", "boss", "elite", "grunt" };
+                for (var iteration = 0; iteration < 5; iteration++)
+                {
+                    var oldPool = currentPool;
+                    var oldSpawner = currentSpawner;
+                    var oldEnemies = currentEnemies.ToArray();
+                    var oldPoolId = oldPool.GetInstanceID();
+                    var oldSpawnerId = oldSpawner.GetInstanceID();
+                    var oldEnemyIds = oldEnemies.Select(enemy => enemy.GetInstanceID()).ToArray();
+                    Assert.That(oldEnemies, Is.Not.Empty,
+                        $"Reload iteration {iteration + 1} must capture at least one active enemy.");
+
+                    yield return SceneManager.LoadSceneAsync("BattleScene", LoadSceneMode.Single);
+                    yield return null;
+                    yield return null;
+                    yield return WaitForApplicationReady();
+
+                    Assert.That(oldPool == null, Is.True,
+                        $"Reload iteration {iteration + 1} must destroy old ObjectPool {oldPoolId}.");
+                    Assert.That(oldSpawner == null, Is.True,
+                        $"Reload iteration {iteration + 1} must destroy old WaveSpawner {oldSpawnerId}.");
+                    for (var enemyIndex = 0; enemyIndex < oldEnemies.Length; enemyIndex++)
+                    {
+                        Assert.That(oldEnemies[enemyIndex] == null, Is.True,
+                            $"Reload iteration {iteration + 1} must destroy old enemy {oldEnemyIds[enemyIndex]}.");
+                    }
+
+                    var activeScene = SceneManager.GetActiveScene();
+                    currentPool = FindUniqueActiveSceneComponent("ObjectPool");
+                    currentSpawner = FindUniqueActiveSceneComponent("WaveSpawner");
+                    Assert.That(FindComponents("ObjectPool"), Has.Count.EqualTo(1));
+                    Assert.That(FindComponents("WaveSpawner"), Has.Count.EqualTo(1));
+                    Assert.That(currentPool.GetInstanceID(), Is.Not.EqualTo(oldPoolId));
+                    Assert.That(currentSpawner.GetInstanceID(), Is.Not.EqualTo(oldSpawnerId));
+
+                    List<GameObject> nextEnemies = null;
+                    yield return WaitForSpawnerEnemies(currentSpawner, enemies => nextEnemies = enemies);
+                    currentEnemies = nextEnemies;
+                    Assert.That(currentEnemies, Is.Not.Empty);
+                    AssertPoolBelongsToScene(currentPool, activeScene);
+                    Assert.That(
+                        currentEnemies.All(enemy => enemy != null
+                                                    && enemy.scene == activeScene
+                                                    && enemy.activeInHierarchy),
+                        Is.True,
+                        "Checked-out enemies must belong to the current BattleScene.");
+
+                    CollectionAssert.AreEquivalent(expectedKeys, GetDictionaryKeys(currentPool, "_factories"));
+                    CollectionAssert.AreEquivalent(
+                        expectedKeys,
+                        GetEnumerableFieldValues(currentSpawner, "_registeredPoolKeys").Cast<string>());
+                    AssertFactoryOwners(currentPool, currentSpawner);
+                    AssertEnemyDeathOwners(currentEnemies, currentSpawner);
+                    Assert.That(failures, Is.Empty, string.Join("\n\n", failures));
+                }
+            }
+            finally
+            {
+                LogAssert.ignoreFailingMessages = previousIgnoreFailingMessages;
+                Application.logMessageReceived -= CaptureFailure;
+            }
+        }
+
         private static IEnumerator WaitForApplicationReady()
         {
             const int maxFrames = 120;
@@ -262,6 +352,214 @@ namespace Game.Tests.PlayMode
         {
             return applicationObject.GetComponents<Component>()
                 .First(component => component != null && component.GetType().Name == "GameApplication");
+        }
+
+        private static IEnumerator WaitForSpawnerEnemies(
+            Component spawner,
+            Action<List<GameObject>> found)
+        {
+            for (var frame = 0; frame < 240; frame++)
+            {
+                var enemies = GetEnumerableFieldValues(spawner, "_aliveEnemies")
+                    .OfType<GameObject>()
+                    .Where(enemy => enemy != null && enemy.activeInHierarchy)
+                    .ToList();
+                if (enemies.Count > 0)
+                {
+                    found(enemies);
+                    yield break;
+                }
+
+                yield return null;
+            }
+
+            Assert.Fail("WaveSpawner did not expose an active run enemy within 240 frames.");
+        }
+
+        private static void AssertPoolBelongsToScene(Component pool, Scene activeScene)
+        {
+            Assert.That(pool.gameObject.scene, Is.EqualTo(activeScene));
+            var roots = GetFieldValue(pool, "_poolRoots") as IDictionary;
+            var pools = GetFieldValue(pool, "_pools") as IDictionary;
+            Assert.That(roots, Is.Not.Null);
+            Assert.That(pools, Is.Not.Null);
+            foreach (DictionaryEntry entry in roots)
+            {
+                var root = entry.Value as Transform;
+                Assert.That(root, Is.Not.Null);
+                Assert.That(root.gameObject.scene, Is.EqualTo(activeScene),
+                    $"Pool root {entry.Key} must belong to the active BattleScene.");
+            }
+
+            foreach (DictionaryEntry entry in pools)
+            {
+                var queuedObjects = entry.Value as IEnumerable;
+                Assert.That(queuedObjects, Is.Not.Null);
+                foreach (var queuedObject in queuedObjects.Cast<GameObject>())
+                {
+                    Assert.That(queuedObject.scene, Is.EqualTo(activeScene),
+                        $"Queued object for {entry.Key} must belong to the active BattleScene.");
+                }
+            }
+        }
+
+        private static void AssertFactoryOwners(Component pool, Component currentSpawner)
+        {
+            var factories = GetFieldValue(pool, "_factories") as IDictionary;
+            Assert.That(factories, Is.Not.Null);
+            foreach (DictionaryEntry entry in factories)
+            {
+                var factory = entry.Value as Delegate;
+                Assert.That(factory, Is.Not.Null);
+                Assert.That(DelegateReferencesOwner(factory, currentSpawner), Is.True,
+                    $"Factory {entry.Key} must capture the current WaveSpawner.");
+                AssertNoStaleUnityReferences(factory, currentSpawner, $"factory {entry.Key}");
+            }
+        }
+
+        private static void AssertEnemyDeathOwners(
+            IEnumerable<GameObject> enemies,
+            Component currentSpawner)
+        {
+            foreach (var enemyObject in enemies)
+            {
+                var enemy = enemyObject.GetComponents<Component>()
+                    .First(component => IsEnemyType(component.GetType()));
+                var ownedHandlers = GetInstanceEventHandlers(enemy, "OnDeath")
+                    .Where(handler => IsDeclaredWithin(currentSpawner.GetType(), handler))
+                    .ToList();
+                Assert.That(ownedHandlers, Has.Count.EqualTo(1),
+                    $"Enemy {enemyObject.GetInstanceID()} must have exactly one current-run death callback.");
+                foreach (var handler in ownedHandlers)
+                {
+                    Assert.That(DelegateReferencesOwner(handler, currentSpawner), Is.True);
+                    AssertNoStaleUnityReferences(handler, currentSpawner, "enemy death callback");
+                }
+            }
+        }
+
+        private static void AssertNoStaleUnityReferences(
+            Delegate handler,
+            Component currentSpawner,
+            string context)
+        {
+            if (handler.Target == null)
+            {
+                return;
+            }
+
+            foreach (var field in handler.Target.GetType()
+                         .GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
+            {
+                if (!(field.GetValue(handler.Target) is UnityEngine.Object unityObject)
+                    || ReferenceEquals(unityObject, null))
+                {
+                    continue;
+                }
+
+                Assert.That(unityObject != null, Is.True, $"{context} must not capture a destroyed Unity object.");
+                if (unityObject.GetType().Name == "WaveSpawner")
+                {
+                    Assert.That(unityObject, Is.SameAs(currentSpawner),
+                        $"{context} must not capture an old WaveSpawner.");
+                }
+            }
+        }
+
+        private static bool DelegateReferencesOwner(Delegate handler, Component owner)
+        {
+            if (ReferenceEquals(handler.Target, owner))
+            {
+                return true;
+            }
+
+            return handler.Target != null
+                   && handler.Target.GetType()
+                       .GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                       .Any(field => ReferenceEquals(field.GetValue(handler.Target), owner));
+        }
+
+        private static List<Delegate> GetInstanceEventHandlers(Component publisher, string eventName)
+        {
+            for (var type = publisher.GetType(); type != null; type = type.BaseType)
+            {
+                var field = type.GetField(
+                    eventName,
+                    BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly);
+                if (field?.GetValue(publisher) is Delegate backingDelegate)
+                {
+                    return backingDelegate.GetInvocationList().ToList();
+                }
+            }
+
+            return new List<Delegate>();
+        }
+
+        private static bool IsDeclaredWithin(Type ownerType, Delegate handler)
+        {
+            for (var type = handler.Method.DeclaringType; type != null; type = type.DeclaringType)
+            {
+                if (type == ownerType)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool IsEnemyType(Type type)
+        {
+            for (var current = type; current != null; current = current.BaseType)
+            {
+                if (current.Name == "EnemyBase")
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static Component FindUniqueLoadedComponent(string typeName)
+        {
+            var matches = FindComponents(typeName);
+            Assert.That(matches, Has.Count.EqualTo(1), $"Expected exactly one loaded {typeName}.");
+            return matches.Single();
+        }
+
+        private static Component FindUniqueActiveSceneComponent(string typeName)
+        {
+            var activeScene = SceneManager.GetActiveScene();
+            var matches = FindComponents(typeName)
+                .Where(component => component.gameObject.scene == activeScene)
+                .ToList();
+            Assert.That(matches, Has.Count.EqualTo(1),
+                $"Expected exactly one active-scene {typeName}.");
+            return matches.Single();
+        }
+
+        private static object GetFieldValue(Component component, string fieldName)
+        {
+            var field = component.GetType().GetField(
+                fieldName,
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            Assert.That(field, Is.Not.Null, $"Expected {component.GetType().Name}.{fieldName}.");
+            return field.GetValue(component);
+        }
+
+        private static List<object> GetEnumerableFieldValues(Component component, string fieldName)
+        {
+            var enumerable = GetFieldValue(component, fieldName) as IEnumerable;
+            Assert.That(enumerable, Is.Not.Null);
+            return enumerable.Cast<object>().ToList();
+        }
+
+        private static List<string> GetDictionaryKeys(Component component, string fieldName)
+        {
+            var dictionary = GetFieldValue(component, fieldName) as IDictionary;
+            Assert.That(dictionary, Is.Not.Null);
+            return dictionary.Keys.Cast<object>().Select(key => key.ToString()).ToList();
         }
 
         private static Dictionary<string, int> GetBattleSceneHandlerCounts(
