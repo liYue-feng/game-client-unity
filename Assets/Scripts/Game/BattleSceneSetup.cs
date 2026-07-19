@@ -38,6 +38,7 @@ public class BattleSceneSetup : MonoBehaviour
 
     // 运行时引用
     private InputMediator _inputMediator;
+    private BattleTimeController _battleTimeController;
     private PauseMenuUI _pauseMenu;
     private InventoryUI _inventoryUI;
     private InkHitEffect _inkEffect;
@@ -49,6 +50,8 @@ public class BattleSceneSetup : MonoBehaviour
     private bool _pauseMenuEventsSubscribed;
     private bool _isPaused;
     private bool _isInventoryOpen;
+
+    public bool BattleHotkeysEnabled { get; set; } = true;
 
     private void Start()
     {
@@ -62,6 +65,7 @@ public class BattleSceneSetup : MonoBehaviour
         var ___ = SummonManager.Instance;
         RequireService(LoadingScreen.Instance, nameof(LoadingScreen)).Hide();
 
+        CreateBattleTimeController();
         CreateCamera();
         CreateGround();
         CreateUpgradeManager();  // 先创建UpgradeManager，WeaponSystem可以找到它
@@ -86,6 +90,12 @@ public class BattleSceneSetup : MonoBehaviour
         }
 
         return service;
+    }
+
+    private void CreateBattleTimeController()
+    {
+        var controllerObject = new GameObject("BattleTimeController");
+        _battleTimeController = controllerObject.AddComponent<BattleTimeController>();
     }
 
     /// <summary>创建主相机，挂载屏幕震动和卡帧</summary>
@@ -114,8 +124,10 @@ public class BattleSceneSetup : MonoBehaviour
         // 打击反馈组件
         if (camObj.GetComponent<CameraShaker>() == null)
             camObj.AddComponent<CameraShaker>();
-        if (camObj.GetComponent<HitStopController>() == null)
-            camObj.AddComponent<HitStopController>();
+        var hitStopController = camObj.GetComponent<HitStopController>();
+        if (hitStopController == null)
+            hitStopController = camObj.AddComponent<HitStopController>();
+        hitStopController.ConfigureBattleTimeController(_battleTimeController);
     }
 
     /// <summary>创建地面平台</summary>
@@ -165,6 +177,7 @@ public class BattleSceneSetup : MonoBehaviour
         // 战斗组件
         _player.AddComponent<CharacterStats>();
         var stateMachine = _player.AddComponent<PlayerStateMachine>();
+        stateMachine.ConfigureBattleTimeController(_battleTimeController);
         _player.AddComponent<StaminaController>();
         _player.AddComponent<InputHandler>(); // 用旧输入系统，更稳定
         _player.AddComponent<InputMediator>();
@@ -397,6 +410,7 @@ public class BattleSceneSetup : MonoBehaviour
         if (stats != null)
         {
             _upgradeManager.Initialize(stats);
+            _upgradeManager.levelUpUI.ConfigureBattleTimeController(_battleTimeController);
         }
 
         // 升级选项被选择后应用加成
@@ -443,6 +457,8 @@ public class BattleSceneSetup : MonoBehaviour
 
         var pauseObj = new GameObject("[PauseMenu]");
         _pauseMenu = pauseObj.AddComponent<PauseMenuUI>();
+        _pauseMenu.ConfigureBattleTimeController(_battleTimeController);
+        _pauseMenu.OnResume += HandleResume;
         _pauseMenu.OnBackToMenu += HandleBackToMenu;
         _pauseMenu.OnSettings += HandleSettings;
         _pauseMenuEventsSubscribed = true;
@@ -450,8 +466,14 @@ public class BattleSceneSetup : MonoBehaviour
 
     private void HandleBackToMenu()
     {
+        _isPaused = false;
         LoadingScreen.Instance.Show();
         SceneTransitionManager.Instance.GoToMainMenu();
+    }
+
+    private void HandleResume()
+    {
+        _isPaused = false;
     }
 
     private void HandleSettings()
@@ -493,6 +515,7 @@ public class BattleSceneSetup : MonoBehaviour
         {
             if (_pauseMenu != null)
             {
+                _pauseMenu.OnResume -= HandleResume;
                 _pauseMenu.OnBackToMenu -= HandleBackToMenu;
                 _pauseMenu.OnSettings -= HandleSettings;
             }
@@ -502,7 +525,7 @@ public class BattleSceneSetup : MonoBehaviour
 
     private void Update()
     {
-        if (_inputMediator == null) return;
+        if (!BattleHotkeysEnabled || _inputMediator == null) return;
 
         // 暂停菜单切换
         if (_inputMediator.PausePressed)
@@ -526,12 +549,10 @@ public class BattleSceneSetup : MonoBehaviour
             if (_isPaused)
             {
                 _pauseMenu.Show();
-                Time.timeScale = 0f;
             }
             else
             {
                 _pauseMenu.Hide();
-                Time.timeScale = 1f;
             }
         }
     }

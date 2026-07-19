@@ -24,6 +24,8 @@ public class LevelUpUI : MonoBehaviour
     private CharacterStats _playerStats;
     private UpgradeManager _upgradeManager;
     private bool _isOpen;
+    private BattleTimeController _battleTimeController;
+    private Game.Gameplay.TimeScaleRequestToken _levelUpToken;
 
     /// <summary>是否打开中</summary>
     public bool IsOpen => _isOpen;
@@ -52,18 +54,69 @@ public class LevelUpUI : MonoBehaviour
         if (panel != null)
             panel.SetActive(true);
 
-        Time.timeScale = 0f;
+        RequestLevelUpPause();
         RefreshOptions();
     }
 
     /// <summary>隐藏升级界面</summary>
     public void Hide()
     {
+        Close();
+    }
+
+    private void Close()
+    {
         _isOpen = false;
         if (panel != null)
             panel.SetActive(false);
-        Time.timeScale = 1f;
+        ReleaseLevelUpPause();
         ClearOptions();
+        _currentOptions = new List<ItemData>();
+    }
+
+    public void ConfigureBattleTimeController(BattleTimeController controller)
+    {
+        if (_battleTimeController == controller)
+        {
+            return;
+        }
+
+        ReleaseLevelUpPause();
+        _battleTimeController = controller;
+        if (_isOpen)
+        {
+            RequestLevelUpPause();
+        }
+    }
+
+    private void RequestLevelUpPause()
+    {
+        if (_battleTimeController != null && !_levelUpToken.IsValid)
+        {
+            _levelUpToken = _battleTimeController.RequestTimeScale(
+                BattleTimeController.LevelUpReason,
+                0f);
+        }
+    }
+
+    private void ReleaseLevelUpPause()
+    {
+        if (_levelUpToken.IsValid && _battleTimeController != null)
+        {
+            _battleTimeController.ReleaseTimeScale(_levelUpToken);
+        }
+
+        _levelUpToken = default;
+    }
+
+    private void OnDisable()
+    {
+        Close();
+    }
+
+    private void OnDestroy()
+    {
+        Close();
     }
 
     private void RefreshOptions()

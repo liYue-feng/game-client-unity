@@ -55,6 +55,7 @@ public class PlayerStateMachine : MonoBehaviour
     private CharacterStats _stats;
     private PlayerController _controller;
     private Hitbox _attackHitbox;
+    private BattleTimeController _battleTimeController;
 
     // 计时器
     private float _stateTimer;
@@ -72,6 +73,7 @@ public class PlayerStateMachine : MonoBehaviour
     private float _parryWindowTimer;
     private float _counterWindowTimer;
     private bool _isSlowMoActive;
+    private TimeScaleRequestToken _slowMoToken;
 
     // 命中标记（由动画事件/Hitbox 设置）
     private bool _hasHitThisAttack;
@@ -84,6 +86,22 @@ public class PlayerStateMachine : MonoBehaviour
     public bool IsDashOnCooldown => _dashCooldownTimer > 0;
     /// <summary>当前攻击是否已命中（用于连击判定）</summary>
     public bool HasHitThisAttack => _hasHitThisAttack;
+    public bool IsSlowMoActive => _isSlowMoActive;
+
+    public void ConfigureBattleTimeController(BattleTimeController controller)
+    {
+        if (_battleTimeController == controller)
+        {
+            return;
+        }
+
+        ReleaseSlowMotionRequest();
+        _battleTimeController = controller;
+        if (_isSlowMoActive)
+        {
+            RequestSlowMotion();
+        }
+    }
 
     public void ConfigureAttackHitbox(Hitbox hitbox)
     {
@@ -320,11 +338,11 @@ public class PlayerStateMachine : MonoBehaviour
     private IEnumerator SlowMoCoroutine()
     {
         _isSlowMoActive = true;
-        Time.timeScale = slowMoScale;
+        RequestSlowMotion();
 
         yield return new WaitForSecondsRealtime(slowMoDuration);
 
-        Time.timeScale = 1f;
+        ReleaseSlowMotionRequest();
         _isSlowMoActive = false;
 
         // 慢动作结束，开启反击窗口
@@ -338,11 +356,9 @@ public class PlayerStateMachine : MonoBehaviour
     private void OnDisable()
     {
         DisableAttackHitbox();
-        if (_isSlowMoActive)
-        {
-            Time.timeScale = 1f;
-            _isSlowMoActive = false;
-        }
+        StopAllCoroutines();
+        ReleaseSlowMotionRequest();
+        _isSlowMoActive = false;
     }
 
     private void FixedUpdate()
@@ -356,6 +372,27 @@ public class PlayerStateMachine : MonoBehaviour
     private void OnDestroy()
     {
         DisableAttackHitbox();
+        ReleaseSlowMotionRequest();
+    }
+
+    private void RequestSlowMotion()
+    {
+        if (_battleTimeController != null && !_slowMoToken.IsValid)
+        {
+            _slowMoToken = _battleTimeController.RequestTimeScale(
+                BattleTimeController.ParrySlowMotionReason,
+                slowMoScale);
+        }
+    }
+
+    private void ReleaseSlowMotionRequest()
+    {
+        if (_slowMoToken.IsValid && _battleTimeController != null)
+        {
+            _battleTimeController.ReleaseTimeScale(_slowMoToken);
+        }
+
+        _slowMoToken = default;
     }
 
     /// <summary>

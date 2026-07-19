@@ -27,6 +27,286 @@ namespace Game.Tests.PlayMode
         }
 
         [UnityTest]
+        public IEnumerator BattleSceneOwnsAndConfiguresOneBattleTimeController()
+        {
+            yield return LoadBattleScene();
+
+            var activeScene = SceneManager.GetActiveScene();
+            var controllers = Resources.FindObjectsOfTypeAll<Component>()
+                .Where(component => component != null
+                                    && component.GetType().Name == "BattleTimeController"
+                                    && component.gameObject.scene == activeScene)
+                .ToArray();
+            Assert.That(controllers, Has.Length.EqualTo(1),
+                "BattleScene must own exactly one BattleTimeController.");
+
+            var controller = controllers.Single();
+            var playerState = FindComponent(GameObject.Find("Player"), "PlayerStateMachine");
+            var hitStop = FindComponent(Camera.main.gameObject, "HitStopController");
+            var pauseMenu = FindComponent(GameObject.Find("[PauseMenu]"), "PauseMenuUI");
+            var upgradeManager = FindComponent(GameObject.Find("UpgradeManager"), "UpgradeManager");
+            var levelUpUI = GetFieldValue(upgradeManager, "levelUpUI") as Component;
+
+            Assert.That(GetFieldValue(playerState, "_battleTimeController"), Is.SameAs(controller));
+            Assert.That(GetFieldValue(hitStop, "_battleTimeController"), Is.SameAs(controller));
+            Assert.That(GetFieldValue(pauseMenu, "_battleTimeController"), Is.SameAs(controller));
+            Assert.That(levelUpUI, Is.Not.Null, "UpgradeManager must create its LevelUpUI during initialization.");
+            Assert.That(GetFieldValue(levelUpUI, "_battleTimeController"), Is.SameAs(controller));
+        }
+
+        [UnityTest]
+        public IEnumerator PauseRequestSurvivesParrySlowMotionRelease()
+        {
+            yield return LoadBattleScene();
+
+            DisableActiveEnemyBehaviours();
+            var playerState = FindComponent(GameObject.Find("Player"), "PlayerStateMachine");
+            var pauseMenu = FindComponent(GameObject.Find("[PauseMenu]"), "PauseMenuUI");
+            SetFieldValue(playerState, "slowMoDuration", 0.05f);
+
+            Invoke(pauseMenu, "Pause");
+            Invoke(playerState, "OnParrySuccess");
+            Assert.That(Time.timeScale, Is.EqualTo(0f).Within(0.0001f));
+
+            yield return new WaitForSecondsRealtime(0.08f);
+
+            Assert.That(GetBoolProperty(playerState, "IsSlowMoActive"), Is.False,
+                "The real-time parry slow-motion request must finish while Pause remains active.");
+            Assert.That(Time.timeScale, Is.EqualTo(0f).Within(0.0001f),
+                "Releasing ParrySlowMotion must not release Pause.");
+
+            Invoke(pauseMenu, "Resume");
+            Assert.That(Time.timeScale, Is.EqualTo(1f).Within(0.0001f));
+        }
+
+        [UnityTest]
+        public IEnumerator DestroyingReplacedTimeControllerDoesNotOverrideCurrentRequest()
+        {
+            yield return LoadBattleScene();
+
+            var sceneController = FindActiveSceneComponent("BattleTimeController");
+            var pauseType = FindComponent(GameObject.Find("[PauseMenu]"), "PauseMenuUI").GetType();
+            var controllerAObject = new GameObject("BattleTimeController_A");
+            var controllerA = controllerAObject.AddComponent(sceneController.GetType());
+            var pauseObject = new GameObject("PauseMenu_AuthorityProbe");
+            var pauseMenu = pauseObject.AddComponent(pauseType);
+            InvokeWithArguments(pauseMenu, "ConfigureBattleTimeController", controllerA);
+            Invoke(pauseMenu, "Pause");
+            Assert.That(Time.timeScale, Is.EqualTo(0f).Within(0.0001f));
+
+            var controllerBObject = new GameObject("BattleTimeController_B");
+            var controllerB = controllerBObject.AddComponent(sceneController.GetType());
+            InvokeWithArguments(pauseMenu, "ConfigureBattleTimeController", controllerB);
+            Assert.That((float)GetPropertyValue(controllerB, "EffectiveScale"), Is.EqualTo(0f));
+            Assert.That(Time.timeScale, Is.EqualTo(0f).Within(0.0001f));
+
+            UnityEngine.Object.Destroy(controllerAObject);
+            yield return null;
+
+            Assert.That((float)GetPropertyValue(controllerB, "EffectiveScale"), Is.EqualTo(0f),
+                "The replacement controller must retain the transferred Pause request.");
+            Assert.That(Time.timeScale, Is.EqualTo(0f).Within(0.0001f),
+                "Destroying an old controller must not override the authoritative controller.");
+
+            Invoke(pauseMenu, "Resume");
+            Assert.That((float)GetPropertyValue(controllerB, "EffectiveScale"), Is.EqualTo(1f));
+            Assert.That(Time.timeScale, Is.EqualTo(1f).Within(0.0001f));
+            UnityEngine.Object.Destroy(pauseObject);
+            UnityEngine.Object.Destroy(controllerBObject);
+            yield return null;
+        }
+
+        [UnityTest]
+        public IEnumerator DisablingPausedMenuClosesCanvasAndSynchronizesSetupOnce()
+        {
+            yield return LoadBattleScene();
+
+            var setup = FindActiveSceneComponent("BattleSceneSetup");
+            var pauseMenu = FindComponent(GameObject.Find("[PauseMenu]"), "PauseMenuUI");
+            var canvas = GetFieldValue(pauseMenu, "_canvas") as Canvas;
+            var resumeEvent = pauseMenu.GetType().GetEvent("OnResume", BindingFlags.Instance | BindingFlags.Public);
+            Assert.That(canvas, Is.Not.Null);
+            Assert.That(resumeEvent, Is.Not.Null);
+            var resumeCalls = 0;
+            Action resumeProbe = () => resumeCalls++;
+            resumeEvent.AddEventHandler(pauseMenu, resumeProbe);
+            try
+            {
+                Invoke(setup, "TogglePause");
+                Assert.That((bool)GetFieldValue(setup, "_isPaused"), Is.True);
+                Assert.That(canvas.enabled, Is.True);
+                Assert.That(Time.timeScale, Is.EqualTo(0f).Within(0.0001f));
+
+                ((Behaviour)pauseMenu).enabled = false;
+
+                Assert.That(canvas.enabled, Is.False,
+                    "Disabling PauseMenuUI must not leave its Canvas visible.");
+                Assert.That((bool)GetFieldValue(setup, "_isPaused"), Is.False,
+                    "PauseMenuUI disable must synchronize BattleSceneSetup through OnResume.");
+                Assert.That(Time.timeScale, Is.EqualTo(1f).Within(0.0001f));
+                Assert.That(resumeCalls, Is.EqualTo(1));
+
+                ((Behaviour)pauseMenu).enabled = false;
+                yield return null;
+                Assert.That(resumeCalls, Is.EqualTo(1),
+                    "An already-disabled menu must not publish duplicate resume events.");
+            }
+            finally
+            {
+                if (pauseMenu != null)
+                {
+                    resumeEvent.RemoveEventHandler(pauseMenu, resumeProbe);
+                    ((Behaviour)pauseMenu).enabled = true;
+                }
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator OverlappingHitStopsOwnUniqueTokensUntilEachRealtimeDurationEnds()
+        {
+            yield return LoadBattleScene();
+
+            DisableActiveEnemyBehaviours();
+            var hitStop = FindComponent(Camera.main.gameObject, "HitStopController");
+            SetFieldValue(hitStop, "hitStopTimeScale", 0.05f);
+
+            InvokeWithArguments(hitStop, "DoHitStop", 0.25f);
+            yield return new WaitForSecondsRealtime(0.02f);
+            InvokeWithArguments(hitStop, "DoHitStop", 0.05f);
+
+            var overlappingTokens = GetEnumerableFieldValues(hitStop, "_activeHitStopTokens");
+            Assert.That(overlappingTokens, Has.Count.EqualTo(2));
+            Assert.That(overlappingTokens.Distinct().Count(), Is.EqualTo(2),
+                "Each hit-stop coroutine must own a unique request token.");
+
+            yield return new WaitForSecondsRealtime(0.08f);
+
+            Assert.That(GetBoolProperty(hitStop, "IsInHitStop"), Is.True,
+                "The longer, earlier hit stop must remain after the shorter, later hit stop releases.");
+            Assert.That(GetEnumerableFieldValues(hitStop, "_activeHitStopTokens"), Has.Count.EqualTo(1));
+            Assert.That(Time.timeScale, Is.EqualTo(0.05f).Within(0.0001f));
+
+            yield return new WaitForSecondsRealtime(0.18f);
+
+            Assert.That(GetBoolProperty(hitStop, "IsInHitStop"), Is.False);
+            Assert.That(GetEnumerableFieldValues(hitStop, "_activeHitStopTokens"), Is.Empty);
+            Assert.That(Time.timeScale, Is.EqualTo(1f).Within(0.0001f));
+        }
+
+        [UnityTest]
+        public IEnumerator SetupExclusivelyOwnsBattleHotkeysAndResumeSynchronizesPauseState()
+        {
+            yield return LoadBattleScene();
+
+            var setup = FindActiveSceneComponent("BattleSceneSetup");
+            var pauseMenu = FindComponent(GameObject.Find("[PauseMenu]"), "PauseMenuUI");
+            var inventoryUI = FindComponent(GameObject.Find("[InventoryUI]"), "InventoryUI");
+            Assert.That(
+                pauseMenu.GetType().GetMethod("Update", InstanceFlags | BindingFlags.DeclaredOnly),
+                Is.Null,
+                "PauseMenuUI must not independently poll Escape.");
+            Assert.That(
+                inventoryUI.GetType().GetMethod("Update", InstanceFlags | BindingFlags.DeclaredOnly),
+                Is.Null,
+                "InventoryUI must not independently poll Tab.");
+
+            var hotkeyGate = setup.GetType().GetProperty("BattleHotkeysEnabled", InstanceFlags);
+            Assert.That(hotkeyGate, Is.Not.Null, "BattleSceneSetup must expose the battle hotkey gate.");
+            Assert.That(hotkeyGate.GetValue(setup), Is.True, "Battle hotkeys must be enabled by default.");
+
+            Invoke(setup, "TogglePause");
+            Assert.That((bool)GetFieldValue(setup, "_isPaused"), Is.True);
+            Invoke(pauseMenu, "Resume");
+            Assert.That((bool)GetFieldValue(setup, "_isPaused"), Is.False,
+                "The Resume button path must synchronize BattleSceneSetup pause state.");
+
+            hotkeyGate.SetValue(setup, false);
+            var inputMediator = GetFieldValue(setup, "_inputMediator") as Component;
+            SetFieldValue(inputMediator, "<PausePressed>k__BackingField", true);
+            Invoke(setup, "Update");
+            Assert.That((bool)GetFieldValue(setup, "_isPaused"), Is.False,
+                "Disabled battle hotkeys must ignore a Pause pulse without disabling lifecycle cleanup.");
+        }
+
+        [UnityTest]
+        public IEnumerator LevelUpHideDoesNotReleasePauseRequest()
+        {
+            yield return LoadBattleScene();
+
+            var pauseMenu = FindComponent(GameObject.Find("[PauseMenu]"), "PauseMenuUI");
+            var upgradeManager = FindComponent(GameObject.Find("UpgradeManager"), "UpgradeManager");
+            var levelUpUI = GetFieldValue(upgradeManager, "levelUpUI") as Component;
+            Assert.That(levelUpUI, Is.Not.Null);
+
+            Invoke(pauseMenu, "Pause");
+            var itemDataType = levelUpUI.GetType().Assembly.GetType("ItemData");
+            Assert.That(itemDataType, Is.Not.Null);
+            var emptyOptions = Activator.CreateInstance(typeof(List<>).MakeGenericType(itemDataType));
+            InvokeWithArguments(levelUpUI, "Show", emptyOptions);
+            Assert.That(Time.timeScale, Is.EqualTo(0f).Within(0.0001f));
+
+            Invoke(levelUpUI, "Hide");
+            Assert.That(Time.timeScale, Is.EqualTo(0f).Within(0.0001f),
+                "LevelUpUI must release only its own request while Pause remains active.");
+
+            Invoke(pauseMenu, "Resume");
+            Assert.That(Time.timeScale, Is.EqualTo(1f).Within(0.0001f));
+        }
+
+        [UnityTest]
+        public IEnumerator DisablingOpenLevelUpClearsUiAndReleasesOnlyItsRequest()
+        {
+            yield return LoadBattleScene();
+
+            var pauseMenu = FindComponent(GameObject.Find("[PauseMenu]"), "PauseMenuUI");
+            var upgradeManager = FindComponent(GameObject.Find("UpgradeManager"), "UpgradeManager");
+            var levelUpUI = GetFieldValue(upgradeManager, "levelUpUI") as Component;
+            Assert.That(levelUpUI, Is.Not.Null);
+
+            var itemDataType = levelUpUI.GetType().Assembly.GetType("ItemData");
+            Assert.That(itemDataType, Is.Not.Null);
+            var option = ScriptableObject.CreateInstance(itemDataType);
+            var options = (IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(itemDataType));
+            options.Add(option);
+            Invoke(pauseMenu, "Pause");
+            InvokeWithArguments(levelUpUI, "Show", options);
+            var panel = GetFieldValue(levelUpUI, "panel") as GameObject;
+            Assert.That(panel, Is.Not.Null);
+            Assert.That(panel.activeSelf, Is.True);
+            Assert.That(GetEnumerableFieldValues(levelUpUI, "_optionObjects"), Has.Count.EqualTo(1));
+
+            try
+            {
+                ((Behaviour)levelUpUI).enabled = false;
+
+                Assert.That(GetBoolProperty(levelUpUI, "IsOpen"), Is.False);
+                Assert.That(panel.activeSelf, Is.False,
+                    "Disabling LevelUpUI must hide its panel.");
+                Assert.That(GetEnumerableFieldValues(levelUpUI, "_currentOptions"), Is.Empty,
+                    "Disabling LevelUpUI must clear its option state.");
+                Assert.That(GetEnumerableFieldValues(levelUpUI, "_optionObjects"), Is.Empty,
+                    "Disabling LevelUpUI must clear generated option objects.");
+                Assert.That(Time.timeScale, Is.EqualTo(0f).Within(0.0001f),
+                    "Disabling LevelUpUI must release only LevelUp while Pause remains.");
+
+                Invoke(pauseMenu, "Resume");
+                Assert.That(Time.timeScale, Is.EqualTo(1f).Within(0.0001f));
+            }
+            finally
+            {
+                if (levelUpUI != null)
+                {
+                    ((Behaviour)levelUpUI).enabled = true;
+                }
+
+                if (option != null)
+                {
+                    UnityEngine.Object.Destroy(option);
+                }
+            }
+        }
+
+        [UnityTest]
         public IEnumerator LightAttackActivatesHitboxAndDamagesOneActiveGruntOnce()
         {
             yield return LoadBattleScene();
@@ -40,7 +320,7 @@ namespace Game.Tests.PlayMode
 
             DisableActiveEnemyBehaviours();
             yield return WaitForPlayerIdle(stateMachine);
-            FreezeEnemyAt(grunt, attackHitboxObject.transform.position);
+            FreezeEnemyAt(grunt, attackHitboxObject.transform.position + Vector3.right * 5f);
             AddSecondTargetCollider(grunt);
             SetIntField(grunt, "maxHp", 500);
             SetIntField(grunt, "hp", 500);
@@ -51,6 +331,7 @@ namespace Game.Tests.PlayMode
 
             var sawActiveHitbox = false;
             var sawHitMark = false;
+            var enteredActiveHitbox = false;
             var observedPhases = new HashSet<string>();
             var activePhaseHitCallbacks = 0;
             var combatEventsType = stateMachine.GetType().Assembly.GetType("CombatEvents");
@@ -73,7 +354,16 @@ namespace Game.Tests.PlayMode
                     "The test must enter Attack1 before observing its timeline.");
                 for (var sample = 0; sample < 200; sample++)
                 {
-                    sawActiveHitbox |= GetBoolProperty(attackHitbox, "IsActive");
+                    var isActive = GetBoolProperty(attackHitbox, "IsActive");
+                    sawActiveHitbox |= isActive;
+                    if (isActive && !enteredActiveHitbox)
+                    {
+                        grunt.transform.position = attackHitboxObject.transform.position;
+                        Physics2D.SyncTransforms();
+                        enteredActiveHitbox = true;
+                        yield return new WaitForFixedUpdate();
+                    }
+
                     sawHitMark |= GetBoolProperty(stateMachine, "HasHitThisAttack");
                     observedPhases.Add(GetFieldValue(stateMachine, "_attackPhase")?.ToString());
                     if (sawActiveHitbox && GetStateName(stateMachine) == "Idle")
@@ -791,6 +1081,19 @@ namespace Game.Tests.PlayMode
             return component;
         }
 
+        private static Component FindActiveSceneComponent(string typeName)
+        {
+            var activeScene = SceneManager.GetActiveScene();
+            var matches = Resources.FindObjectsOfTypeAll<Component>()
+                .Where(component => component != null
+                                    && component.GetType().Name == typeName
+                                    && component.gameObject.scene == activeScene)
+                .ToArray();
+            Assert.That(matches, Has.Length.EqualTo(1),
+                $"Expected exactly one active-scene {typeName}.");
+            return matches.Single();
+        }
+
         private static Component CreateProjectile(Component stateMachine, Vector2 direction, GameObject owner)
         {
             var projectileObject = new GameObject("ProjectileProbe");
@@ -916,9 +1219,17 @@ namespace Game.Tests.PlayMode
 
         private static object GetFieldValue(Component component, string fieldName)
         {
+            Assert.That(component, Is.Not.Null, $"Expected owner for field {fieldName}.");
             var field = component.GetType().GetField(fieldName, InstanceFlags);
             Assert.That(field, Is.Not.Null, $"Expected {component.GetType().Name}.{fieldName}.");
             return field.GetValue(component);
+        }
+
+        private static List<object> GetEnumerableFieldValues(Component component, string fieldName)
+        {
+            var enumerable = GetFieldValue(component, fieldName) as IEnumerable;
+            Assert.That(enumerable, Is.Not.Null, $"Expected {component.GetType().Name}.{fieldName} to be enumerable.");
+            return enumerable.Cast<object>().ToList();
         }
 
         private static object GetPropertyValue(Component component, string propertyName)

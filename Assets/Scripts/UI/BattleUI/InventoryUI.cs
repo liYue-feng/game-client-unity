@@ -34,14 +34,6 @@ public class InventoryUI : MonoBehaviour
         _panel.SetActive(false);
     }
 
-    void Update()
-    {
-        if (Input.GetKeyDown(KeyCode.Tab))
-        {
-            Toggle();
-        }
-    }
-
     void BuildUI()
     {
         // Canvas

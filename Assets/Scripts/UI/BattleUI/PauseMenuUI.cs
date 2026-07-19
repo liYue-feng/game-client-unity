@@ -4,12 +4,14 @@ using System;
 
 /// <summary>
 /// 暂停菜单：战斗中按ESC暂停，水墨风格覆层。
-/// 暂停时 Time.timeScale = 0，恢复时 = 1。
+/// 暂停时间由场景级 BattleTimeController 统一管理。
 /// </summary>
 public class PauseMenuUI : MonoBehaviour
 {
     private Canvas _canvas;
     private bool _isPaused;
+    private BattleTimeController _battleTimeController;
+    private Game.Gameplay.TimeScaleRequestToken _pauseToken;
 
     public event Action OnResume;
     public event Action OnBackToMenu;
@@ -19,15 +21,6 @@ public class PauseMenuUI : MonoBehaviour
     {
         BuildCanvas();
         BuildPanel();
-    }
-
-    private void Update()
-    {
-        if (Input.GetKeyDown(KeyCode.Escape))
-        {
-            if (_isPaused) Resume();
-            else Pause();
-        }
     }
 
     private void BuildCanvas()
@@ -93,7 +86,7 @@ public class PauseMenuUI : MonoBehaviour
         CreateButton("btn_quit", "返回主菜单", new Vector2(0, -100), panel.transform, () =>
         {
             AudioManager.Instance.PlaySFX("ui_click");
-            Time.timeScale = 1f;
+            Close(false);
             OnBackToMenu?.Invoke();
         });
 
@@ -141,16 +134,74 @@ public class PauseMenuUI : MonoBehaviour
     public void Pause()
     {
         _isPaused = true;
-        Time.timeScale = 0f;
+        RequestPause();
         _canvas.enabled = true;
     }
 
     public void Resume()
     {
+        Close(true);
+    }
+
+    public void ConfigureBattleTimeController(BattleTimeController controller)
+    {
+        if (_battleTimeController == controller)
+        {
+            return;
+        }
+
+        ReleasePauseRequest();
+        _battleTimeController = controller;
+        if (_isPaused)
+        {
+            RequestPause();
+        }
+    }
+
+    private void RequestPause()
+    {
+        if (_battleTimeController != null && !_pauseToken.IsValid)
+        {
+            _pauseToken = _battleTimeController.RequestTimeScale(
+                BattleTimeController.PauseReason,
+                0f);
+        }
+    }
+
+    private void ReleasePauseRequest()
+    {
+        if (_pauseToken.IsValid && _battleTimeController != null)
+        {
+            _battleTimeController.ReleaseTimeScale(_pauseToken);
+        }
+
+        _pauseToken = default;
+    }
+
+    private void OnDisable()
+    {
+        Close(true);
+    }
+
+    private void OnDestroy()
+    {
+        Close(false);
+    }
+
+    private void Close(bool notifyResume)
+    {
+        var wasPaused = _isPaused;
         _isPaused = false;
-        Time.timeScale = 1f;
-        _canvas.enabled = false;
-        OnResume?.Invoke();
+        ReleasePauseRequest();
+        if (_canvas != null)
+        {
+            _canvas.enabled = false;
+        }
+
+        if (notifyResume && wasPaused)
+        {
+            OnResume?.Invoke();
+        }
     }
 
     public void Show() => Pause();
