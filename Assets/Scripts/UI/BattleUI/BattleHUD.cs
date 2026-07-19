@@ -1,3 +1,4 @@
+using Game.Gameplay;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -25,6 +26,14 @@ public class BattleHUD : MonoBehaviour
     private StaminaBar _staminaBar;
     private ComboCounter _comboCounter;
     private ExpBar _expBar;
+    private WaveSpawner _waveSpawner;
+    private WaveObjectiveView _waveObjectiveView;
+    private BossHPBar _bossHpBar;
+    private bool _playerHudInitialized;
+    private bool _spawnerEventsSubscribed;
+    private int _currentWaveIndex;
+    private int _totalWaves;
+    private int _aliveEnemies;
 
     private void Awake()
     {
@@ -122,6 +131,11 @@ public class BattleHUD : MonoBehaviour
     /// </summary>
     public void InitializeForPlayer(CharacterStats playerStats)
     {
+        if (_playerHudInitialized)
+        {
+            return;
+        }
+
         // 左上角：HP+耐力面板
         var panel = CreateInkPanel(_canvas.transform, "StatusPanel", new Vector2(320, 140), new Vector2(180, -100));
 
@@ -153,6 +167,7 @@ public class BattleHUD : MonoBehaviour
 
         // 右上角：连击计数器
         CreateComboCounter();
+        _playerHudInitialized = true;
     }
 
     /// <summary>
@@ -234,6 +249,196 @@ public class BattleHUD : MonoBehaviour
         txt.alignment = TextAnchor.MiddleCenter;
 
         return txt;
+    }
+
+    public void InitializeForBattle(CharacterStats playerStats, WaveSpawner waveSpawner)
+    {
+        if (playerStats == null)
+        {
+            throw new System.ArgumentNullException(nameof(playerStats));
+        }
+
+        if (waveSpawner == null)
+        {
+            throw new System.ArgumentNullException(nameof(waveSpawner));
+        }
+
+        InitializeForPlayer(playerStats);
+        EnsureBattleViews();
+        UnsubscribeSpawnerEvents();
+        _waveSpawner = waveSpawner;
+        _currentWaveIndex = waveSpawner.CurrentWaveIndex;
+        _totalWaves = waveSpawner.TotalWaves;
+        _aliveEnemies = waveSpawner.AliveEnemyCount;
+        SubscribeSpawnerEvents();
+        RenderWaveObjective();
+    }
+
+    private void EnsureBattleViews()
+    {
+        if (_waveObjectiveView == null)
+        {
+            var objectiveObject = new GameObject("WaveObjectiveView");
+            objectiveObject.transform.SetParent(_canvas.transform, false);
+            var rect = objectiveObject.AddComponent<RectTransform>();
+            rect.anchorMin = new Vector2(0.5f, 1f);
+            rect.anchorMax = new Vector2(0.5f, 1f);
+            rect.pivot = new Vector2(0.5f, 1f);
+            rect.anchoredPosition = new Vector2(0f, -18f);
+            rect.sizeDelta = new Vector2(280f, 64f);
+
+            _waveObjectiveView = objectiveObject.AddComponent<WaveObjectiveView>();
+            _waveObjectiveView.waveText = CreateBattleLabel(
+                objectiveObject.transform,
+                "WaveText",
+                new Vector2(0f, -14f),
+                22);
+            _waveObjectiveView.aliveText = CreateBattleLabel(
+                objectiveObject.transform,
+                "AliveText",
+                new Vector2(0f, -42f),
+                18);
+        }
+
+        if (_bossHpBar == null)
+        {
+            var panel = CreateInkPanel(
+                _canvas.transform,
+                "BossHPBar",
+                new Vector2(520f, 76f),
+                new Vector2(0f, -92f));
+            var panelRect = panel.GetComponent<RectTransform>();
+            panelRect.anchorMin = new Vector2(0.5f, 1f);
+            panelRect.anchorMax = new Vector2(0.5f, 1f);
+            panelRect.pivot = new Vector2(0.5f, 1f);
+
+            var sliderParts = CreateInkSlider(
+                panel.transform,
+                "BossHealthSlider",
+                new Vector2(460f, 30f),
+                new Vector2(0f, -16f),
+                ShuiMoPalette.CinnabarRed);
+            var bossName = CreateBattleLabel(panel.transform, "BossName", new Vector2(-165f, -52f), 18);
+            bossName.alignment = TextAnchor.MiddleLeft;
+            var phase = CreateBattleLabel(panel.transform, "PhaseText", new Vector2(165f, -52f), 18);
+            phase.alignment = TextAnchor.MiddleRight;
+
+            _bossHpBar = panel.gameObject.AddComponent<BossHPBar>();
+            _bossHpBar.bossSlider = sliderParts.slider;
+            _bossHpBar.bossNameText = bossName;
+            _bossHpBar.phaseText = phase;
+            panel.gameObject.SetActive(false);
+        }
+    }
+
+    private static Text CreateBattleLabel(
+        Transform parent,
+        string name,
+        Vector2 position,
+        int fontSize)
+    {
+        var labelObject = new GameObject(name);
+        labelObject.transform.SetParent(parent, false);
+        var rect = labelObject.AddComponent<RectTransform>();
+        rect.anchorMin = new Vector2(0.5f, 1f);
+        rect.anchorMax = new Vector2(0.5f, 1f);
+        rect.pivot = new Vector2(0.5f, 1f);
+        rect.anchoredPosition = position;
+        rect.sizeDelta = new Vector2(220f, 28f);
+
+        var text = labelObject.AddComponent<Text>();
+        text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        text.fontSize = fontSize;
+        text.fontStyle = FontStyle.Bold;
+        text.color = ShuiMoPalette.InkBlack;
+        text.alignment = TextAnchor.MiddleCenter;
+        text.horizontalOverflow = HorizontalWrapMode.Overflow;
+        return text;
+    }
+
+    private void SubscribeSpawnerEvents()
+    {
+        if (_spawnerEventsSubscribed || _waveSpawner == null)
+        {
+            return;
+        }
+
+        _waveSpawner.OnWaveStarted += HandleWaveStarted;
+        _waveSpawner.OnAliveEnemyCountChanged += HandleAliveEnemyCountChanged;
+        _waveSpawner.OnBossSpawned += HandleBossSpawned;
+        _waveSpawner.OnBossRemoved += HandleBossRemoved;
+        _spawnerEventsSubscribed = true;
+    }
+
+    private void UnsubscribeSpawnerEvents()
+    {
+        if (!_spawnerEventsSubscribed || _waveSpawner == null)
+        {
+            _spawnerEventsSubscribed = false;
+            return;
+        }
+
+        _waveSpawner.OnWaveStarted -= HandleWaveStarted;
+        _waveSpawner.OnAliveEnemyCountChanged -= HandleAliveEnemyCountChanged;
+        _waveSpawner.OnBossSpawned -= HandleBossSpawned;
+        _waveSpawner.OnBossRemoved -= HandleBossRemoved;
+        _spawnerEventsSubscribed = false;
+    }
+
+    private void HandleWaveStarted(int zeroBasedWave, int totalWaves)
+    {
+        _currentWaveIndex = zeroBasedWave;
+        _totalWaves = totalWaves;
+        RenderWaveObjective();
+    }
+
+    private void HandleAliveEnemyCountChanged(int aliveEnemies)
+    {
+        _aliveEnemies = aliveEnemies;
+        RenderWaveObjective();
+    }
+
+    private void HandleBossSpawned(Boss boss)
+    {
+        _bossHpBar?.BindBoss(boss);
+    }
+
+    private void HandleBossRemoved(Boss boss)
+    {
+        if (_bossHpBar != null && ReferenceEquals(_bossHpBar.BoundBoss, boss))
+        {
+            _bossHpBar.UnbindBoss();
+        }
+    }
+
+    private void RenderWaveObjective()
+    {
+        _waveObjectiveView?.Render(new WaveObjectiveState(
+            _currentWaveIndex,
+            _totalWaves,
+            _aliveEnemies));
+    }
+
+    private void OnEnable()
+    {
+        SubscribeSpawnerEvents();
+    }
+
+    private void OnDisable()
+    {
+        UnsubscribeSpawnerEvents();
+        _bossHpBar?.UnbindBoss();
+    }
+
+    private void OnDestroy()
+    {
+        UnsubscribeSpawnerEvents();
+        _bossHpBar?.UnbindBoss();
+        _waveSpawner = null;
+        if (_instance == this)
+        {
+            _instance = null;
+        }
     }
 
     public void Show() => gameObject.SetActive(true);

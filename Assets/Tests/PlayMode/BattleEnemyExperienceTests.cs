@@ -16,6 +16,10 @@ namespace Game.Tests.PlayMode
     /// </summary>
     public sealed class BattleEnemyExperienceTests
     {
+        private readonly List<string> _task6EventOrder = new List<string>();
+        private readonly List<Component> _task6SpawnedBosses = new List<Component>();
+        private readonly List<Component> _task6RemovedBosses = new List<Component>();
+
         [UnityTest]
         public IEnumerator ForcedRightSpawnMustStartInsideItsChaseRange()
         {
@@ -1601,6 +1605,303 @@ namespace Game.Tests.PlayMode
             yield return null;
             Assert.That(enemy == null, Is.True,
                 "Pool cleanup may destroy the cancelled Enemy after its lease has been synchronously closed.");
+        }
+
+        [UnityTest]
+        public IEnumerator BattleHudMustExposeCurrentWaveAndAliveEnemyCount()
+        {
+            yield return LoadBattleScene();
+
+            var views = FindLoadedComponents("WaveObjectiveView");
+            Assert.That(
+                views,
+                Has.Count.EqualTo(1),
+                "B2_TASK6_RED_WAVE_OBJECTIVE: BattleHUD must own exactly one WaveObjectiveView.");
+            var view = views.Single();
+            Assert.That(view.gameObject.activeInHierarchy, Is.True);
+            Assert.That(
+                ((UnityEngine.UI.Text)GetField(view, "waveText")).text,
+                Is.EqualTo("\u6ce2\u6b21 1/10"));
+            Assert.That(
+                ((UnityEngine.UI.Text)GetField(view, "aliveText")).text,
+                Does.StartWith("\u5269\u4f59 "));
+        }
+
+        [UnityTest]
+        public IEnumerator RealBossSpawnMustBindOneVisibleBossHpBar()
+        {
+            yield return LoadBattleScene();
+            var spawner = FindActiveSceneComponent("WaveSpawner");
+            ((MonoBehaviour)spawner).StopAllCoroutines();
+
+            SpawnBossThroughSpawner(spawner);
+            yield return null;
+
+            var bars = FindLoadedComponents("BossHPBar");
+            Assert.That(
+                bars,
+                Has.Count.EqualTo(1),
+                "B2_TASK6_RED_BOSS_BAR: BattleHUD must own exactly one BossHPBar.");
+            Assert.That(bars[0].gameObject.activeInHierarchy, Is.True);
+        }
+
+        [UnityTest]
+        public IEnumerator SpawnerPublishesOrderedWaveAliveAndSingleBossRemovalTruth()
+        {
+            yield return LoadBattleScene();
+            var spawner = FindActiveSceneComponent("WaveSpawner");
+            ((MonoBehaviour)spawner).StopAllCoroutines();
+            _task6EventOrder.Clear();
+            _task6SpawnedBosses.Clear();
+            _task6RemovedBosses.Clear();
+
+            var waveStartedEvent = RequireEvent(
+                spawner,
+                "OnWaveStarted",
+                "B2_TASK6_RED_SPAWNER_EVENTS");
+            var aliveEvent = RequireEvent(spawner, "OnAliveEnemyCountChanged", "B2_TASK6_RED_SPAWNER_EVENTS");
+            var bossSpawnedEvent = RequireEvent(spawner, "OnBossSpawned", "B2_TASK6_RED_SPAWNER_EVENTS");
+            var bossRemovedEvent = RequireEvent(spawner, "OnBossRemoved", "B2_TASK6_RED_SPAWNER_EVENTS");
+            var legacyWaveEvent = RequireEvent(spawner, "OnWaveStart", "B2_TASK6_RED_SPAWNER_EVENTS");
+            Action<int, int> waveStarted = (wave, total) =>
+                _task6EventOrder.Add($"wave:{wave}/{total}");
+            Action<int> aliveChanged = alive => _task6EventOrder.Add($"alive:{alive}");
+            Action<int> legacyWave = wave => _task6EventOrder.Add($"legacy:{wave}");
+            var bossType = spawner.GetType().Assembly.GetType("Boss");
+            var bossSpawned = CreateTask6BossDelegate(bossSpawnedEvent, nameof(CaptureTask6BossSpawned), bossType);
+            var bossRemoved = CreateTask6BossDelegate(bossRemovedEvent, nameof(CaptureTask6BossRemoved), bossType);
+
+            waveStartedEvent.AddEventHandler(spawner, waveStarted);
+            aliveEvent.AddEventHandler(spawner, aliveChanged);
+            legacyWaveEvent.AddEventHandler(spawner, legacyWave);
+            bossSpawnedEvent.AddEventHandler(spawner, bossSpawned);
+            bossRemovedEvent.AddEventHandler(spawner, bossRemoved);
+            try
+            {
+                var firstWave = (IEnumerator)Invoke(spawner, "SpawnWaveCoroutine", 0);
+                Assert.That(firstWave.MoveNext(), Is.True);
+                Assert.That(_task6EventOrder.Count(item => item == "wave:0/10"), Is.EqualTo(1));
+                Assert.That(_task6EventOrder.Count(item => item == "legacy:0"), Is.EqualTo(1));
+                var firstAliveIndex = _task6EventOrder.FindIndex(item => item.StartsWith("alive:"));
+                Assert.That(firstAliveIndex, Is.GreaterThan(_task6EventOrder.IndexOf("wave:0/10")));
+                Assert.That(firstAliveIndex, Is.GreaterThan(_task6EventOrder.IndexOf("legacy:0")));
+
+                _task6EventOrder.Clear();
+                SetField(spawner, "_currentWave", 2);
+                var firstBoss = SpawnBossThroughSpawner(spawner);
+                var secondBoss = SpawnBossThroughSpawner(spawner);
+                Assert.That(_task6SpawnedBosses, Is.EqualTo(new[] { firstBoss, secondBoss }));
+                Assert.That(_task6EventOrder[0], Does.StartWith("alive:"));
+                Assert.That(_task6EventOrder[1], Is.EqualTo("boss+"));
+                Assert.That(_task6EventOrder[2], Does.StartWith("alive:"));
+                Assert.That(_task6EventOrder[3], Is.EqualTo("boss+"));
+
+                var baseline = (EnemyStatBaseline)GetProperty(firstBoss, "Baseline");
+                var expected = EnemyWaveScaling.Calculate(
+                    baseline,
+                    2,
+                    new EnemyWaveMultipliers(
+                        (float)GetField(spawner, "enemyHpMultiplier"),
+                        (float)GetField(spawner, "enemyDamageMultiplier"),
+                        (float)GetField(spawner, "enemySpeedMultiplier")));
+                Assert.That((int)GetField(firstBoss, "maxHp"), Is.EqualTo(expected.MaxHp));
+                Assert.That((int)GetProperty(firstBoss, "CurrentPhase"), Is.EqualTo(1));
+
+                _task6EventOrder.Clear();
+                Invoke(firstBoss, "TakeDamage", 100000, 0f, 0f);
+                var aliveAfterDeath = ((IEnumerable)GetField(spawner, "_aliveEnemies")).Cast<object>().Count();
+                Assert.That(
+                    _task6EventOrder,
+                    Is.EqualTo(new[] { $"alive:{aliveAfterDeath}", "boss-" }),
+                    "Confirmed Boss death must publish alive count before Boss removal.");
+                Assert.That(_task6RemovedBosses, Has.Count.EqualTo(1));
+                Assert.That(_task6RemovedBosses[0], Is.SameAs(firstBoss));
+                Assert.That(_task6EventOrder.Count(item => item == "boss-"), Is.EqualTo(1));
+                Assert.That(_task6EventOrder.Last(item => item.StartsWith("alive:")), Is.EqualTo($"alive:{aliveAfterDeath}"));
+                Assert.That(aliveAfterDeath, Is.GreaterThanOrEqualTo(0));
+
+                var eventCountAfterDeath = _task6EventOrder.Count;
+                Invoke(firstBoss, "TakeDamage", 100000, 0f, 0f);
+                Assert.That(_task6EventOrder, Has.Count.EqualTo(eventCountAfterDeath),
+                    "Duplicate death must not decrement alive count or remove a Boss twice.");
+
+                Invoke(spawner, "Dispose");
+                Assert.That(_task6RemovedBosses, Has.Count.EqualTo(2));
+                Assert.That(_task6RemovedBosses[1], Is.SameAs(secondBoss));
+                Assert.That(GetInstanceEventHandlers(spawner, "OnWaveStarted"), Is.Empty);
+                Assert.That(GetInstanceEventHandlers(spawner, "OnAliveEnemyCountChanged"), Is.Empty);
+                Assert.That(GetInstanceEventHandlers(spawner, "OnBossSpawned"), Is.Empty);
+                Assert.That(GetInstanceEventHandlers(spawner, "OnBossRemoved"), Is.Empty);
+            }
+            finally
+            {
+                waveStartedEvent.RemoveEventHandler(spawner, waveStarted);
+                aliveEvent.RemoveEventHandler(spawner, aliveChanged);
+                legacyWaveEvent.RemoveEventHandler(spawner, legacyWave);
+                bossSpawnedEvent.RemoveEventHandler(spawner, bossSpawned);
+                bossRemovedEvent.RemoveEventHandler(spawner, bossRemoved);
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator EnemyHealthAndBossPhaseEventsPublishActualChangesAndReset()
+        {
+            yield return LoadBattleScene();
+            var boss = CreateEnemyProbe("Boss", "B2Task6BossEventProbe");
+            ((Behaviour)boss).enabled = false;
+            var healthEvent = RequireEvent(boss, "OnHealthChanged", "B2_TASK6_RED_ENEMY_EVENTS");
+            var phaseEvent = RequireEvent(boss, "OnPhaseChanged", "B2_TASK6_RED_ENEMY_EVENTS");
+            var healthChanges = new List<Vector2Int>();
+            var phaseChanges = new List<int>();
+            Action<int, int> healthChanged = (current, maximum) =>
+                healthChanges.Add(new Vector2Int(current, maximum));
+            Action<int> phaseChanged = phaseChanges.Add;
+            healthEvent.AddEventHandler(boss, healthChanged);
+            phaseEvent.AddEventHandler(boss, phaseChanged);
+            try
+            {
+                var spawnStats = new EnemyWaveStats(600, 30, 3f);
+                Invoke(boss, "PrepareForSpawn", spawnStats);
+                Assert.That(healthChanges.Last(), Is.EqualTo(new Vector2Int(600, 600)));
+
+                var before = (int)GetField(boss, "hp");
+                Invoke(boss, "TakeDamage", 10, 0f, 0f);
+                var after = (int)GetField(boss, "hp");
+                Assert.That(after, Is.LessThan(before));
+                Assert.That(healthChanges.Last(), Is.EqualTo(new Vector2Int(after, 600)));
+
+                Invoke(boss, "EnterEnrage");
+                Invoke(boss, "EnterEnrage");
+                Assert.That((int)GetProperty(boss, "CurrentPhase"), Is.EqualTo(2));
+                Assert.That(phaseChanges, Is.EqualTo(new[] { 2 }),
+                    "EnterEnrage must publish phase 2 exactly once.");
+
+                Invoke(boss, "PrepareForSpawn", spawnStats);
+                Assert.That((int)GetProperty(boss, "CurrentPhase"), Is.EqualTo(1));
+                Assert.That(phaseChanges, Is.EqualTo(new[] { 2, 1 }));
+                Assert.That(healthChanges.Last(), Is.EqualTo(new Vector2Int(600, 600)));
+            }
+            finally
+            {
+                if (boss != null)
+                {
+                    healthEvent.RemoveEventHandler(boss, healthChanged);
+                    phaseEvent.RemoveEventHandler(boss, phaseChanged);
+                    UnityEngine.Object.DestroyImmediate(boss.gameObject);
+                }
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator BossHpBarConsumesEventsAndUnbindsAfterRemoval()
+        {
+            yield return LoadBattleScene();
+            var spawner = FindActiveSceneComponent("WaveSpawner");
+            ((MonoBehaviour)spawner).StopAllCoroutines();
+            SetField(spawner, "_currentWave", 2);
+            var boss = SpawnBossThroughSpawner(spawner);
+            var bars = FindLoadedComponents("BossHPBar");
+            Assert.That(
+                bars,
+                Has.Count.EqualTo(1),
+                "B2_TASK6_RED_BOSS_BAR_LIFECYCLE: expected one event-owned BossHPBar.");
+            var bar = bars.Single();
+            var slider = (UnityEngine.UI.Slider)GetField(bar, "bossSlider");
+            var phaseText = (UnityEngine.UI.Text)GetField(bar, "phaseText");
+
+            Assert.That(bar.GetType().GetMethod(
+                    "Update",
+                    BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly),
+                Is.Null,
+                "BossHPBar must not poll Boss state in Update.");
+            Assert.That(slider.maxValue, Is.EqualTo((int)GetField(boss, "maxHp")));
+            Assert.That(slider.value, Is.EqualTo((int)GetField(boss, "hp")));
+            Assert.That(phaseText.text, Is.EqualTo("\u9636\u6bb5 1"));
+
+            Invoke(boss, "TakeDamage", 10, 0f, 0f);
+            Assert.That(slider.value, Is.EqualTo((int)GetField(boss, "hp")),
+                "Boss health changes must render synchronously from the event.");
+            Invoke(boss, "EnterEnrage");
+            Assert.That(phaseText.text, Is.EqualTo("\u9636\u6bb5 2"));
+
+            Invoke(boss, "TakeDamage", 100000, 0f, 0f);
+            Assert.That(bar.gameObject.activeInHierarchy, Is.False);
+            Assert.That(GetInstanceEventHandlers(boss, "OnHealthChanged")
+                .Any(handler => ReferenceEquals(handler.Target, bar)), Is.False);
+            Assert.That(GetInstanceEventHandlers(boss, "OnPhaseChanged")
+                .Any(handler => ReferenceEquals(handler.Target, bar)), Is.False);
+        }
+
+        private static Component SpawnBossThroughSpawner(Component spawner)
+        {
+            var runtimeAssembly = spawner.GetType().Assembly;
+            var entryType = runtimeAssembly.GetType("EnemySpawnEntry");
+            Assert.That(entryType, Is.Not.Null);
+            var entry = Activator.CreateInstance(entryType);
+            entryType.GetField("enemyType").SetValue(entry, "boss");
+            entryType.GetField("preferredSide").SetValue(entry, ArenaSpawnSide.Right);
+
+            Invoke(spawner, "SpawnEnemy", entry);
+            var bossObject = ((IEnumerable)GetField(spawner, "_aliveEnemies"))
+                .Cast<GameObject>()
+                .Last(item => item.GetComponents<Component>()
+                    .Any(component => component.GetType().Name == "Boss"));
+            return bossObject.GetComponents<Component>()
+                .Single(component => component.GetType().Name == "Boss");
+        }
+
+        private EventInfo RequireEvent(object publisher, string eventName, string marker)
+        {
+            var eventInfo = publisher.GetType().GetEvent(
+                eventName,
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            Assert.That(eventInfo, Is.Not.Null, $"{marker}: missing {eventName}.");
+            return eventInfo;
+        }
+
+        private Delegate CreateTask6BossDelegate(EventInfo eventInfo, string methodName, Type bossType)
+        {
+            var method = GetType().GetMethod(methodName, BindingFlags.Instance | BindingFlags.NonPublic)
+                .MakeGenericMethod(bossType);
+            return Delegate.CreateDelegate(eventInfo.EventHandlerType, this, method);
+        }
+
+        private void CaptureTask6BossSpawned<T>(T boss) where T : Component
+        {
+            _task6EventOrder.Add("boss+");
+            _task6SpawnedBosses.Add(boss);
+        }
+
+        private void CaptureTask6BossRemoved<T>(T boss) where T : Component
+        {
+            _task6EventOrder.Add("boss-");
+            _task6RemovedBosses.Add(boss);
+        }
+
+        private static List<Delegate> GetInstanceEventHandlers(object publisher, string eventName)
+        {
+            for (var type = publisher.GetType(); type != null; type = type.BaseType)
+            {
+                var field = type.GetField(
+                    eventName,
+                    BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly);
+                if (field?.GetValue(publisher) is Delegate handlers)
+                {
+                    return handlers.GetInvocationList().ToList();
+                }
+            }
+
+            return new List<Delegate>();
+        }
+
+        private static List<Component> FindLoadedComponents(string typeName)
+        {
+            return Resources.FindObjectsOfTypeAll<Component>()
+                .Where(component =>
+                    component != null &&
+                    component.GetType().Name == typeName &&
+                    component.gameObject.scene == SceneManager.GetActiveScene())
+                .ToList();
         }
 
         private static void AssertPreparedBoss(

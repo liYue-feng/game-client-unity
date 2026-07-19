@@ -724,6 +724,49 @@ namespace Game.Tests.EditMode.Gameplay
             Assert.That(typeof(ParticleLeaseToken).GetProperty("Generation").CanWrite, Is.False);
         }
 
+        [TestCase(0, 10, 3, 1, 10, 3, "\u6ce2\u6b21 1/10", "\u5269\u4f59 3")]
+        [TestCase(9, 10, 1, 10, 10, 1, "\u6ce2\u6b21 10/10", "\u5269\u4f59 1")]
+        [TestCase(-4, 10, -2, 1, 10, 0, "\u6ce2\u6b21 1/10", "\u5269\u4f59 0")]
+        [TestCase(4, 0, 2, 0, 0, 2, "\u6ce2\u6b21 0/0", "\u5269\u4f59 2")]
+        [TestCase(99, 10, 4, 10, 10, 4, "\u6ce2\u6b21 10/10", "\u5269\u4f59 4")]
+        [TestCase(2, -3, 2, 0, 0, 2, "\u6ce2\u6b21 0/0", "\u5269\u4f59 2")]
+        public void WaveObjectiveStateNormalizesAndFormatsCurrentRunTruth(
+            int zeroBasedWave,
+            int totalWaves,
+            int aliveEnemies,
+            int expectedDisplayWave,
+            int expectedTotalWaves,
+            int expectedAliveEnemies,
+            string expectedWaveText,
+            string expectedAliveText)
+        {
+            Type stateType = null;
+            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                stateType = assembly.GetType("Game.Gameplay.WaveObjectiveState");
+                if (stateType != null)
+                {
+                    break;
+                }
+            }
+
+            Assert.That(
+                stateType,
+                Is.Not.Null,
+                "B2_TASK6_RED_WAVE_STATE: pure WaveObjectiveState must exist.");
+            var state = Activator.CreateInstance(
+                stateType,
+                zeroBasedWave,
+                totalWaves,
+                aliveEnemies);
+
+            Assert.That(stateType.GetProperty("DisplayWave").GetValue(state), Is.EqualTo(expectedDisplayWave));
+            Assert.That(stateType.GetProperty("TotalWaves").GetValue(state), Is.EqualTo(expectedTotalWaves));
+            Assert.That(stateType.GetProperty("AliveEnemies").GetValue(state), Is.EqualTo(expectedAliveEnemies));
+            Assert.That(stateType.GetProperty("WaveText").GetValue(state), Is.EqualTo(expectedWaveText));
+            Assert.That(stateType.GetProperty("AliveText").GetValue(state), Is.EqualTo(expectedAliveText));
+        }
+
         private static void AssertOutOfRange(string parameterName, TestDelegate action)
         {
             var exception = Assert.Throws<ArgumentOutOfRangeException>(

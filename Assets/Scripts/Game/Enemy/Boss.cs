@@ -18,6 +18,9 @@ public class Boss : EnemyBase
     private bool _isEnraged;
     private int _attackPattern;
 
+    public int CurrentPhase { get; private set; } = 1;
+    public event System.Action<int> OnPhaseChanged;
+
     protected override void Awake()
     {
         hp = 300;
@@ -35,6 +38,7 @@ public class Boss : EnemyBase
     {
         _isEnraged = false;
         _attackPattern = 0;
+        SetPhase(1);
     }
 
     protected override void Update()
@@ -49,13 +53,30 @@ public class Boss : EnemyBase
 
     private void EnterEnrage()
     {
+        if (_isEnraged)
+        {
+            return;
+        }
+
         _isEnraged = true;
+        SetPhase(2);
         moveSpeed *= enrageSpeedMult;
         damage = Mathf.RoundToInt(damage * enrageDamageMult);
         if (_sprite != null)
         {
             _sprite.color = new Color(1f, 0.4f, 0.3f);
         }
+    }
+
+    private void SetPhase(int phase)
+    {
+        if (CurrentPhase == phase)
+        {
+            return;
+        }
+
+        CurrentPhase = phase;
+        OnPhaseChanged?.Invoke(phase);
     }
 
     protected override void UpdateChase()

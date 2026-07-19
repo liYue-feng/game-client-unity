@@ -44,6 +44,7 @@ public abstract class EnemyBase : MonoBehaviour, IParryResponder
     public EnemyAttackPlan CurrentAttackPlan { get; private set; }
     public EnemyAttackPhase CurrentAttackPhase { get; private set; } = EnemyAttackPhase.Complete;
     public event Action<EnemyBase> OnDeath;
+    public event Action<int, int> OnHealthChanged;
 
     protected Rigidbody2D _rb;
     protected SpriteRenderer _sprite;
@@ -160,6 +161,7 @@ public abstract class EnemyBase : MonoBehaviour, IParryResponder
 
         ResetSubclassState();
         enabled = true;
+        OnHealthChanged?.Invoke(hp, maxHp);
     }
 
     protected virtual void ResetSubclassState()
@@ -513,7 +515,12 @@ public abstract class EnemyBase : MonoBehaviour, IParryResponder
         var finalDamage = Mathf.Max(
             1,
             Mathf.RoundToInt(amount * (1f - reduction) * (1f - damageReduction)));
+        var previousHp = hp;
         hp = Mathf.Max(0, hp - finalDamage);
+        if (hp != previousHp)
+        {
+            OnHealthChanged?.Invoke(hp, maxHp);
+        }
 
         if (hp <= 0)
         {

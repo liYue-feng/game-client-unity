@@ -259,9 +259,12 @@ namespace Game.Tests.PlayMode
                 var currentSpawner = FindUniqueActiveSceneComponent("WaveSpawner");
                 var currentRun = FindUniqueActiveSceneComponent("BattleRunController");
                 var currentGameOver = FindUniqueActiveSceneComponent("GameOverUI");
+                var currentWaveObjective = FindUniqueLoadedComponent("WaveObjectiveView");
+                var currentBossBar = FindUniqueLoadedComponent("BossHPBar");
                 List<GameObject> currentEnemies = null;
                 yield return WaitForSpawnerEnemies(currentSpawner, enemies => currentEnemies = enemies);
                 AssertBattleRunSceneOwnership(currentRun, currentGameOver, currentSpawner);
+                AssertBattleHudSceneOwnership(currentSpawner, currentWaveObjective, currentBossBar);
                 AssertSingleSceneEventSystem();
 
                 var expectedKeys = new[] { "archer", "boss", "elite", "grunt" };
@@ -271,11 +274,15 @@ namespace Game.Tests.PlayMode
                     var oldSpawner = currentSpawner;
                     var oldRun = currentRun;
                     var oldGameOver = currentGameOver;
+                    var oldWaveObjective = currentWaveObjective;
+                    var oldBossBar = currentBossBar;
                     var oldEnemies = currentEnemies.ToArray();
                     var oldPoolId = oldPool.GetInstanceID();
                     var oldSpawnerId = oldSpawner.GetInstanceID();
                     var oldRunId = oldRun.GetInstanceID();
                     var oldGameOverId = oldGameOver.GetInstanceID();
+                    var oldWaveObjectiveId = oldWaveObjective.GetInstanceID();
+                    var oldBossBarId = oldBossBar.GetInstanceID();
                     var oldEnemyIds = oldEnemies.Select(enemy => enemy.GetInstanceID()).ToArray();
                     Assert.That(oldEnemies, Is.Not.Empty,
                         $"Reload iteration {iteration + 1} must capture at least one active enemy.");
@@ -293,6 +300,10 @@ namespace Game.Tests.PlayMode
                         $"Reload iteration {iteration + 1} must destroy old BattleRunController {oldRunId}.");
                     Assert.That(oldGameOver == null, Is.True,
                         $"Reload iteration {iteration + 1} must destroy old GameOverUI {oldGameOverId}.");
+                    Assert.That(oldWaveObjective == null, Is.True,
+                        $"Reload iteration {iteration + 1} must destroy old WaveObjectiveView {oldWaveObjectiveId}.");
+                    Assert.That(oldBossBar == null, Is.True,
+                        $"Reload iteration {iteration + 1} must destroy old BossHPBar {oldBossBarId}.");
                     for (var enemyIndex = 0; enemyIndex < oldEnemies.Length; enemyIndex++)
                     {
                         Assert.That(oldEnemies[enemyIndex] == null, Is.True,
@@ -304,14 +315,20 @@ namespace Game.Tests.PlayMode
                     currentSpawner = FindUniqueActiveSceneComponent("WaveSpawner");
                     currentRun = FindUniqueActiveSceneComponent("BattleRunController");
                     currentGameOver = FindUniqueActiveSceneComponent("GameOverUI");
+                    currentWaveObjective = FindUniqueLoadedComponent("WaveObjectiveView");
+                    currentBossBar = FindUniqueLoadedComponent("BossHPBar");
                     Assert.That(FindComponents("ObjectPool"), Has.Count.EqualTo(1));
                     Assert.That(FindComponents("WaveSpawner"), Has.Count.EqualTo(1));
                     Assert.That(FindComponents("BattleRunController"), Has.Count.EqualTo(1));
                     Assert.That(FindComponents("GameOverUI"), Has.Count.EqualTo(1));
+                    Assert.That(FindComponents("WaveObjectiveView"), Has.Count.EqualTo(1));
+                    Assert.That(FindComponents("BossHPBar"), Has.Count.EqualTo(1));
                     Assert.That(currentPool.GetInstanceID(), Is.Not.EqualTo(oldPoolId));
                     Assert.That(currentSpawner.GetInstanceID(), Is.Not.EqualTo(oldSpawnerId));
                     Assert.That(currentRun.GetInstanceID(), Is.Not.EqualTo(oldRunId));
                     Assert.That(currentGameOver.GetInstanceID(), Is.Not.EqualTo(oldGameOverId));
+                    Assert.That(currentWaveObjective.GetInstanceID(), Is.Not.EqualTo(oldWaveObjectiveId));
+                    Assert.That(currentBossBar.GetInstanceID(), Is.Not.EqualTo(oldBossBarId));
 
                     List<GameObject> nextEnemies = null;
                     yield return WaitForSpawnerEnemies(currentSpawner, enemies => nextEnemies = enemies);
@@ -332,6 +349,7 @@ namespace Game.Tests.PlayMode
                     AssertFactoryOwners(currentPool, currentSpawner);
                     AssertEnemyDeathOwners(currentEnemies, currentSpawner);
                     AssertBattleRunSceneOwnership(currentRun, currentGameOver, currentSpawner);
+                    AssertBattleHudSceneOwnership(currentSpawner, currentWaveObjective, currentBossBar);
                     AssertSingleSceneEventSystem();
                     Assert.That(failures, Is.Empty, string.Join("\n\n", failures));
                 }
@@ -574,6 +592,36 @@ namespace Game.Tests.PlayMode
             var instance = gameOver.GetType().GetProperty("Instance", BindingFlags.Static | BindingFlags.Public)
                 ?.GetValue(null);
             Assert.That(instance, Is.SameAs(gameOver));
+        }
+
+        private static void AssertBattleHudSceneOwnership(
+            Component spawner,
+            Component waveObjective,
+            Component bossBar)
+        {
+            var activeScene = SceneManager.GetActiveScene();
+            Assert.That(waveObjective.gameObject.scene, Is.EqualTo(activeScene));
+            Assert.That(waveObjective.gameObject.activeInHierarchy, Is.True);
+            Assert.That(bossBar.gameObject.scene, Is.EqualTo(activeScene));
+
+            foreach (var eventName in new[]
+                     {
+                         "OnWaveStarted",
+                         "OnAliveEnemyCountChanged",
+                         "OnBossSpawned",
+                         "OnBossRemoved"
+                     })
+            {
+                var handlers = GetEventHandlers(spawner.GetType(), spawner, eventName);
+                Assert.That(
+                    handlers.Count(handler => handler.Target != null && handler.Target.GetType().Name == "BattleHUD"),
+                    Is.EqualTo(1),
+                    $"{eventName} must have exactly one current BattleHUD target.");
+                Assert.That(
+                    handlers.All(handler => !(handler.Target is UnityEngine.Object target) || target != null),
+                    Is.True,
+                    $"{eventName} must not retain a destroyed HUD target.");
+            }
         }
 
         private static void AssertSingleSceneEventSystem()

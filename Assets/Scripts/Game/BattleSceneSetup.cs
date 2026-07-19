@@ -295,12 +295,13 @@ public class BattleSceneSetup : MonoBehaviour
 
     private System.Collections.IEnumerator InitializeHUDCoroutine(BattleHUD hud)
     {
-        yield return null; // 等一帧
         var stats = _player.GetComponent<CharacterStats>();
         if (stats != null && hud != null)
         {
-            hud.InitializeForPlayer(stats);
+            hud.InitializeForBattle(stats, _waveSpawner);
         }
+
+        yield break;
     }
 
     /// <summary>创建波次刷怪器</summary>

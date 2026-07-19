@@ -43,6 +43,14 @@ public class WaveSpawner : MonoBehaviour, System.IDisposable
     public event System.Action OnAllWavesComplete;
     /// <summary>新一波开始事件</summary>
     public event System.Action<int> OnWaveStart;
+    public event System.Action<int, int> OnWaveStarted;
+    public event System.Action<int> OnAliveEnemyCountChanged;
+    public event System.Action<Boss> OnBossSpawned;
+    public event System.Action<Boss> OnBossRemoved;
+
+    public int CurrentWaveIndex => _currentWave;
+    public int TotalWaves => waves?.Length ?? 0;
+    public int AliveEnemyCount => _aliveEnemies.Count;
 
     private void Awake()
     {
@@ -168,7 +176,7 @@ public class WaveSpawner : MonoBehaviour, System.IDisposable
             yield break;
         }
 
-        OnWaveStart?.Invoke(waveIndex);
+        PublishWaveStarted(waveIndex);
         var wave = waves[waveIndex];
 
         foreach (var entry in wave.enemies)
@@ -241,6 +249,11 @@ public class WaveSpawner : MonoBehaviour, System.IDisposable
         }
 
         _aliveEnemies.Add(enemyObj);
+        OnAliveEnemyCountChanged?.Invoke(_aliveEnemies.Count);
+        if (enemyBase is Boss boss)
+        {
+            OnBossSpawned?.Invoke(boss);
+        }
     }
 
     /// <summary>延迟归还对象到池（等待死亡淡出动画完成）</summary>
@@ -270,7 +283,16 @@ public class WaveSpawner : MonoBehaviour, System.IDisposable
 
         enemy.OnDeath -= handler;
         _deathHandlers.Remove(enemy);
-        _aliveEnemies.Remove(enemyObject);
+        if (!_aliveEnemies.Remove(enemyObject))
+        {
+            return;
+        }
+
+        OnAliveEnemyCountChanged?.Invoke(_aliveEnemies.Count);
+        if (enemy is Boss boss)
+        {
+            OnBossRemoved?.Invoke(boss);
+        }
         if (!_disposed)
         {
             StartCoroutine(ReturnToPool(key, enemyObject, 0.6f));
@@ -321,6 +343,13 @@ public class WaveSpawner : MonoBehaviour, System.IDisposable
         CancelActiveCombatActions();
         foreach (var enemyObject in new List<GameObject>(_aliveEnemies))
         {
+            if (enemyObject != null && enemyObject.GetComponent<EnemyBase>() is Boss boss)
+            {
+                OnBossRemoved?.Invoke(boss);
+            }
+        }
+        foreach (var enemyObject in new List<GameObject>(_aliveEnemies))
+        {
             if (enemyObject != null)
             {
                 var enemy = enemyObject.GetComponent<EnemyBase>();
@@ -344,6 +373,10 @@ public class WaveSpawner : MonoBehaviour, System.IDisposable
         _currentWave = 0;
         OnAllWavesComplete = null;
         OnWaveStart = null;
+        OnWaveStarted = null;
+        OnAliveEnemyCountChanged = null;
+        OnBossSpawned = null;
+        OnBossRemoved = null;
 
         var pool = ObjectPool.ExistingInstance;
         if (pool != null)
@@ -359,6 +392,12 @@ public class WaveSpawner : MonoBehaviour, System.IDisposable
         _player = null;
         _camera = null;
         _arenaConfigured = false;
+    }
+
+    private void PublishWaveStarted(int waveIndex)
+    {
+        OnWaveStarted?.Invoke(waveIndex, TotalWaves);
+        OnWaveStart?.Invoke(waveIndex);
     }
 
     private void OnDestroy()
