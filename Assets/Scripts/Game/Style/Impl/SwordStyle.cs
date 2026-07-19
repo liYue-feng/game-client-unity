@@ -81,7 +81,15 @@ public class SwordQiProjectile : MonoBehaviour
             var enemy = other.GetComponent<EnemyBase>();
             if (enemy != null && !enemy.IsDead)
             {
-                enemy.TakeDamage(damage);
+                var hurtbox = enemy.GetComponent<Hurtbox>();
+                var facing = enemy.transform.position.x < transform.position.x ? -1 : 1;
+                CombatHitResolver.ResolveAndPublish(
+                    hurtbox,
+                    new Game.Gameplay.CombatHit(damage, facing, 4f, false, null),
+                    owner,
+                    CombatFeedbackSourceKind.Style,
+                    CombatFeedbackStrength.Heavy,
+                    facing);
             }
             Destroy(gameObject);
             return;

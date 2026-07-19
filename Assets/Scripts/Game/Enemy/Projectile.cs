@@ -87,13 +87,19 @@ public class Projectile : MonoBehaviour, IParryResponder
             if (hurtbox != null)
             {
                 float dir = _direction.x > 0 ? 1f : -1f;
-                var result = hurtbox.ReceiveHit(new CombatHit(
-                    _launchDamage,
-                    dir,
-                    _launchKnockbackForce,
-                    _launchIsParryable,
-                    this));
-                if (result == CombatHitResult.Parried)
+                var outcome = CombatHitResolver.ResolveAndPublish(
+                    hurtbox,
+                    new CombatHit(
+                        _launchDamage,
+                        dir,
+                        _launchKnockbackForce,
+                        _launchIsParryable,
+                        this),
+                    owner != null ? owner : gameObject,
+                    CombatFeedbackSourceKind.EnemyProjectile,
+                    CombatFeedbackStrength.Light,
+                    dir < 0f ? -1 : 1);
+                if (outcome.Result == CombatHitResult.Parried)
                 {
                     return;
                 }
@@ -109,13 +115,19 @@ public class Projectile : MonoBehaviour, IParryResponder
             if (enemy != null)
             {
                 float dir = _direction.x > 0 ? 1f : -1f;
-                var result = hurtbox.ReceiveHit(new CombatHit(
-                    _launchDamage,
-                    dir,
-                    _launchKnockbackForce,
-                    false,
-                    this));
-                if (result == CombatHitResult.Damaged)
+                var outcome = CombatHitResolver.ResolveAndPublish(
+                    hurtbox,
+                    new CombatHit(
+                        _launchDamage,
+                        dir,
+                        _launchKnockbackForce,
+                        false,
+                        this),
+                    gameObject,
+                    CombatFeedbackSourceKind.PlayerRanged,
+                    CombatFeedbackStrength.Light,
+                    dir < 0f ? -1 : 1);
+                if (outcome.Result == CombatHitResult.Damaged)
                 {
                     Destroy(gameObject);
                 }

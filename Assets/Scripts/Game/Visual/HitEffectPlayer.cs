@@ -19,21 +19,48 @@ public class HitEffectPlayer : MonoBehaviour
     private void Awake()
     {
         _sprite = GetComponent<SpriteRenderer>();
+        _originalColor = _sprite.color;
     }
 
     /// <summary>播放受击闪白效果</summary>
     public void PlayHitEffect()
     {
-        if (_flashCoroutine != null) StopCoroutine(_flashCoroutine);
+        if (_flashCoroutine == null)
+        {
+            _originalColor = _sprite.color;
+        }
+        else
+        {
+            StopCoroutine(_flashCoroutine);
+        }
+
         _flashCoroutine = StartCoroutine(FlashCoroutine());
+    }
+
+    public void Clear()
+    {
+        if (_flashCoroutine != null)
+        {
+            StopCoroutine(_flashCoroutine);
+            _flashCoroutine = null;
+        }
+
+        if (_sprite != null)
+        {
+            _sprite.color = _originalColor;
+        }
     }
 
     private IEnumerator FlashCoroutine()
     {
-        _originalColor = _sprite.color;
         _sprite.color = Color.white;
         yield return new WaitForSeconds(flashDuration);
         _sprite.color = _originalColor;
         _flashCoroutine = null;
+    }
+
+    private void OnDisable()
+    {
+        Clear();
     }
 }

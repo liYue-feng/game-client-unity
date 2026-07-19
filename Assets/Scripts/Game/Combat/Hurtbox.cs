@@ -22,12 +22,20 @@ public class Hurtbox : MonoBehaviour
     /// </summary>
     public CombatHitResult ReceiveHit(CombatHit hit)
     {
+        return ResolveHit(hit).Result;
+    }
+
+    /// <summary>
+    /// Resolves one hit and reports the HP delta actually applied to the target.
+    /// </summary>
+    public CombatHitOutcome ResolveHit(CombatHit hit)
+    {
         EnemyBase enemy = null;
         if (stats != null)
         {
             if (stats.IsDead)
             {
-                return CombatHitResult.Ignored;
+                return new CombatHitOutcome(CombatHitResult.Ignored, 0);
             }
         }
         else
@@ -35,7 +43,7 @@ public class Hurtbox : MonoBehaviour
             enemy = GetComponent<EnemyBase>();
             if (enemy == null || enemy.IsDead)
             {
-                return CombatHitResult.Ignored;
+                return new CombatHitOutcome(CombatHitResult.Ignored, 0);
             }
         }
 
@@ -43,18 +51,17 @@ public class Hurtbox : MonoBehaviour
         {
             stateMachine.OnParrySuccess();
             hit.Source?.OnParried();
-            return CombatHitResult.Parried;
+            return new CombatHitOutcome(CombatHitResult.Parried, 0);
         }
 
+        var hpBefore = stats != null ? stats.currentHp : enemy.hp;
         if (stats != null)
         {
             stats.TakeDamage(hit.Damage);
-            CombatEvents.InvokeDamageTaken(transform.position, hit.Damage);
         }
         else
         {
             enemy.TakeDamage(hit.Damage, hit.KnockbackDirectionX, hit.KnockbackForce);
-            return CombatHitResult.Damaged;
         }
 
         // 通知状态机进入受击
@@ -76,6 +83,9 @@ public class Hurtbox : MonoBehaviour
             }
         }
 
-        return CombatHitResult.Damaged;
+        var hpAfter = stats != null ? stats.currentHp : enemy.hp;
+        return new CombatHitOutcome(
+            CombatHitResult.Damaged,
+            Mathf.Max(0, hpBefore - hpAfter));
     }
 }

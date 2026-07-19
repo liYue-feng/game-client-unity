@@ -165,18 +165,18 @@ public class Boss : EnemyBase
                     new Vector2(plan.FacingDirection * chargeSpeed, 0f),
                     Mathf.Min(0.3f, plan.CommitDuration));
                 _rb.velocity = Vector2.zero;
-                ResolvePlanHit(plan);
+                ResolvePlanHit(plan, CombatFeedbackStrength.Heavy);
                 break;
             case "boss_slam":
                 yield return HoldCommitVelocity(
                     new Vector2(0f, 10f),
                     Mathf.Min(0.3f, plan.CommitDuration));
                 _rb.velocity = Vector2.zero;
-                ResolvePlanHit(plan);
+                ResolvePlanHit(plan, CombatFeedbackStrength.Heavy);
                 break;
             case "boss_aoe":
                 yield return new WaitForSeconds(0.2f);
-                ResolvePlanHit(plan);
+                ResolvePlanHit(plan, CombatFeedbackStrength.Heavy);
                 break;
             default:
                 for (var index = 0; index < plan.HitCount; index++)
@@ -186,7 +186,7 @@ public class Boss : EnemyBase
                         yield break;
                     }
 
-                    ResolvePlanHit(plan);
+                    ResolvePlanHit(plan, CombatFeedbackStrength.Heavy);
                     if (CurrentAttackPhase != EnemyAttackPhase.Commit)
                     {
                         yield break;

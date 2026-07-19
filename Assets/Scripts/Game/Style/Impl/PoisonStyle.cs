@@ -25,7 +25,7 @@ public class PoisonStyle : IStyleBehaviour
         {
             poison = enemy.gameObject.AddComponent<PoisonDot>();
         }
-        poison.AddStack();
+        poison.AddStack(StyleManager.Instance != null ? StyleManager.Instance.gameObject : null);
     }
 
     public void OnParrySuccess()
@@ -48,6 +48,7 @@ public class PoisonStyle : IStyleBehaviour
         cloudEffect.duration = 5f;
         cloudEffect.damage = 5;
         cloudEffect.radius = 2f;
+        cloudEffect.owner = player;
     }
 
     public void PassiveUpdate()
@@ -66,9 +67,16 @@ public class PoisonDot : MonoBehaviour
     private float _tickInterval = 0.5f;
     private float _duration = 2f;
     private float _timer;
+    private GameObject _source;
 
     public void AddStack()
     {
+        AddStack(null);
+    }
+
+    public void AddStack(GameObject source)
+    {
+        _source = source;
         _stacks = Mathf.Min(5, _stacks + 1);
         _timer = _duration; // 刷新持续时间
     }
@@ -89,7 +97,14 @@ public class PoisonDot : MonoBehaviour
             var enemy = GetComponent<EnemyBase>();
             if (enemy != null && !enemy.IsDead)
             {
-                enemy.TakeDamage(_stacks * 2);
+                var hurtbox = enemy.GetComponent<Hurtbox>();
+                CombatHitResolver.ResolveAndPublish(
+                    hurtbox,
+                    new Game.Gameplay.CombatHit(_stacks * 2, 1f, 0f, false, null),
+                    _source,
+                    CombatFeedbackSourceKind.Style,
+                    CombatFeedbackStrength.Light,
+                    1);
             }
         }
     }
@@ -101,6 +116,7 @@ public class PoisonCloudEffect : MonoBehaviour
     public float duration = 5f;
     public int damage = 5;
     public float radius = 2f;
+    public GameObject owner;
 
     private float _timer;
     private float _tickTimer;
@@ -121,7 +137,15 @@ public class PoisonCloudEffect : MonoBehaviour
                     var enemy = hit.GetComponent<EnemyBase>();
                     if (enemy != null && !enemy.IsDead)
                     {
-                        enemy.TakeDamage(damage);
+                        var hurtbox = enemy.GetComponent<Hurtbox>();
+                        var facing = enemy.transform.position.x < transform.position.x ? -1 : 1;
+                        CombatHitResolver.ResolveAndPublish(
+                            hurtbox,
+                            new Game.Gameplay.CombatHit(damage, facing, 0f, false, null),
+                            owner,
+                            CombatFeedbackSourceKind.Style,
+                            CombatFeedbackStrength.Light,
+                            facing);
                     }
                 }
             }

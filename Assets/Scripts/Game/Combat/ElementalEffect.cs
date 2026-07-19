@@ -77,21 +77,20 @@ public class ActiveEffect : MonoBehaviour
         int dmg = Mathf.RoundToInt(damagePerTick);
         if (percentHpDamage > 0 && _enemy != null)
         {
-            var stats = _enemy.GetComponent<CharacterStats>();
-            if (stats != null)
-            {
-                dmg += Mathf.RoundToInt(stats.maxHp * percentHpDamage * tickInterval);
-            }
+            dmg += Mathf.RoundToInt(_enemy.maxHp * percentHpDamage * tickInterval);
         }
 
         if (dmg > 0 && _enemy != null)
         {
             // 通过 combat 方式扣血
-            var stats = _enemy.GetComponent<CharacterStats>();
-            if (stats != null) stats.TakeDamage(dmg);
-
-            DamageNumberPool.Spawn(dmg, transform.position + Vector3.up * 0.5f,
-                type == ElementalType.InkFlame ? DamageType.Crit : DamageType.Normal);
+            var hurtbox = _enemy.GetComponent<Hurtbox>();
+            CombatHitResolver.ResolveAndPublish(
+                hurtbox,
+                new Game.Gameplay.CombatHit(dmg, 1f, 0f, false, null),
+                null,
+                CombatFeedbackSourceKind.Elemental,
+                CombatFeedbackStrength.Light,
+                1);
         }
 
         // Thunder 弹跳
@@ -133,10 +132,15 @@ public class ActiveEffect : MonoBehaviour
             Destroy(boltGo, 0.15f);
 
             int bounceDmg = Mathf.RoundToInt(damagePerTick * 0.5f);
-            var stats = closest.GetComponent<CharacterStats>();
-            if (stats != null) stats.TakeDamage(bounceDmg);
-            DamageNumberPool.Spawn(bounceDmg, closest.transform.position + Vector3.up,
-                DamageType.Normal);
+            var hurtbox = closest.GetComponent<Hurtbox>();
+            var facing = closest.transform.position.x < transform.position.x ? -1 : 1;
+            CombatHitResolver.ResolveAndPublish(
+                hurtbox,
+                new Game.Gameplay.CombatHit(bounceDmg, facing, 0f, false, null),
+                null,
+                CombatFeedbackSourceKind.Elemental,
+                CombatFeedbackStrength.Light,
+                facing);
 
             bounceCount--;
             AudioManager.Instance.PlaySFX("special_skill");
@@ -200,9 +204,18 @@ public class ElementalEffectManager : MonoBehaviour
     /// <summary>对敌人施加元素效果</summary>
     public void ApplyEffect(GameObject target, string elementId)
     {
+        if (target == null)
+        {
+            return;
+        }
+
         var existing = target.GetComponent<ActiveEffect>();
-        var stats = target.GetComponent<CharacterStats>();
-        if (stats == null) return;
+        var enemy = target.GetComponent<EnemyBase>();
+        var hurtbox = target.GetComponent<Hurtbox>();
+        if (enemy == null || enemy.IsDead || hurtbox == null)
+        {
+            return;
+        }
 
         float duration = 4f;
         float dps = 3f;

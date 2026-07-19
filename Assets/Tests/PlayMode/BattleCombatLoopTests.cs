@@ -353,6 +353,7 @@ namespace Game.Tests.PlayMode
             var oldSpawner = FindActiveSceneComponent("WaveSpawner");
             var oldPool = FindUniqueLoadedComponent("ObjectPool");
             var oldDamageNumberPool = FindUniqueLoadedComponent("DamageNumberPool");
+            var oldInkParticlePool = FindUniqueLoadedComponent("InkParticlePool");
             var oldPlayer = GameObject.Find("Player");
             var oldPlayerController = FindComponent(oldPlayer, "PlayerController");
             var oldHurtbox = FindComponent(oldPlayer, "Hurtbox");
@@ -360,29 +361,45 @@ namespace Game.Tests.PlayMode
             var oldSpawnerId = oldSpawner.GetInstanceID();
             var oldPoolId = oldPool.GetInstanceID();
             var oldDamageNumberPoolId = oldDamageNumberPool.GetInstanceID();
+            var oldInkParticlePoolId = oldInkParticlePool.GetInstanceID();
             var oldPlayerId = oldPlayer.GetInstanceID();
 
-            Assert.That(
-                ReceiveCombatHit(
+            var oldEnemy = FindLoadedComponents("Grunt")
+                .First(component => component.gameObject.activeInHierarchy);
+            (oldEnemy as Behaviour).enabled = false;
+            var oldEnemyHurtbox = FindComponent(oldEnemy.gameObject, "Hurtbox");
+            ResolveCombatHit(
+                oldEnemyHurtbox,
+                new CombatHit(1, 1f, 0f, false, null),
+                oldPlayer,
+                "PlayerMelee",
+                "Light",
+                1);
+            var oldInkParticles = GetEnumerableFieldValues(oldInkParticlePool, "_allParticles")
+                .Cast<GameObject>()
+                .ToArray();
+            Assert.That(oldInkParticles.Count(particle => particle.activeSelf), Is.GreaterThan(0),
+                "Restart coverage must begin while a real ink splash owns active leases.");
+            var oldInkParticleIds = oldInkParticles.Select(particle => particle.GetInstanceID()).ToArray();
+
+            var lethalOutcome = ResolveCombatHit(
                     oldHurtbox,
-                    new CombatHit(100000, 1f, 3f, false, new RecordingParryResponder())),
-                Is.EqualTo(CombatHitResult.Damaged));
+                    new CombatHit(100000, 1f, 3f, false, new RecordingParryResponder()),
+                    null,
+                    "EnemyMelee",
+                    "Heavy",
+                    1);
+            Assert.That(lethalOutcome.Result, Is.EqualTo(CombatHitResult.Damaged));
             Assert.That(Time.timeScale, Is.EqualTo(0f).Within(0.0001f));
             Assert.That(((Behaviour)oldPlayerController).enabled, Is.False,
                 "Terminal completion must disable the old PlayerController before restart.");
-            var oldActiveDamageNumbers = FindLoadedComponents("DamageNumber")
-                .Where(number => number.gameObject.activeInHierarchy)
-                .Where(number =>
-                {
-                    var textMesh = number.GetComponentInChildren<TextMesh>(true);
-                    return textMesh != null && textMesh.text.Contains("100000");
-                })
-                .ToArray();
-            Assert.That(oldActiveDamageNumbers, Is.Not.Empty,
-                "Real lethal damage must leave an active 100000 number while BattleResult freezes time.");
-            var oldActiveDamageNumberIds = oldActiveDamageNumbers
-                .Select(number => number.GetInstanceID())
-                .ToArray();
+            Assert.That(
+                FindLoadedComponents("DamageNumber")
+                    .Where(number => number.gameObject.activeInHierarchy)
+                    .ToArray(),
+                Is.Empty,
+                "B2_TASK5_RED_TERMINAL_FEEDBACK_AFTER_FREEZE: terminal cleanup must remove prior numbers " +
+                "and suppress lethal feedback published after the synchronous death event.");
             var oldGameOver = FindActiveSceneComponent("GameOverUI");
             var restartObject = FindDescendant(oldGameOver.transform, "BtnRestart");
             Assert.That(restartObject, Is.Not.Null);
@@ -402,6 +419,7 @@ namespace Game.Tests.PlayMode
             var newSpawner = FindActiveSceneComponent("WaveSpawner");
             var newPool = FindUniqueLoadedComponent("ObjectPool");
             var newDamageNumberPool = FindUniqueLoadedComponent("DamageNumberPool");
+            var newInkParticlePool = FindUniqueLoadedComponent("InkParticlePool");
             var newPlayer = GameObject.Find("Player");
             var newSetup = FindActiveSceneComponent("BattleSceneSetup");
             var newInputBridge = FindComponent(newPlayer, "PlayerInputBridge");
@@ -413,10 +431,12 @@ namespace Game.Tests.PlayMode
             Assert.That(oldPool == null, Is.True);
             Assert.That(oldDamageNumberPool == null, Is.True,
                 $"Restart must destroy old DamageNumberPool {oldDamageNumberPoolId}.");
-            for (var index = 0; index < oldActiveDamageNumbers.Length; index++)
+            Assert.That(oldInkParticlePool == null, Is.True,
+                $"Restart must destroy old InkParticlePool {oldInkParticlePoolId}.");
+            for (var index = 0; index < oldInkParticles.Length; index++)
             {
-                Assert.That(oldActiveDamageNumbers[index] == null, Is.True,
-                    $"Restart must destroy old active DamageNumber {oldActiveDamageNumberIds[index]}.");
+                Assert.That(oldInkParticles[index] == null, Is.True,
+                    $"Restart must destroy old InkParticle {oldInkParticleIds[index]}.");
             }
             Assert.That(oldPlayer == null, Is.True);
             Assert.That(oldGameOver == null, Is.True);
@@ -424,8 +444,17 @@ namespace Game.Tests.PlayMode
             Assert.That(newSpawner.GetInstanceID(), Is.Not.EqualTo(oldSpawnerId));
             Assert.That(newPool.GetInstanceID(), Is.Not.EqualTo(oldPoolId));
             Assert.That(newDamageNumberPool.GetInstanceID(), Is.Not.EqualTo(oldDamageNumberPoolId));
+            Assert.That(newInkParticlePool.GetInstanceID(), Is.Not.EqualTo(oldInkParticlePoolId));
             Assert.That(newDamageNumberPool.gameObject.scene, Is.EqualTo(SceneManager.GetActiveScene()),
                 "The replacement DamageNumberPool must belong to the new BattleScene.");
+            Assert.That(newInkParticlePool.gameObject.scene, Is.EqualTo(SceneManager.GetActiveScene()),
+                "The replacement InkParticlePool must belong to the new BattleScene.");
+            Assert.That(
+                GetEnumerableFieldValues(newInkParticlePool, "_allParticles")
+                    .Cast<GameObject>()
+                    .Count(particle => particle.activeSelf),
+                Is.Zero,
+                "A fresh battle must not inherit active ink particle leases.");
             Assert.That(
                 FindLoadedComponents("DamageNumber")
                     .Where(number => number.gameObject.activeInHierarchy)
@@ -1533,6 +1562,60 @@ namespace Game.Tests.PlayMode
         }
 
         [UnityTest]
+        public IEnumerator RealEnemyElementalTickPublishesResolvedFeedback()
+        {
+            yield return LoadBattleScene();
+
+            DisableActiveEnemyBehaviours();
+            var player = GameObject.Find("Player");
+            var stateMachine = FindComponent(player, "PlayerStateMachine");
+            var grunt = CreateEnemyProbe(stateMachine, "Grunt", "ElementalResolvedFeedbackProbe");
+            (grunt as Behaviour).enabled = false;
+            SetIntField(grunt, "maxHp", 100);
+            SetIntField(grunt, "hp", 100);
+            SetFieldValue(grunt, "damageReduction", 0f);
+            var assembly = stateMachine.GetType().Assembly;
+            var inventory = ConfigureElementalInventory(assembly, "elem_burn");
+            var eventsType = assembly.GetType("CombatEvents");
+            var resolvedEvent = eventsType.GetEvent("OnHitResolved", BindingFlags.Static | BindingFlags.Public);
+            var contextType = assembly.GetType("CombatFeedbackContext");
+            var countMethod = typeof(BattleCombatLoopTests).GetMethod(
+                    nameof(CountResolvedFeedback),
+                    BindingFlags.Static | BindingFlags.NonPublic)
+                .MakeGenericMethod(contextType);
+            var resolvedProbe = Delegate.CreateDelegate(resolvedEvent.EventHandlerType, countMethod);
+            _resolvedFeedbackCount = 0;
+            resolvedEvent.AddEventHandler(null, resolvedProbe);
+            try
+            {
+                var manager = assembly.GetType("ElementalEffectManager")
+                    .GetProperty("Instance", BindingFlags.Static | BindingFlags.Public)
+                    .GetValue(null) as Component;
+                InvokeWithArguments(manager, "ApplyEffect", grunt.gameObject, "elem_burn");
+                Assert.That(
+                    FindComponentByName(grunt.gameObject, "ActiveEffect"),
+                    Is.Not.Null,
+                    "B2_TASK5_RED_REAL_ENEMY_ELEMENTAL_GATE: real EnemyBase/Hurtbox targets must accept effects.");
+
+                var hpBefore = GetIntField(grunt, "hp");
+                yield return new WaitForSeconds(0.65f);
+
+                Assert.That(GetIntField(grunt, "hp"), Is.LessThan(hpBefore));
+                Assert.That(_resolvedFeedbackCount, Is.GreaterThanOrEqualTo(1),
+                    "The elemental tick must publish through CombatHitResolver.");
+            }
+            finally
+            {
+                resolvedEvent.RemoveEventHandler(null, resolvedProbe);
+                inventory.GetType().GetMethod("Reset", InstanceFlags).Invoke(inventory, null);
+                if (grunt != null)
+                {
+                    UnityEngine.Object.Destroy(grunt.gameObject);
+                }
+            }
+        }
+
+        [UnityTest]
         public IEnumerator DeadEnemyHitboxContactHasNoCombatOrElementalSideEffects()
         {
             yield return LoadBattleScene();
@@ -1542,7 +1625,6 @@ namespace Game.Tests.PlayMode
             var stateMachine = FindComponent(player, "PlayerStateMachine");
             var grunt = CreateEnemyProbe(stateMachine, "Grunt", "DeadGruntHitboxProbe");
             SetIntField(grunt, "expValue", 0);
-            grunt.gameObject.AddComponent(grunt.GetType().Assembly.GetType("CharacterStats"));
             InvokeWithArguments(grunt, "TakeDamage", 100000, 0f, 0f);
             Assert.That(GetBoolProperty(grunt, "IsDead"), Is.True);
 
@@ -2002,6 +2084,13 @@ namespace Game.Tests.PlayMode
             return inventory;
         }
 
+        private static int _resolvedFeedbackCount;
+
+        private static void CountResolvedFeedback<T>(T context)
+        {
+            _resolvedFeedbackCount++;
+        }
+
         private static Component FindComponentByName(GameObject gameObject, string typeName)
         {
             return gameObject.GetComponents<Component>()
@@ -2019,6 +2108,30 @@ namespace Game.Tests.PlayMode
             Assert.That(method, Is.Not.Null,
                 "Hurtbox must expose the canonical ReceiveHit(CombatHit) entry point.");
             return (CombatHitResult)method.Invoke(hurtbox, new object[] { hit });
+        }
+
+        private static CombatHitOutcome ResolveCombatHit(
+            Component hurtbox,
+            CombatHit hit,
+            GameObject source,
+            string sourceKindName,
+            string strengthName,
+            int facingDirection)
+        {
+            var assembly = hurtbox.GetType().Assembly;
+            var resolver = assembly.GetType("CombatHitResolver");
+            Assert.That(resolver, Is.Not.Null);
+            var method = resolver.GetMethod("ResolveAndPublish", BindingFlags.Static | BindingFlags.Public);
+            Assert.That(method, Is.Not.Null);
+            return (CombatHitOutcome)method.Invoke(null, new object[]
+            {
+                hurtbox,
+                hit,
+                source,
+                Enum.Parse(assembly.GetType("CombatFeedbackSourceKind"), sourceKindName),
+                Enum.Parse(assembly.GetType("CombatFeedbackStrength"), strengthName),
+                facingDirection
+            });
         }
 
         private static void Invoke(Component component, string methodName)

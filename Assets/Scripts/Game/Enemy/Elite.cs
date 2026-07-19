@@ -83,7 +83,11 @@ public class Elite : EnemyBase
             }
 
             _currentCombo = index + 1;
-            ResolvePlanHit(plan);
+            ResolvePlanHit(
+                plan,
+                plan.AttackId == "elite_heavy"
+                    ? CombatFeedbackStrength.Heavy
+                    : CombatFeedbackStrength.Light);
             if (CurrentAttackPhase != EnemyAttackPhase.Commit)
             {
                 yield break;

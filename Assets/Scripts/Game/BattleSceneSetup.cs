@@ -32,6 +32,8 @@ public class BattleSceneSetup : MonoBehaviour
     private BattleRunController _battleRunController;
     private GameOverUI _gameOverUI;
     private BattleCameraRig _battleCameraRig;
+    private InkParticlePool _inkParticlePool;
+    private CombatFeedbackController _combatFeedbackController;
 
     // 战斗统计
     private int _killCount;
@@ -48,7 +50,6 @@ public class BattleSceneSetup : MonoBehaviour
     private InventoryUI _inventoryUI;
     private InkHitEffect _inkEffect;
     private InkSlashEffect _slashEffect;
-    private PlayerController _playerController;
     private Inventory _inventory;
     private bool _combatEventsSubscribed;
     private bool _inventoryEventSubscribed;
@@ -73,6 +74,7 @@ public class BattleSceneSetup : MonoBehaviour
         EnsureEventSystem();
         CreateBattleTimeController();
         CreateCamera();
+        CreateInkParticlePool();
         CreateGround();
         CreateUpgradeManager();  // 先创建UpgradeManager，WeaponSystem可以找到它
         CreatePlayer();
@@ -105,6 +107,12 @@ public class BattleSceneSetup : MonoBehaviour
     {
         var controllerObject = new GameObject("BattleTimeController");
         _battleTimeController = controllerObject.AddComponent<BattleTimeController>();
+    }
+
+    private void CreateInkParticlePool()
+    {
+        var poolObject = new GameObject("[InkParticlePool]");
+        _inkParticlePool = poolObject.AddComponent<InkParticlePool>();
     }
 
     private void EnsureEventSystem()
@@ -340,6 +348,24 @@ public class BattleSceneSetup : MonoBehaviour
             this,
             CaptureCombatResultData);
         _battleRunController.ConfigureCameraRig(_battleCameraRig);
+        CreateCombatFeedbackController();
+    }
+
+    private void CreateCombatFeedbackController()
+    {
+        _inkEffect = _player.GetComponent<InkHitEffect>();
+        _slashEffect = _player.GetComponentInChildren<InkSlashEffect>();
+        var cameraObject = Camera.main.gameObject;
+        var controllerObject = new GameObject("[CombatFeedbackController]");
+        _combatFeedbackController = controllerObject.AddComponent<CombatFeedbackController>();
+        _combatFeedbackController.Configure(
+            _player,
+            _inkParticlePool,
+            _inkEffect,
+            _slashEffect,
+            cameraObject.GetComponent<CameraShaker>(),
+            cameraObject.GetComponent<HitStopController>());
+        _battleRunController.ConfigureCombatFeedback(_combatFeedbackController);
     }
 
     private void ConfigureWaves()
@@ -414,55 +440,9 @@ public class BattleSceneSetup : MonoBehaviour
             return;
         }
 
-        // 命中时播放墨迹飞溅 + 音效 + 伤害数字
-        _inkEffect = _player.GetComponent<InkHitEffect>();
-        if (_inkEffect != null)
-        {
-            CombatEvents.OnHitLanded += HandleInkHitLanded;
-        }
-
-        // 挥砍墨线
-        _slashEffect = _player.GetComponentInChildren<InkSlashEffect>();
-        _playerController = _player.GetComponent<PlayerController>();
-        if (_slashEffect != null && _playerController != null)
-        {
-            CombatEvents.OnHitLanded += HandleSlashHitLanded;
-        }
-
-        // 音效
-        CombatEvents.OnHitLanded += HandleHitLandedAudio;
-        CombatEvents.OnDamageTaken += HandleDamageTaken;
-        CombatEvents.OnParrySuccess += HandleParrySuccess;
         CombatEvents.OnPlayerDeath += HandlePlayerDeath;
         CombatEvents.OnEnemyDeath += HandleEnemyDeath;
         _combatEventsSubscribed = true;
-    }
-
-    private void HandleInkHitLanded(Vector3 position, int damage)
-    {
-        _inkEffect.PlayAt(position);
-    }
-
-    private void HandleSlashHitLanded(Vector3 position, int damage)
-    {
-        _slashEffect.Play(_player.transform.position, _playerController.FacingDirection);
-    }
-
-    private void HandleHitLandedAudio(Vector3 position, int damage)
-    {
-        AudioManager.Instance.PlaySFX("hit");
-    }
-
-    private void HandleDamageTaken(Vector3 position, int damage)
-    {
-        AudioManager.Instance.PlaySFX("hit");
-        DamageNumberPool.Spawn(damage, position, DamageType.Normal);
-    }
-
-    private void HandleParrySuccess(Vector3 position)
-    {
-        AudioManager.Instance.PlaySFX("parry");
-        DamageNumberPool.SpawnText("弹反", position, DamageType.Parry);
     }
 
     private void HandlePlayerDeath()
@@ -626,11 +606,6 @@ public class BattleSceneSetup : MonoBehaviour
     {
         if (_combatEventsSubscribed)
         {
-            CombatEvents.OnHitLanded -= HandleInkHitLanded;
-            CombatEvents.OnHitLanded -= HandleSlashHitLanded;
-            CombatEvents.OnHitLanded -= HandleHitLandedAudio;
-            CombatEvents.OnDamageTaken -= HandleDamageTaken;
-            CombatEvents.OnParrySuccess -= HandleParrySuccess;
             CombatEvents.OnPlayerDeath -= HandlePlayerDeath;
             CombatEvents.OnEnemyDeath -= HandleEnemyDeath;
             _combatEventsSubscribed = false;

@@ -42,38 +42,9 @@ public class HitStopController : MonoBehaviour
         _battleTimeController = controller;
     }
 
-    private void OnEnable()
-    {
-        CombatEvents.OnHitLanded += OnHitLanded;
-        CombatEvents.OnParrySuccess += OnParrySuccess;
-        CombatEvents.OnDamageTaken += OnDamageTaken;
-    }
-
     private void OnDisable()
     {
-        CombatEvents.OnHitLanded -= OnHitLanded;
-        CombatEvents.OnParrySuccess -= OnParrySuccess;
-        CombatEvents.OnDamageTaken -= OnDamageTaken;
-        StopAllCoroutines();
-        ReleaseAllHitStopRequests();
-    }
-
-    private void OnHitLanded(Vector3 pos, int dmg)
-    {
-        // 命中敌人：轻击卡帧
-        DoHitStop(lightHitStopDuration);
-    }
-
-    private void OnParrySuccess(Vector3 pos)
-    {
-        // 弹反成功：较长卡帧（叠加后续慢动作，形成"停顿→慢放"的节奏）
-        DoHitStop(parryHitStopDuration);
-    }
-
-    private void OnDamageTaken(Vector3 pos, int dmg)
-    {
-        // 受伤：轻微卡帧
-        DoHitStop(lightHitStopDuration * 0.5f);
+        ClearHitStops();
     }
 
     /// <summary>
@@ -91,6 +62,12 @@ public class HitStopController : MonoBehaviour
     public void DoHeavyHitStop()
     {
         DoHitStop(heavyHitStopDuration);
+    }
+
+    public void ClearHitStops()
+    {
+        StopAllCoroutines();
+        ReleaseAllHitStopRequests();
     }
 
     private IEnumerator HitStopCoroutine(float duration)

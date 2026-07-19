@@ -20,8 +20,10 @@ public sealed class BattleRunController : MonoBehaviour, IDisposable
     private TimeScaleRequestToken _battleResultToken;
     private bool _configured;
     private bool _cameraRigConfigured;
+    private bool _combatFeedbackConfigured;
     private bool _disposed;
     private BattleCameraRig _cameraRig;
+    private CombatFeedbackController _combatFeedback;
 
     public BattleRunState State => _runState.State;
     public BattleRunOutcome Outcome => _runState.Outcome;
@@ -95,6 +97,26 @@ public sealed class BattleRunController : MonoBehaviour, IDisposable
         _cameraRigConfigured = true;
     }
 
+    public void ConfigureCombatFeedback(CombatFeedbackController controller)
+    {
+        if (!_configured)
+        {
+            throw new InvalidOperationException(
+                "BattleRunController must be configured before combat feedback.");
+        }
+
+        if (_combatFeedbackConfigured)
+        {
+            throw new InvalidOperationException(
+                "BattleRunController combat feedback can only be configured once.");
+        }
+
+        _combatFeedback = controller != null
+            ? controller
+            : throw new ArgumentNullException(nameof(controller));
+        _combatFeedbackConfigured = true;
+    }
+
     private void HandlePlayerDeath()
     {
         Complete(BattleRunOutcome.Defeat);
@@ -113,6 +135,10 @@ public sealed class BattleRunController : MonoBehaviour, IDisposable
         }
 
         _waveSpawner.CancelActiveCombatActions();
+        if (_combatFeedback != null)
+        {
+            _combatFeedback.ClearTransient();
+        }
         _playerInputBridge.SetInputEnabled(false);
         _playerController.enabled = false;
         _playerBody.velocity = Vector2.zero;
@@ -155,6 +181,10 @@ public sealed class BattleRunController : MonoBehaviour, IDisposable
         }
 
         _disposed = true;
+        if (_combatFeedback != null)
+        {
+            _combatFeedback.Dispose();
+        }
         if (_cameraRig != null)
         {
             _cameraRig.SetFollowEnabled(false);

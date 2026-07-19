@@ -37,7 +37,7 @@ public class Grunt : EnemyBase
 
     protected override IEnumerator ExecuteAttackPlan(EnemyAttackPlan plan)
     {
-        ResolvePlanHit(plan);
+        ResolvePlanHit(plan, CombatFeedbackStrength.Light);
         yield break;
     }
 }

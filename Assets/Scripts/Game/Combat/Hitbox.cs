@@ -93,16 +93,21 @@ public class Hitbox : MonoBehaviour
 
         int finalDamage = CalculateDamage(hurtbox.gameObject);
         var source = owner != null ? owner.GetComponent<IParryResponder>() : null;
-        var result = hurtbox.ReceiveHit(new CombatHit(
+        var outcome = CombatHitResolver.ResolveAndPublish(
+            hurtbox,
+            new CombatHit(
             finalDamage,
             knockbackDir.x,
             knockbackForce,
             isParryable,
-            source));
-        if (result == CombatHitResult.Damaged)
+            source),
+            owner,
+            CombatFeedbackSourceKind.PlayerMelee,
+            CombatFeedbackStrength.Light,
+            knockbackDir.x < 0f ? -1 : 1);
+        if (outcome.Result == CombatHitResult.Damaged)
         {
             owner?.GetComponent<PlayerStateMachine>()?.MarkHit();
-            CombatEvents.InvokeHitLanded(hurtbox.transform.position, finalDamage);
             ApplyElementalEffects(hurtbox.gameObject);
         }
     }

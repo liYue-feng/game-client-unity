@@ -8,6 +8,8 @@ using System;
 /// </summary>
 public static class CombatEvents
 {
+    public static event Action<CombatFeedbackContext> OnHitResolved;
+
     /// <summary>玩家命中敌人：参数=(命中位置, 伤害值)</summary>
     public static event Action<Vector3, int> OnHitLanded;
 
@@ -27,6 +29,68 @@ public static class CombatEvents
     public static event Action<Vector3> OnStaminaBreak;
 
     // 触发方法——由各系统调用
+    public static void InvokeHitResolved(CombatFeedbackContext context)
+    {
+        var resolvedHandlers = OnHitResolved;
+        if (resolvedHandlers != null)
+        {
+            foreach (Action<CombatFeedbackContext> handler in resolvedHandlers.GetInvocationList())
+            {
+                try
+                {
+                    handler(context);
+                }
+                catch (Exception exception)
+                {
+                    Debug.LogException(exception);
+                }
+            }
+        }
+
+        if (context.Result != Game.Gameplay.CombatHitResult.Damaged)
+        {
+            return;
+        }
+
+        if (context.TargetKind == CombatFeedbackTargetKind.Player)
+        {
+            InvokeDamageHandlersSafely(
+                OnDamageTaken,
+                context.Position,
+                context.AppliedDamage);
+        }
+        else
+        {
+            InvokeDamageHandlersSafely(
+                OnHitLanded,
+                context.Position,
+                context.AppliedDamage);
+        }
+    }
+
+    private static void InvokeDamageHandlersSafely(
+        Action<Vector3, int> handlers,
+        Vector3 position,
+        int appliedDamage)
+    {
+        if (handlers == null)
+        {
+            return;
+        }
+
+        foreach (Action<Vector3, int> handler in handlers.GetInvocationList())
+        {
+            try
+            {
+                handler(position, appliedDamage);
+            }
+            catch (Exception exception)
+            {
+                Debug.LogException(exception);
+            }
+        }
+    }
+
     public static void InvokeHitLanded(Vector3 pos, int dmg) => OnHitLanded?.Invoke(pos, dmg);
     public static void InvokeDamageTaken(Vector3 pos, int dmg) => OnDamageTaken?.Invoke(pos, dmg);
     public static void InvokeParrySuccess(Vector3 pos) => OnParrySuccess?.Invoke(pos);

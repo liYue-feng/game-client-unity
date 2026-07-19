@@ -39,6 +39,7 @@ public class BladeStyle : IStyleBehaviour
         storm.duration = 2f;
         storm.damage = 15;
         storm.radius = 1.5f;
+        storm.owner = player;
     }
 
     public void PassiveUpdate()
@@ -62,6 +63,7 @@ public class BladeStormEffect : MonoBehaviour
     public float duration = 2f;
     public int damage = 15;
     public float radius = 1.5f;
+    public GameObject owner;
 
     private float _timer;
     private float _hitInterval = 0.2f;
@@ -84,7 +86,15 @@ public class BladeStormEffect : MonoBehaviour
                     var enemy = hit.GetComponent<EnemyBase>();
                     if (enemy != null && !enemy.IsDead)
                     {
-                        enemy.TakeDamage(damage);
+                        var hurtbox = enemy.GetComponent<Hurtbox>();
+                        var facing = enemy.transform.position.x < transform.position.x ? -1 : 1;
+                        CombatHitResolver.ResolveAndPublish(
+                            hurtbox,
+                            new Game.Gameplay.CombatHit(damage, facing, 3f, false, null),
+                            owner,
+                            CombatFeedbackSourceKind.Style,
+                            CombatFeedbackStrength.Heavy,
+                            facing);
                     }
                 }
             }

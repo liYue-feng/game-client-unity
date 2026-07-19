@@ -69,11 +69,16 @@ public class AutoWeapon : MonoBehaviour
         {
             int finalDamage = CalculateWeaponDamage(enemy);
             var knockbackDir = (enemy.transform.position - transform.position).normalized;
-            enemy.TakeDamage(finalDamage, knockbackDir.x);
+            var hurtbox = collision.GetComponent<Hurtbox>() ?? collision.GetComponentInParent<Hurtbox>();
+            CombatHitResolver.ResolveAndPublish(
+                hurtbox,
+                new Game.Gameplay.CombatHit(finalDamage, knockbackDir.x, 5f, false, null),
+                _playerStats != null ? _playerStats.gameObject : gameObject,
+                CombatFeedbackSourceKind.PlayerRanged,
+                CombatFeedbackStrength.Light,
+                knockbackDir.x < 0f ? -1 : 1);
 
             // 触发击中事件（显示伤害数字 + 墨迹特效）
-            CombatEvents.InvokeHitLanded(transform.position, finalDamage);
-            AudioManager.Instance.PlaySFX("hit");
         }
 
         if (!piercing)

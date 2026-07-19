@@ -8,6 +8,8 @@ using System.Collections.Generic;
 public class DamageNumberPool : MonoBehaviour
 {
     private static DamageNumberPool _instance;
+    public static DamageNumberPool Current => _instance;
+
     public static DamageNumberPool Instance
     {
         get
@@ -65,6 +67,22 @@ public class DamageNumberPool : MonoBehaviour
     {
         dn.gameObject.SetActive(false);
         _pool.Enqueue(dn);
+    }
+
+    public void ClearAll()
+    {
+        _pool.Clear();
+        if (_poolRoot == null)
+        {
+            return;
+        }
+
+        foreach (var damageNumber in _poolRoot.GetComponentsInChildren<DamageNumber>(true))
+        {
+            damageNumber.StopAllCoroutines();
+            damageNumber.gameObject.SetActive(false);
+            _pool.Enqueue(damageNumber);
+        }
     }
 
     /// <summary>快捷生成伤害数字</summary>

@@ -53,7 +53,6 @@ public abstract class EnemyBase : MonoBehaviour, IParryResponder
     protected float _decisionTimer;
     protected int _facingDirection = 1;
 
-    private HitEffectPlayer _hitEffect;
     private Hurtbox _hurtbox;
     private AttackTelegraphView _telegraphView;
     private Coroutine _attackRoutine;
@@ -66,7 +65,6 @@ public abstract class EnemyBase : MonoBehaviour, IParryResponder
     {
         _rb = GetComponent<Rigidbody2D>();
         _sprite = GetComponent<SpriteRenderer>();
-        _hitEffect = GetComponent<HitEffectPlayer>();
         _hurtbox = GetComponent<Hurtbox>();
         if (_hurtbox == null)
         {
@@ -417,6 +415,13 @@ public abstract class EnemyBase : MonoBehaviour, IParryResponder
 
     protected void ResolvePlanHit(EnemyAttackPlan plan)
     {
+        ResolvePlanHit(plan, CombatFeedbackStrength.Light);
+    }
+
+    protected void ResolvePlanHit(
+        EnemyAttackPlan plan,
+        CombatFeedbackStrength strength)
+    {
         var center = (Vector2)transform.TransformPoint(plan.LocalOffset);
         Collider2D[] hits;
         if (plan.Shape == EnemyTelegraphShape.Box)
@@ -442,12 +447,18 @@ public abstract class EnemyBase : MonoBehaviour, IParryResponder
                 continue;
             }
 
-            hurtbox.ReceiveHit(new CombatHit(
-                plan.Damage,
-                plan.FacingDirection,
-                plan.Knockback,
-                plan.IsParryable,
-                this));
+            CombatHitResolver.ResolveAndPublish(
+                hurtbox,
+                new CombatHit(
+                    plan.Damage,
+                    plan.FacingDirection,
+                    plan.Knockback,
+                    plan.IsParryable,
+                    this),
+                gameObject,
+                CombatFeedbackSourceKind.EnemyMelee,
+                strength,
+                plan.FacingDirection);
             return;
         }
     }
@@ -503,11 +514,6 @@ public abstract class EnemyBase : MonoBehaviour, IParryResponder
             1,
             Mathf.RoundToInt(amount * (1f - reduction) * (1f - damageReduction)));
         hp = Mathf.Max(0, hp - finalDamage);
-
-        if (_hitEffect != null)
-        {
-            _hitEffect.PlayHitEffect();
-        }
 
         if (hp <= 0)
         {

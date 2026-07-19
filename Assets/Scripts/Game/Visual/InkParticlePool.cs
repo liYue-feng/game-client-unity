@@ -1,37 +1,37 @@
-using UnityEngine;
 using System.Collections.Generic;
+using Game.Gameplay;
+using UnityEngine;
+
+public readonly struct InkParticleHandle
+{
+    public InkParticleHandle(GameObject particle, ParticleLeaseToken token)
+    {
+        Particle = particle;
+        Token = token;
+    }
+
+    public GameObject Particle { get; }
+    public ParticleLeaseToken Token { get; }
+}
 
 /// <summary>
-/// 墨迹粒子对象池：预分配粒子 GameObject，避免战斗中频繁实例化/销毁。
-/// 池大小固定，用完时循环复用最早的粒子。
+/// Scene-owned fixed particle pool with generation-safe delayed returns.
 /// </summary>
-public class InkParticlePool : MonoBehaviour
+public sealed class InkParticlePool : MonoBehaviour
 {
-    public static InkParticlePool Instance
-    {
-        get
-        {
-            if (_instance == null)
-            {
-                var go = new GameObject("[InkParticlePool]");
-                DontDestroyOnLoad(go);
-                _instance = go.AddComponent<InkParticlePool>();
-                _instance.Initialize();
-            }
-            return _instance;
-        }
-    }
     private static InkParticlePool _instance;
 
-    [Tooltip("池大小")]
-    public int poolSize = 50;
+    public static InkParticlePool Instance => _instance;
 
-    [Tooltip("粒子存活时间（秒）")]
+    public int poolSize = 50;
     public float particleLifetime = 0.3f;
 
-    private Queue<GameObject> _available = new Queue<GameObject>();
-    private List<GameObject> _allParticles = new List<GameObject>();
+    private readonly Queue<int> _available = new Queue<int>();
+    private readonly List<GameObject> _allParticles = new List<GameObject>();
+    private readonly ParticleLeaseRegistry _leases = new ParticleLeaseRegistry();
     private Sprite _particleSprite;
+    private int _nextReuseSlot;
+    private bool _initialized;
 
     private void Awake()
     {
@@ -40,59 +40,125 @@ public class InkParticlePool : MonoBehaviour
             Destroy(gameObject);
             return;
         }
+
         _instance = this;
-        DontDestroyOnLoad(gameObject);
         Initialize();
     }
 
     private void Initialize()
     {
+        if (_initialized)
+        {
+            return;
+        }
+
+        _initialized = true;
+        poolSize = Mathf.Max(1, poolSize);
         _particleSprite = PlaceholderSpriteFactory.InkParticleSprite();
-
-        for (int i = 0; i < poolSize; i++)
+        for (var slot = 0; slot < poolSize; slot++)
         {
-            GameObject particle = CreateParticle();
+            var particle = CreateParticle();
             particle.SetActive(false);
-            _available.Enqueue(particle);
             _allParticles.Add(particle);
+            _available.Enqueue(slot);
         }
     }
 
-    /// <summary>从池中获取一个粒子</summary>
-    public GameObject Get()
+    public InkParticleHandle Get()
     {
-        GameObject particle;
-        if (_available.Count > 0)
+        if (!_initialized || _allParticles.Count == 0)
         {
-            particle = _available.Dequeue();
+            throw new System.InvalidOperationException("InkParticlePool is not initialized.");
         }
-        else
-        {
-            // 池耗尽，复用最早的
-            particle = _allParticles[0];
-            _allParticles.RemoveAt(0);
-            _allParticles.Add(particle);
-        }
+
+        var slot = _available.Count > 0
+            ? _available.Dequeue()
+            : NextReuseSlot();
+        var particle = _allParticles[slot];
+        ResetParticle(particle);
+        var token = _leases.Acquire(slot);
         particle.SetActive(true);
-        return particle;
+        return new InkParticleHandle(particle, token);
     }
 
-    /// <summary>归还粒子到池</summary>
-    public void Return(GameObject particle)
+    public bool Return(InkParticleHandle handle)
     {
+        var slot = handle.Token.Slot;
+        if (slot < 0 || slot >= _allParticles.Count ||
+            handle.Particle != _allParticles[slot] ||
+            !_leases.TryRelease(handle.Token))
+        {
+            return false;
+        }
+
+        var particle = _allParticles[slot];
+        ResetParticle(particle);
         particle.SetActive(false);
-        _available.Enqueue(particle);
+        _available.Enqueue(slot);
+        return true;
+    }
+
+    public bool IsActive(InkParticleHandle handle)
+    {
+        return _leases.IsActive(handle.Token) &&
+            handle.Particle != null &&
+            handle.Particle.activeSelf;
+    }
+
+    public void ClearAll()
+    {
+        _leases.InvalidateAll();
+        _available.Clear();
+        for (var slot = 0; slot < _allParticles.Count; slot++)
+        {
+            var particle = _allParticles[slot];
+            if (particle != null)
+            {
+                ResetParticle(particle);
+                particle.SetActive(false);
+            }
+            _available.Enqueue(slot);
+        }
+        _nextReuseSlot = 0;
+    }
+
+    private int NextReuseSlot()
+    {
+        var slot = _nextReuseSlot % _allParticles.Count;
+        _nextReuseSlot = (_nextReuseSlot + 1) % _allParticles.Count;
+        return slot;
     }
 
     private GameObject CreateParticle()
     {
-        GameObject go = new GameObject("InkParticle");
-        go.transform.SetParent(transform);
+        var particle = new GameObject("InkParticle");
+        particle.transform.SetParent(transform, false);
+        var renderer = particle.AddComponent<SpriteRenderer>();
+        renderer.sprite = _particleSprite;
+        renderer.sortingOrder = 10;
+        return particle;
+    }
 
-        var sr = go.AddComponent<SpriteRenderer>();
-        sr.sprite = _particleSprite;
-        sr.sortingOrder = 10; // 在角色上层
+    private static void ResetParticle(GameObject particle)
+    {
+        particle.transform.localRotation = Quaternion.identity;
+        particle.transform.localScale = Vector3.one;
+        var body = particle.GetComponent<Rigidbody2D>();
+        if (body != null)
+        {
+            body.velocity = Vector2.zero;
+            body.angularVelocity = 0f;
+        }
+    }
 
-        return go;
+    private void OnDestroy()
+    {
+        _leases.InvalidateAll();
+        _available.Clear();
+        _allParticles.Clear();
+        if (_instance == this)
+        {
+            _instance = null;
+        }
     }
 }

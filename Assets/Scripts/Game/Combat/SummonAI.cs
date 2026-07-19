@@ -216,8 +216,8 @@ public class SummonAI : MonoBehaviour
 
     void AttackTarget(EnemyBase target)
     {
-        var stats = target.GetComponent<CharacterStats>();
-        if (stats != null)
+        var hurtbox = target.GetComponent<Hurtbox>();
+        if (hurtbox != null)
         {
             int totalDmg = damage;
 
@@ -225,10 +225,14 @@ public class SummonAI : MonoBehaviour
             int cmdLevel = SummonManager.Instance?.GetSummonLevel("summon_command") ?? 0;
             if (cmdLevel > 0) totalDmg = Mathf.RoundToInt(totalDmg * (1f + 0.2f * cmdLevel));
 
-            stats.TakeDamage(totalDmg);
-            DamageNumberPool.Spawn(totalDmg, target.transform.position + Vector3.up * 0.5f, DamageType.Normal);
-            AudioManager.Instance.PlaySFX("hit");
-            CombatEvents.InvokeHitLanded(target.transform.position, totalDmg);
+            var facing = target.transform.position.x < transform.position.x ? -1 : 1;
+            CombatHitResolver.ResolveAndPublish(
+                hurtbox,
+                new Game.Gameplay.CombatHit(totalDmg, facing, 2f, false, null),
+                gameObject,
+                CombatFeedbackSourceKind.Summon,
+                CombatFeedbackStrength.Light,
+                facing);
         }
     }
 
@@ -402,12 +406,17 @@ public class SummonManager : MonoBehaviour
             }
 
             // 命中
-            var stats = enemies[t].GetComponent<CharacterStats>();
-            if (stats != null && !enemies[t].IsDead)
+            var hurtbox = enemies[t].GetComponent<Hurtbox>();
+            if (hurtbox != null && !enemies[t].IsDead)
             {
-                stats.TakeDamage(hitDmg);
-                DamageNumberPool.Spawn(hitDmg, pos + Vector3.up * 0.5f, DamageType.Normal);
-                AudioManager.Instance.PlaySFX("heavy_hit");
+                var facing = pos.x < transform.position.x ? -1 : 1;
+                CombatHitResolver.ResolveAndPublish(
+                    hurtbox,
+                    new Game.Gameplay.CombatHit(hitDmg, facing, 4f, false, null),
+                    gameObject,
+                    CombatFeedbackSourceKind.Summon,
+                    CombatFeedbackStrength.Heavy,
+                    facing);
             }
 
             yield return new WaitForSeconds(0.15f);

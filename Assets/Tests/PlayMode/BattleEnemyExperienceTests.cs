@@ -163,6 +163,726 @@ namespace Game.Tests.PlayMode
         }
 
         [UnityTest]
+        public IEnumerator EnemyDamageFeedbackMustEqualTheActualHpDelta()
+        {
+            yield return LoadBattleScene();
+            DisableActiveEnemyAutomation();
+            var player = GameObject.Find("Player");
+            var playerHurtbox = player.GetComponents<Component>()
+                .Single(component => component.GetType().Name == "Hurtbox");
+            var gameAssembly = playerHurtbox.GetType().Assembly;
+            var hitbox = GameObject.Find("AttackHitbox").GetComponent(gameAssembly.GetType("Hitbox"));
+            var grunt = FindFirstActiveEnemy("Grunt");
+            ((Behaviour)grunt).enabled = false;
+            SetField(grunt, "maxHp", 500);
+            SetField(grunt, "hp", 500);
+            SetField(grunt, "damageReduction", 0.5f);
+            grunt.transform.position = hitbox.transform.position;
+            Physics2D.SyncTransforms();
+
+            var reported = -1;
+            Action<Vector3, int> probe = (_, appliedDamage) => reported = appliedDamage;
+            var hitLandedEvent = gameAssembly.GetType("CombatEvents")
+                .GetEvent("OnHitLanded", BindingFlags.Static | BindingFlags.Public);
+            hitLandedEvent.AddEventHandler(null, probe);
+            try
+            {
+                var before = (int)GetField(grunt, "hp");
+                Invoke(hitbox, "EnableHitbox");
+                yield return new WaitForFixedUpdate();
+                var after = (int)GetField(grunt, "hp");
+                Assert.That(after, Is.LessThan(before), "The real Hitbox must damage the real Enemy fixture.");
+                Assert.That(
+                    reported,
+                    Is.EqualTo(before - after),
+                    "B2_RED_ACTUAL_DAMAGE: feedback must equal the target HP delta");
+            }
+            finally
+            {
+                hitLandedEvent.RemoveEventHandler(null, probe);
+                Invoke(hitbox, "DisableHitbox");
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator ResolveHitReturnsOutcomeWhileReceiveHitPreservesB1Result()
+        {
+            yield return LoadBattleScene();
+            DisableActiveEnemyAutomation();
+            var grunt = CreateEnemyProbe("Grunt", "B2ResolveHitCompatibilityProbe");
+            try
+            {
+                ((Behaviour)grunt).enabled = false;
+                SetField(grunt, "maxHp", 100);
+                SetField(grunt, "hp", 100);
+                SetField(grunt, "damageReduction", 0.5f);
+                var hurtbox = grunt.GetComponents<Component>()
+                    .Single(component => component.GetType().Name == "Hurtbox");
+                var resolve = hurtbox.GetType().GetMethod(
+                    "ResolveHit",
+                    BindingFlags.Instance | BindingFlags.Public);
+                Assert.That(resolve, Is.Not.Null, "B2_TASK5_RED_RESOLVE_HIT_API");
+                var hit = new CombatHit(20, 1f, 0f, false, null);
+                var before = (int)GetField(grunt, "hp");
+
+                var outcome = (CombatHitOutcome)resolve.Invoke(hurtbox, new object[] { hit });
+
+                var after = (int)GetField(grunt, "hp");
+                Assert.That(outcome.Result, Is.EqualTo(CombatHitResult.Damaged));
+                Assert.That(outcome.AppliedDamage, Is.EqualTo(before - after));
+
+                SetField(grunt, "hp", 100);
+                var legacyResult = Invoke(hurtbox, "ReceiveHit", hit);
+                Assert.That(legacyResult, Is.EqualTo(CombatHitResult.Damaged));
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(grunt.gameObject);
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator CombatHitResolverPublishesOneResolvedAndOneLegacyCallback()
+        {
+            yield return LoadBattleScene();
+            DisableActiveEnemyAutomation();
+            var player = GameObject.Find("Player");
+            var grunt = CreateEnemyProbe("Grunt", "B2ResolverSinglePublishProbe");
+            try
+            {
+                ((Behaviour)grunt).enabled = false;
+                SetField(grunt, "maxHp", 100);
+                SetField(grunt, "hp", 100);
+                SetField(grunt, "damageReduction", 0.5f);
+                var hurtbox = grunt.GetComponents<Component>()
+                    .Single(component => component.GetType().Name == "Hurtbox");
+                var assembly = hurtbox.GetType().Assembly;
+                grunt.gameObject.AddComponent(assembly.GetType("HitEffectPlayer"));
+                grunt.GetComponent<SpriteRenderer>().color = Color.blue;
+                var eventsType = assembly.GetType("CombatEvents");
+                var resolvedEvent = eventsType.GetEvent("OnHitResolved", BindingFlags.Static | BindingFlags.Public);
+                Assert.That(resolvedEvent, Is.Not.Null, "B2_TASK5_RED_RESOLVED_EVENT_API");
+                var resolverType = assembly.GetType("CombatHitResolver");
+                Assert.That(resolverType, Is.Not.Null, "B2_TASK5_RED_RESOLVER_API");
+                var resolve = resolverType.GetMethod("ResolveAndPublish", BindingFlags.Static | BindingFlags.Public);
+                Assert.That(resolve, Is.Not.Null, "B2_TASK5_RED_RESOLVER_METHOD");
+
+                var contextType = assembly.GetType("CombatFeedbackContext");
+                var captureMethod = typeof(BattleEnemyExperienceTests).GetMethod(
+                        nameof(CaptureResolvedHit),
+                        BindingFlags.Static | BindingFlags.NonPublic)
+                    .MakeGenericMethod(contextType);
+                var resolvedProbe = Delegate.CreateDelegate(resolvedEvent.EventHandlerType, captureMethod);
+                var hitLandedEvent = eventsType.GetEvent("OnHitLanded", BindingFlags.Static | BindingFlags.Public);
+                var legacyCount = 0;
+                var legacyDamage = -1;
+                Action<Vector3, int> legacyProbe = (_, appliedDamage) =>
+                {
+                    legacyCount++;
+                    legacyDamage = appliedDamage;
+                };
+                _resolvedHitCount = 0;
+                _lastResolvedHit = null;
+                resolvedEvent.AddEventHandler(null, resolvedProbe);
+                hitLandedEvent.AddEventHandler(null, legacyProbe);
+                try
+                {
+                    var damageNumberCountBefore = Resources.FindObjectsOfTypeAll<Component>()
+                        .Count(component =>
+                            component != null &&
+                            component.GetType().Name == "DamageNumber" &&
+                            component.gameObject.activeInHierarchy);
+                    var before = (int)GetField(grunt, "hp");
+                    var sourceKind = Enum.Parse(assembly.GetType("CombatFeedbackSourceKind"), "PlayerMelee");
+                    var strength = Enum.Parse(assembly.GetType("CombatFeedbackStrength"), "Light");
+                    var outcome = (CombatHitOutcome)resolve.Invoke(null, new object[]
+                    {
+                        hurtbox,
+                        new CombatHit(20, 1f, 0f, false, null),
+                        player,
+                        sourceKind,
+                        strength,
+                        1
+                    });
+                    var actualDelta = before - (int)GetField(grunt, "hp");
+
+                    Assert.That(outcome.AppliedDamage, Is.EqualTo(actualDelta));
+                    Assert.That(_resolvedHitCount, Is.EqualTo(1), "A producer must publish one resolved callback.");
+                    Assert.That(legacyCount, Is.EqualTo(1), "The compatibility event must be mapped once.");
+                    Assert.That(legacyDamage, Is.EqualTo(actualDelta));
+                    Assert.That(ReadRuntimeProperty(_lastResolvedHit, "AppliedDamage"), Is.EqualTo(actualDelta));
+                    Assert.That(ReadRuntimeProperty(_lastResolvedHit, "Target"), Is.SameAs(grunt.gameObject));
+                    Assert.That(grunt.GetComponent<SpriteRenderer>().color, Is.EqualTo(Color.white));
+                    Assert.That(
+                        Resources.FindObjectsOfTypeAll<Component>()
+                            .Count(component =>
+                                component != null &&
+                                component.GetType().Name == "DamageNumber" &&
+                                component.gameObject.activeInHierarchy) - damageNumberCountBefore,
+                        Is.EqualTo(1),
+                        "One resolved hit must produce one damage number.");
+                    var inkEffect = player.GetComponents<Component>()
+                        .Single(component => component.GetType().Name == "InkHitEffect");
+                    var pool = FindActiveSceneComponent("InkParticlePool");
+                    Assert.That(
+                        ((IEnumerable)GetField(pool, "_allParticles"))
+                            .Cast<GameObject>()
+                            .Count(particle => particle.activeSelf),
+                        Is.EqualTo((int)GetField(inkEffect, "particleCount")),
+                        "One resolved enemy hit must produce exactly one ink splash.");
+                }
+                finally
+                {
+                    resolvedEvent.RemoveEventHandler(null, resolvedProbe);
+                    hitLandedEvent.RemoveEventHandler(null, legacyProbe);
+                }
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(grunt.gameObject);
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator ResolvedFeedbackSubscriberFailureDoesNotInterruptCombatDispatch()
+        {
+            yield return LoadBattleScene();
+            DisableActiveEnemyAutomation();
+            var player = GameObject.Find("Player");
+            var grunt = CreateEnemyProbe("Grunt", "B2ResolverFailureIsolationProbe");
+            try
+            {
+                ((Behaviour)grunt).enabled = false;
+                SetField(grunt, "maxHp", 100);
+                SetField(grunt, "hp", 100);
+                var hurtbox = grunt.GetComponents<Component>()
+                    .Single(component => component.GetType().Name == "Hurtbox");
+                var assembly = hurtbox.GetType().Assembly;
+                var eventsType = assembly.GetType("CombatEvents");
+                var resolvedEvent = eventsType.GetEvent("OnHitResolved", BindingFlags.Static | BindingFlags.Public);
+                var contextType = assembly.GetType("CombatFeedbackContext");
+                var throwingMethod = typeof(BattleEnemyExperienceTests).GetMethod(
+                        nameof(ThrowResolvedHit),
+                        BindingFlags.Static | BindingFlags.NonPublic)
+                    .MakeGenericMethod(contextType);
+                var captureMethod = typeof(BattleEnemyExperienceTests).GetMethod(
+                        nameof(CaptureResolvedHit),
+                        BindingFlags.Static | BindingFlags.NonPublic)
+                    .MakeGenericMethod(contextType);
+                var throwingProbe = Delegate.CreateDelegate(resolvedEvent.EventHandlerType, throwingMethod);
+                var captureProbe = Delegate.CreateDelegate(resolvedEvent.EventHandlerType, captureMethod);
+                var hitLandedEvent = eventsType.GetEvent("OnHitLanded", BindingFlags.Static | BindingFlags.Public);
+                var legacyCount = 0;
+                var legacyDamage = -1;
+                Action<Vector3, int> throwingLegacyProbe = (_, __) =>
+                    throw new InvalidOperationException("B2_TASK5_LEGACY_HIT_SUBSCRIBER_FAILURE");
+                Action<Vector3, int> legacyProbe = (_, appliedDamage) =>
+                {
+                    legacyCount++;
+                    legacyDamage = appliedDamage;
+                };
+                _resolvedHitCount = 0;
+                _lastResolvedHit = null;
+                resolvedEvent.AddEventHandler(null, throwingProbe);
+                resolvedEvent.AddEventHandler(null, captureProbe);
+                hitLandedEvent.AddEventHandler(null, throwingLegacyProbe);
+                hitLandedEvent.AddEventHandler(null, legacyProbe);
+                try
+                {
+                    var resolver = assembly.GetType("CombatHitResolver")
+                        .GetMethod("ResolveAndPublish", BindingFlags.Static | BindingFlags.Public);
+                    CombatHitOutcome outcome = default;
+                    var previousIgnoreFailingMessages = LogAssert.ignoreFailingMessages;
+                    LogAssert.ignoreFailingMessages = true;
+                    try
+                    {
+                        Assert.DoesNotThrow(() =>
+                        {
+                            outcome = (CombatHitOutcome)resolver.Invoke(null, new object[]
+                            {
+                                hurtbox,
+                                new CombatHit(10, 1f, 0f, false, null),
+                                player,
+                                Enum.Parse(assembly.GetType("CombatFeedbackSourceKind"), "PlayerMelee"),
+                                Enum.Parse(assembly.GetType("CombatFeedbackStrength"), "Light"),
+                                1
+                            });
+                        }, "B2_TASK5_RED_LEGACY_HIT_FAILURE_ISOLATION");
+                    }
+                    finally
+                    {
+                        LogAssert.ignoreFailingMessages = previousIgnoreFailingMessages;
+                    }
+
+                    Assert.That(outcome.Result, Is.EqualTo(CombatHitResult.Damaged));
+                    Assert.That(_resolvedHitCount, Is.EqualTo(1),
+                        "A failing subscriber must not block later resolved feedback subscribers.");
+                    Assert.That(legacyCount, Is.EqualTo(1),
+                        "A failing legacy subscriber must not block later compatibility subscribers.");
+                    Assert.That(legacyDamage, Is.EqualTo(outcome.AppliedDamage));
+                }
+                finally
+                {
+                    resolvedEvent.RemoveEventHandler(null, throwingProbe);
+                    resolvedEvent.RemoveEventHandler(null, captureProbe);
+                    hitLandedEvent.RemoveEventHandler(null, throwingLegacyProbe);
+                    hitLandedEvent.RemoveEventHandler(null, legacyProbe);
+                }
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(grunt.gameObject);
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator LegacyDamageSubscriberFailureDoesNotInterruptProjectileDestruction()
+        {
+            yield return LoadBattleScene();
+            DisableActiveEnemyAutomation();
+            var player = GameObject.Find("Player");
+            var stats = player.GetComponents<Component>()
+                .Single(component => component.GetType().Name == "CharacterStats");
+            var assembly = stats.GetType().Assembly;
+            var eventsType = assembly.GetType("CombatEvents");
+            var damageTakenEvent = eventsType.GetEvent("OnDamageTaken", BindingFlags.Static | BindingFlags.Public);
+            var healthyCount = 0;
+            var reportedDamage = -1;
+            Action<Vector3, int> throwingProbe = (_, __) =>
+                throw new InvalidOperationException("B2_TASK5_LEGACY_DAMAGE_SUBSCRIBER_FAILURE");
+            Action<Vector3, int> healthyProbe = (_, appliedDamage) =>
+            {
+                healthyCount++;
+                reportedDamage = appliedDamage;
+            };
+            var projectileObject = new GameObject("B2LegacyFailureProjectileProbe");
+            try
+            {
+                projectileObject.AddComponent<SpriteRenderer>();
+                projectileObject.AddComponent<CircleCollider2D>().isTrigger = true;
+                var projectile = projectileObject.AddComponent(assembly.GetType("Projectile"));
+                Invoke(projectile, "Launch", Vector2.left, projectileObject);
+                damageTakenEvent.AddEventHandler(null, throwingProbe);
+                damageTakenEvent.AddEventHandler(null, healthyProbe);
+                var hpBefore = (int)GetField(stats, "currentHp");
+                var previousIgnoreFailingMessages = LogAssert.ignoreFailingMessages;
+                LogAssert.ignoreFailingMessages = true;
+                try
+                {
+                    Assert.DoesNotThrow(
+                        () => Invoke(projectile, "OnTriggerEnter2D", player.GetComponent<Collider2D>()),
+                        "B2_TASK5_RED_LEGACY_DAMAGE_PROJECTILE_LIFECYCLE");
+                }
+                finally
+                {
+                    LogAssert.ignoreFailingMessages = previousIgnoreFailingMessages;
+                }
+
+                var hpAfter = (int)GetField(stats, "currentHp");
+                Assert.That(healthyCount, Is.EqualTo(1));
+                Assert.That(reportedDamage, Is.EqualTo(hpBefore - hpAfter));
+                yield return null;
+                Assert.That(projectileObject == null, Is.True,
+                    "A legacy presentation failure must not skip Projectile destruction.");
+            }
+            finally
+            {
+                damageTakenEvent.RemoveEventHandler(null, throwingProbe);
+                damageTakenEvent.RemoveEventHandler(null, healthyProbe);
+                if (projectileObject != null)
+                {
+                    UnityEngine.Object.DestroyImmediate(projectileObject);
+                }
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator CombatFeedbackControllerRejectsConfigureAfterDisposeWithoutStaticLeak()
+        {
+            yield return LoadBattleScene();
+            var player = GameObject.Find("Player");
+            var runtimeAssembly = player.GetComponents<Component>()
+                .Single(component => component.GetType().Name == "Hurtbox")
+                .GetType()
+                .Assembly;
+            var controllerType = runtimeAssembly.GetType("CombatFeedbackController");
+            var eventsType = runtimeAssembly.GetType("CombatEvents");
+            var resolvedEvent = eventsType.GetEvent("OnHitResolved", BindingFlags.Static | BindingFlags.Public);
+            var resolvedBackingField = eventsType.GetField(
+                "OnHitResolved",
+                BindingFlags.Static | BindingFlags.NonPublic);
+            var configure = controllerType.GetMethod("Configure", BindingFlags.Instance | BindingFlags.Public);
+            var handle = controllerType.GetMethod("Handle", BindingFlags.Instance | BindingFlags.Public);
+            var inkPool = FindActiveSceneComponent("InkParticlePool");
+            var inkEffect = player.GetComponents<Component>()
+                .Single(component => component.GetType().Name == "InkHitEffect");
+            var slashEffect = player.GetComponentsInChildren<Component>()
+                .Single(component => component.GetType().Name == "InkSlashEffect");
+            var cameraShaker = Camera.main.GetComponents<Component>()
+                .Single(component => component.GetType().Name == "CameraShaker");
+            var hitStop = Camera.main.GetComponents<Component>()
+                .Single(component => component.GetType().Name == "HitStopController");
+            var configureArguments = new object[]
+            {
+                player,
+                inkPool,
+                inkEffect,
+                slashEffect,
+                cameraShaker,
+                hitStop
+            };
+            var handlerCountBefore = GetStaticEventHandlers(resolvedBackingField).Length;
+            GameObject disposedObject = null;
+            GameObject normalObject = null;
+            Delegate disposedDelegate = null;
+            Delegate normalDelegate = null;
+            try
+            {
+                disposedObject = new GameObject("B2DisposedFeedbackControllerProbe");
+                var disposedController = disposedObject.AddComponent(controllerType);
+                disposedDelegate = Delegate.CreateDelegate(
+                    resolvedEvent.EventHandlerType,
+                    disposedController,
+                    handle);
+                Invoke(disposedController, "Dispose");
+                Exception configureFailure = null;
+                try
+                {
+                    configure.Invoke(disposedController, configureArguments);
+                }
+                catch (TargetInvocationException exception)
+                {
+                    configureFailure = exception.InnerException;
+                }
+
+                var handlersAfterRejectedConfigure = GetStaticEventHandlers(resolvedBackingField);
+                Assert.That(
+                    configureFailure,
+                    Is.TypeOf<ObjectDisposedException>(),
+                    "B2_TASK5_RED_DISPOSE_BEFORE_CONFIGURE_MUST_REJECT");
+                Assert.That(
+                    handlersAfterRejectedConfigure.Length,
+                    Is.EqualTo(handlerCountBefore),
+                    "A rejected Configure must not add an OnHitResolved handler.");
+                Assert.That(
+                    handlersAfterRejectedConfigure.Any(handler =>
+                        ReferenceEquals(handler.Target, disposedController)),
+                    Is.False,
+                    "A disposed controller must never be retained by the static event.");
+
+                UnityEngine.Object.DestroyImmediate(disposedObject);
+                disposedObject = null;
+
+                normalObject = new GameObject("B2NormalFeedbackControllerProbe");
+                var normalController = normalObject.AddComponent(controllerType);
+                normalDelegate = Delegate.CreateDelegate(
+                    resolvedEvent.EventHandlerType,
+                    normalController,
+                    handle);
+                configure.Invoke(normalController, configureArguments);
+                Assert.That(
+                    GetStaticEventHandlers(resolvedBackingField).Length,
+                    Is.EqualTo(handlerCountBefore + 1));
+                Invoke(normalController, "Dispose");
+                Assert.That(
+                    GetStaticEventHandlers(resolvedBackingField).Length,
+                    Is.EqualTo(handlerCountBefore),
+                    "Normal Configure/Dispose must remove its static subscription exactly once.");
+                Invoke(normalController, "Dispose");
+                Assert.That(GetStaticEventHandlers(resolvedBackingField).Length, Is.EqualTo(handlerCountBefore));
+            }
+            finally
+            {
+                if (disposedDelegate != null)
+                {
+                    resolvedEvent.RemoveEventHandler(null, disposedDelegate);
+                }
+                if (normalDelegate != null)
+                {
+                    resolvedEvent.RemoveEventHandler(null, normalDelegate);
+                }
+                if (disposedObject != null)
+                {
+                    UnityEngine.Object.DestroyImmediate(disposedObject);
+                }
+                if (normalObject != null)
+                {
+                    UnityEngine.Object.DestroyImmediate(normalObject);
+                }
+            }
+
+            Assert.That(GetStaticEventHandlers(resolvedBackingField).Length, Is.EqualTo(handlerCountBefore));
+        }
+
+        [UnityTest]
+        public IEnumerator ResolvedParryPublishesOnceWithoutDamageOrLegacyDamageCallbacks()
+        {
+            yield return LoadBattleScene();
+            DisableActiveEnemyAutomation();
+            var player = GameObject.Find("Player");
+            var stats = player.GetComponents<Component>()
+                .Single(component => component.GetType().Name == "CharacterStats");
+            var stateMachine = player.GetComponents<Component>()
+                .Single(component => component.GetType().Name == "PlayerStateMachine");
+            var hurtbox = player.GetComponents<Component>()
+                .Single(component => component.GetType().Name == "Hurtbox");
+            var assembly = hurtbox.GetType().Assembly;
+            var eventsType = assembly.GetType("CombatEvents");
+            var resolvedEvent = eventsType.GetEvent("OnHitResolved", BindingFlags.Static | BindingFlags.Public);
+            var contextType = assembly.GetType("CombatFeedbackContext");
+            var captureMethod = typeof(BattleEnemyExperienceTests).GetMethod(
+                    nameof(CaptureResolvedHit),
+                    BindingFlags.Static | BindingFlags.NonPublic)
+                .MakeGenericMethod(contextType);
+            var resolvedProbe = Delegate.CreateDelegate(resolvedEvent.EventHandlerType, captureMethod);
+            var hitLandedEvent = eventsType.GetEvent("OnHitLanded", BindingFlags.Static | BindingFlags.Public);
+            var damageTakenEvent = eventsType.GetEvent("OnDamageTaken", BindingFlags.Static | BindingFlags.Public);
+            var parryEvent = eventsType.GetEvent("OnParrySuccess", BindingFlags.Static | BindingFlags.Public);
+            var hitCount = 0;
+            var damageCount = 0;
+            var parryCount = 0;
+            Action<Vector3, int> hitProbe = (_, __) => hitCount++;
+            Action<Vector3, int> damageProbe = (_, __) => damageCount++;
+            Action<Vector3> parryProbe = _ => parryCount++;
+            _resolvedHitCount = 0;
+            _lastResolvedHit = null;
+            resolvedEvent.AddEventHandler(null, resolvedProbe);
+            hitLandedEvent.AddEventHandler(null, hitProbe);
+            damageTakenEvent.AddEventHandler(null, damageProbe);
+            parryEvent.AddEventHandler(null, parryProbe);
+            try
+            {
+                Invoke(stateMachine, "RequestParry");
+                var hpBefore = (int)GetField(stats, "currentHp");
+                var resolver = assembly.GetType("CombatHitResolver")
+                    .GetMethod("ResolveAndPublish", BindingFlags.Static | BindingFlags.Public);
+
+                var outcome = (CombatHitOutcome)resolver.Invoke(null, new object[]
+                {
+                    hurtbox,
+                    new CombatHit(25, -1f, 4f, true, null),
+                    null,
+                    Enum.Parse(assembly.GetType("CombatFeedbackSourceKind"), "EnemyMelee"),
+                    Enum.Parse(assembly.GetType("CombatFeedbackStrength"), "Heavy"),
+                    -1
+                });
+
+                Assert.That(outcome.Result, Is.EqualTo(CombatHitResult.Parried));
+                Assert.That(outcome.AppliedDamage, Is.Zero);
+                Assert.That((int)GetField(stats, "currentHp"), Is.EqualTo(hpBefore));
+                Assert.That(_resolvedHitCount, Is.EqualTo(1));
+                Assert.That(ReadRuntimeProperty(_lastResolvedHit, "Result"), Is.EqualTo(CombatHitResult.Parried));
+                Assert.That(parryCount, Is.EqualTo(1), "PlayerStateMachine remains the sole legacy parry publisher.");
+                Assert.That(hitCount, Is.Zero);
+                Assert.That(damageCount, Is.Zero);
+                Assert.That(
+                    Resources.FindObjectsOfTypeAll<Component>()
+                        .Where(component => component != null && component.GetType().Name == "DamageNumber")
+                        .Count(component =>
+                        {
+                            var text = component.GetComponentInChildren<TextMesh>(true);
+                            return component.gameObject.activeInHierarchy &&
+                                text != null &&
+                                text.text.Contains("\u5f39\u53cd");
+                        }),
+                    Is.EqualTo(1),
+                    "Resolved parry must create exactly one presentation number.");
+            }
+            finally
+            {
+                resolvedEvent.RemoveEventHandler(null, resolvedProbe);
+                hitLandedEvent.RemoveEventHandler(null, hitProbe);
+                damageTakenEvent.RemoveEventHandler(null, damageProbe);
+                parryEvent.RemoveEventHandler(null, parryProbe);
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator PlayerDamageMustTriggerItsInstalledHitFlash()
+        {
+            yield return LoadBattleScene();
+            DisableActiveEnemyAutomation();
+            var player = GameObject.Find("Player");
+            var sprite = player.GetComponent<SpriteRenderer>();
+            var original = Color.blue;
+            sprite.color = original;
+            var hurtbox = player.GetComponents<Component>()
+                .Single(component => component.GetType().Name == "Hurtbox");
+
+            var assembly = hurtbox.GetType().Assembly;
+            var resolver = assembly.GetType("CombatHitResolver");
+            resolver.GetMethod("ResolveAndPublish", BindingFlags.Static | BindingFlags.Public)
+                .Invoke(null, new object[]
+                {
+                    hurtbox,
+                    new CombatHit(7, 1f, 0f, false, null),
+                    null,
+                    Enum.Parse(assembly.GetType("CombatFeedbackSourceKind"), "EnemyMelee"),
+                    Enum.Parse(assembly.GetType("CombatFeedbackStrength"), "Light"),
+                    1
+                });
+            yield return null;
+
+            Assert.That(
+                sprite.color,
+                Is.EqualTo(Color.white),
+                "B2_RED_PLAYER_FLASH: resolved player damage must trigger its installed HitEffectPlayer.");
+            Assert.That(sprite.color, Is.Not.EqualTo(original));
+        }
+
+        [UnityTest]
+        public IEnumerator RepeatedHitFlashRestoresTheColorFromBeforeTheFirstFlash()
+        {
+            yield return LoadBattleScene();
+            var player = GameObject.Find("Player");
+            var runtimeAssembly = player.GetComponents<Component>()
+                .Single(component => component.GetType().Name == "Hurtbox")
+                .GetType()
+                .Assembly;
+            var probe = new GameObject("B2RepeatedHitFlashProbe");
+            try
+            {
+                var sprite = probe.AddComponent<SpriteRenderer>();
+                sprite.color = Color.blue;
+                var hitEffect = probe.AddComponent(runtimeAssembly.GetType("HitEffectPlayer"));
+
+                Invoke(hitEffect, "PlayHitEffect");
+                yield return null;
+                Invoke(hitEffect, "PlayHitEffect");
+                yield return new WaitForSeconds(0.15f);
+
+                Assert.That(
+                    sprite.color,
+                    Is.EqualTo(Color.blue),
+                    "B2_TASK5_RED_REPEATED_FLASH_RESTORE: repeated hits must not capture white as the original color.");
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(probe);
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator InkParticlePoolMustInitializeExactlyOnce()
+        {
+            yield return LoadBattleScene();
+            var player = GameObject.Find("Player");
+            var gameAssembly = player.GetComponents<Component>()
+                .Single(component => component.GetType().Name == "Hurtbox")
+                .GetType()
+                .Assembly;
+            var type = gameAssembly.GetType("InkParticlePool");
+            var instance = type.GetProperty("Instance", BindingFlags.Static | BindingFlags.Public)
+                .GetValue(null) as Component;
+            try
+            {
+                var all = (ICollection)GetField(instance, "_allParticles");
+                var poolSize = (int)GetField(instance, "poolSize");
+                Assert.That(
+                    all.Count,
+                    Is.EqualTo(poolSize),
+                    "B2_RED_INK_POOL_ONCE: scene pool must allocate exactly poolSize particles.");
+                Assert.That(
+                    instance.gameObject.scene,
+                    Is.EqualTo(SceneManager.GetActiveScene()),
+                    "B2_RED_INK_POOL_SCENE_OWNER: the active BattleScene must own its ink pool.");
+            }
+            finally
+            {
+                if (instance != null)
+                {
+                    UnityEngine.Object.DestroyImmediate(instance.gameObject);
+                }
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator InkParticlePoolRejectsStaleReturnsAfterReuseAndClear()
+        {
+            yield return LoadBattleScene();
+            var pool = FindActiveSceneComponent("InkParticlePool");
+            var poolSize = (int)GetField(pool, "poolSize");
+            var handles = new List<object>();
+            for (var index = 0; index < poolSize; index++)
+            {
+                handles.Add(Invoke(pool, "Get"));
+            }
+
+            var stale = handles[0];
+            var replacement = Invoke(pool, "Get");
+            Assert.That(
+                (bool)Invoke(pool, "Return", stale),
+                Is.False,
+                "A reused slot must reject its prior generation.");
+            Assert.That((bool)Invoke(pool, "Return", replacement), Is.True);
+
+            var activeBeforeClear = handles[1];
+            Invoke(pool, "ClearAll");
+            Assert.That(
+                (bool)Invoke(pool, "Return", activeBeforeClear),
+                Is.False,
+                "InvalidateAll must reject every delayed return from the prior scene state.");
+            var available = ((IEnumerable)GetField(pool, "_available")).Cast<object>().ToArray();
+            Assert.That(available, Has.Length.EqualTo(poolSize));
+            Assert.That(available.Distinct().Count(), Is.EqualTo(poolSize));
+        }
+
+        [UnityTest]
+        public IEnumerator TerminalCompletionClearsTransientFeedbackBeforeBattleResultFreeze()
+        {
+            yield return LoadBattleScene();
+            DisableActiveEnemyAutomation();
+            var player = GameObject.Find("Player");
+            var run = FindActiveSceneComponent("BattleRunController");
+            var timeController = FindActiveSceneComponent("BattleTimeController");
+            var pool = FindActiveSceneComponent("InkParticlePool");
+            var grunt = CreateEnemyProbe("Grunt", "B2TerminalFeedbackProbe");
+            try
+            {
+                ((Behaviour)grunt).enabled = false;
+                var assembly = grunt.GetType().Assembly;
+                grunt.gameObject.AddComponent(assembly.GetType("HitEffectPlayer"));
+                var sprite = grunt.GetComponent<SpriteRenderer>();
+                sprite.color = Color.blue;
+                var hurtbox = grunt.GetComponents<Component>()
+                    .Single(component => component.GetType().Name == "Hurtbox");
+                var resolver = assembly.GetType("CombatHitResolver")
+                    .GetMethod("ResolveAndPublish", BindingFlags.Static | BindingFlags.Public);
+                resolver.Invoke(null, new object[]
+                {
+                    hurtbox,
+                    new CombatHit(5, 1f, 0f, false, null),
+                    player,
+                    Enum.Parse(assembly.GetType("CombatFeedbackSourceKind"), "PlayerMelee"),
+                    Enum.Parse(assembly.GetType("CombatFeedbackStrength"), "Light"),
+                    1
+                });
+
+                var particles = ((IEnumerable)GetField(pool, "_allParticles"))
+                    .Cast<GameObject>()
+                    .ToArray();
+                var slash = player.GetComponentInChildren<LineRenderer>();
+                Assert.That(particles.Count(particle => particle.activeSelf), Is.GreaterThan(0));
+                Assert.That(slash.enabled, Is.True);
+                Assert.That(sprite.color, Is.EqualTo(Color.white));
+
+                Invoke(run, "Complete", BattleRunOutcome.Victory);
+
+                Assert.That(Time.timeScale, Is.Zero);
+                Assert.That(particles.Count(particle => particle.activeSelf), Is.Zero);
+                Assert.That(slash.enabled, Is.False);
+                Assert.That(sprite.color, Is.EqualTo(Color.blue));
+                Assert.That((int)GetProperty(timeController, "ActiveRequestCount"), Is.EqualTo(1),
+                    "Terminal cleanup must release hit-stop before installing the BattleResult request.");
+            }
+            finally
+            {
+                Invoke(run, "Dispose");
+                UnityEngine.Object.DestroyImmediate(grunt.gameObject);
+            }
+        }
+
+        [UnityTest]
         public IEnumerator TelegraphViewMatchesBoxAndBossCirclePlanBoundsWithoutCollider()
         {
             yield return LoadBattleScene();
@@ -1097,6 +1817,42 @@ namespace Game.Tests.PlayMode
                 component.GetType().Name == typeName &&
                 component.gameObject.scene == SceneManager.GetActiveScene() &&
                 component.gameObject.activeInHierarchy);
+        }
+
+        private static Component FindFirstActiveEnemy(string typeName)
+        {
+            return Resources.FindObjectsOfTypeAll<Component>().First(component =>
+                component != null &&
+                component.GetType().Name == typeName &&
+                component.gameObject.scene == SceneManager.GetActiveScene() &&
+                component.gameObject.activeInHierarchy);
+        }
+
+        private static int _resolvedHitCount;
+        private static object _lastResolvedHit;
+
+        private static void CaptureResolvedHit<T>(T context)
+        {
+            _resolvedHitCount++;
+            _lastResolvedHit = context;
+        }
+
+        private static void ThrowResolvedHit<T>(T context)
+        {
+            throw new InvalidOperationException("B2_TASK5_FEEDBACK_SUBSCRIBER_FAILURE");
+        }
+
+        private static object ReadRuntimeProperty(object instance, string propertyName)
+        {
+            return instance.GetType()
+                .GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                .GetValue(instance);
+        }
+
+        private static Delegate[] GetStaticEventHandlers(FieldInfo backingField)
+        {
+            var handlers = backingField.GetValue(null) as Delegate;
+            return handlers?.GetInvocationList() ?? Array.Empty<Delegate>();
         }
 
         private static Component CreateEnemyProbe(string typeName, string objectName)

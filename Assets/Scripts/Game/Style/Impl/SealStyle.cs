@@ -43,7 +43,15 @@ public class SealStyle : IStyleBehaviour
                 var enemy = hit.GetComponent<EnemyBase>();
                 if (enemy != null && !enemy.IsDead)
                 {
-                    enemy.TakeDamage(totalDamage);
+                    var hurtbox = enemy.GetComponent<Hurtbox>();
+                    var facing = enemy.transform.position.x < player.transform.position.x ? -1 : 1;
+                    CombatHitResolver.ResolveAndPublish(
+                        hurtbox,
+                        new Game.Gameplay.CombatHit(totalDamage, facing, 6f, false, null),
+                        player,
+                        CombatFeedbackSourceKind.Style,
+                        CombatFeedbackStrength.Heavy,
+                        facing);
                 }
             }
         }

@@ -116,9 +116,10 @@ namespace Game.Tests.PlayMode
                     .GetValue(null);
                 var expectedHandlerCounts = new Dictionary<string, int>
                 {
-                    { "OnHitLanded", 3 },
-                    { "OnDamageTaken", 1 },
-                    { "OnParrySuccess", 1 },
+                    { "OnHitResolved", 1 },
+                    { "OnHitLanded", 0 },
+                    { "OnDamageTaken", 0 },
+                    { "OnParrySuccess", 0 },
                     { "OnPlayerDeath", 1 },
                     { "OnEnemyDeath", 1 },
                     { "Inventory.OnItemChanged", 1 }
@@ -633,7 +634,7 @@ namespace Game.Tests.PlayMode
                     var publisher = isInventoryEvent ? inventory : null;
                     var backingFieldName = isInventoryEvent ? eventName.Substring("Inventory.".Length) : eventName;
                     return GetEventHandlers(publisherType, publisher, backingFieldName)
-                        .Count(handler => IsDeclaredBy(setupType, handler));
+                        .Count(handler => IsBattleSceneHandler(setupType, backingFieldName, handler));
                 });
         }
 
@@ -647,7 +648,7 @@ namespace Game.Tests.PlayMode
             foreach (var eventName in eventNames)
             {
                 foreach (var handler in GetEventHandlers(publisherType, publisher, eventName)
-                             .Where(handler => IsDeclaredBy(setupType, handler)))
+                             .Where(handler => IsBattleSceneHandler(setupType, eventName, handler)))
                 {
                     AssertLiveSceneReference(handler.Target, currentSetup, eventName, "delegate target");
                     if (handler.Target == null)
@@ -663,6 +664,13 @@ namespace Game.Tests.PlayMode
                     }
                 }
             }
+        }
+
+        private static bool IsBattleSceneHandler(Type setupType, string eventName, Delegate handler)
+        {
+            return IsDeclaredBy(setupType, handler) ||
+                   (eventName == "OnHitResolved" &&
+                    handler.Method.DeclaringType?.Name == "CombatFeedbackController");
         }
 
         private static Dictionary<string, int> GetPauseMenuHandlerCounts(
@@ -700,6 +708,12 @@ namespace Game.Tests.PlayMode
             {
                 Assert.That(unityObject, Is.SameAs(currentSetup),
                     $"{eventName} must target the current BattleSceneSetup.");
+            }
+            else if (unityObject is Component component &&
+                     component.GetType().Name == "CombatFeedbackController")
+            {
+                Assert.That(component.gameObject.scene, Is.EqualTo(currentSetup.gameObject.scene),
+                    $"{eventName} must target the current scene feedback controller.");
             }
         }
 

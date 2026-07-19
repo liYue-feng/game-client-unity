@@ -42,6 +42,15 @@ public class InkSlashEffect : MonoBehaviour
         StartCoroutine(SlashCoroutine(position, facingDir));
     }
 
+    public void Hide()
+    {
+        StopAllCoroutines();
+        if (_lineRenderer != null)
+        {
+            _lineRenderer.enabled = false;
+        }
+    }
+
     private IEnumerator SlashCoroutine(Vector3 position, int facingDir)
     {
         _lineRenderer.enabled = true;
@@ -77,5 +86,10 @@ public class InkSlashEffect : MonoBehaviour
         }
 
         _lineRenderer.enabled = false;
+    }
+
+    private void OnDisable()
+    {
+        Hide();
     }
 }

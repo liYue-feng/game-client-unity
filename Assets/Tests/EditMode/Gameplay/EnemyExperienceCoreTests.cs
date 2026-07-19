@@ -658,6 +658,72 @@ namespace Game.Tests.EditMode.Gameplay
             }
         }
 
+        [Test]
+        public void CombatHitOutcomeReportsOnlyAppliedDamage()
+        {
+            var damaged = new CombatHitOutcome(CombatHitResult.Damaged, 17);
+            var negative = new CombatHitOutcome(CombatHitResult.Damaged, -3);
+            var parried = new CombatHitOutcome(CombatHitResult.Parried, 17);
+            var ignored = new CombatHitOutcome(CombatHitResult.Ignored, 17);
+
+            Assert.That(damaged.Result, Is.EqualTo(CombatHitResult.Damaged));
+            Assert.That(damaged.AppliedDamage, Is.EqualTo(17));
+            Assert.That(negative.AppliedDamage, Is.Zero);
+            Assert.That(parried.AppliedDamage, Is.Zero);
+            Assert.That(ignored.AppliedDamage, Is.Zero);
+        }
+
+        [Test]
+        public void ParticleLeaseDuplicateReleaseFailsAndReacquireInvalidatesPriorToken()
+        {
+            var registry = new ParticleLeaseRegistry();
+            var first = registry.Acquire(4);
+
+            Assert.That(registry.IsActive(first), Is.True);
+            Assert.That(registry.TryRelease(first), Is.True);
+            Assert.That(registry.TryRelease(first), Is.False);
+
+            var second = registry.Acquire(4);
+            var replacement = registry.Acquire(4);
+            Assert.That(registry.IsActive(second), Is.False);
+            Assert.That(registry.TryRelease(second), Is.False);
+            Assert.That(registry.IsActive(replacement), Is.True);
+        }
+
+        [Test]
+        public void ParticleLeaseInvalidateAllMakesEveryKnownTokenStale()
+        {
+            var registry = new ParticleLeaseRegistry();
+            var first = registry.Acquire(1);
+            var second = registry.Acquire(9);
+
+            registry.InvalidateAll();
+
+            Assert.That(registry.IsActive(first), Is.False);
+            Assert.That(registry.IsActive(second), Is.False);
+            Assert.That(registry.TryRelease(first), Is.False);
+            Assert.That(registry.TryRelease(second), Is.False);
+            var next = registry.Acquire(1);
+            Assert.That(next, Is.Not.EqualTo(first));
+            Assert.That(registry.IsActive(next), Is.True);
+        }
+
+        [Test]
+        public void ParticleLeaseTokenUsesValueEqualityAndReadOnlyFields()
+        {
+            var first = new ParticleLeaseToken(3, 7u);
+            var same = new ParticleLeaseToken(3, 7u);
+            var different = new ParticleLeaseToken(3, 8u);
+
+            Assert.That(first, Is.EqualTo(same));
+            Assert.That(first.GetHashCode(), Is.EqualTo(same.GetHashCode()));
+            Assert.That(first, Is.Not.EqualTo(different));
+            Assert.That(first.Slot, Is.EqualTo(3));
+            Assert.That(first.Generation, Is.EqualTo(7u));
+            Assert.That(typeof(ParticleLeaseToken).GetProperty("Slot").CanWrite, Is.False);
+            Assert.That(typeof(ParticleLeaseToken).GetProperty("Generation").CanWrite, Is.False);
+        }
+
         private static void AssertOutOfRange(string parameterName, TestDelegate action)
         {
             var exception = Assert.Throws<ArgumentOutOfRangeException>(

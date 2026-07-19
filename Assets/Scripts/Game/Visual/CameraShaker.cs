@@ -49,33 +49,13 @@ public class CameraShaker : MonoBehaviour
 
     private void OnEnable()
     {
-        CombatEvents.OnHitLanded += OnHitLanded;
-        CombatEvents.OnDamageTaken += OnDamageTaken;
-        CombatEvents.OnParrySuccess += OnParrySuccess;
         CombatEvents.OnPlayerDeath += OnPlayerDeath;
     }
 
     private void OnDisable()
     {
-        CombatEvents.OnHitLanded -= OnHitLanded;
-        CombatEvents.OnDamageTaken -= OnDamageTaken;
-        CombatEvents.OnParrySuccess -= OnParrySuccess;
         CombatEvents.OnPlayerDeath -= OnPlayerDeath;
-    }
-
-    private void OnHitLanded(Vector3 pos, int dmg)
-    {
-        Shake(hitShakeIntensity, hitShakeDuration);
-    }
-
-    private void OnDamageTaken(Vector3 pos, int dmg)
-    {
-        Shake(hurtShakeIntensity, hurtShakeDuration);
-    }
-
-    private void OnParrySuccess(Vector3 pos)
-    {
-        Shake(parryShakeIntensity, parryShakeDuration);
+        ClearShake();
     }
 
     private void OnPlayerDeath()
@@ -119,5 +99,16 @@ public class CameraShaker : MonoBehaviour
     public void CustomShake(float intensity, float duration)
     {
         Shake(intensity, duration);
+    }
+
+    public void ClearShake()
+    {
+        if (_currentShake != null)
+        {
+            StopCoroutine(_currentShake);
+            _currentShake = null;
+        }
+
+        transform.localPosition = _originalPosition;
     }
 }
