@@ -176,12 +176,6 @@ public class BattleSceneSetup : MonoBehaviour
         hurtbox.stats = _player.GetComponent<CharacterStats>();
         hurtbox.stateMachine = stateMachine;
 
-        // 弹反判定框（子物体）
-        var parryObj = new GameObject("ParryHitbox");
-        parryObj.transform.SetParent(_player.transform);
-        parryObj.transform.localPosition = Vector3.zero;
-        parryObj.AddComponent<ParryHitbox>();
-
         // 攻击 Hitbox（子物体）
         var hitboxObj = new GameObject("AttackHitbox");
         hitboxObj.transform.SetParent(_player.transform);

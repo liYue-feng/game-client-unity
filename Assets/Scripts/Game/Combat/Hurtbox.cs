@@ -1,4 +1,5 @@
 using UnityEngine;
+using Game.Gameplay;
 
 /// <summary>
 /// 受击判定框：挂在角色 GameObject 上，接收来自 Hitbox 的伤害。
@@ -19,33 +20,41 @@ public class Hurtbox : MonoBehaviour
     /// 接收命中。
     /// 由 Hitbox.OnTriggerEnter2D 调用。
     /// </summary>
-    /// <param name="damage">伤害值</param>
-    /// <param name="knockbackDirX">击退方向X</param>
-    /// <param name="knockbackForce">击退力度</param>
-    /// <param name="sourceHitbox">来源 hitbox（用于弹反判定）</param>
-    public void ReceiveHit(int damage, float knockbackDirX, float knockbackForce, Hitbox sourceHitbox)
+    public CombatHitResult ReceiveHit(CombatHit hit)
     {
-        // 弹反判定：玩家在弹反窗口内 + 攻击可弹反
-        if (stateMachine != null && stateMachine.IsInParryWindow && sourceHitbox.isParryable)
-        {
-            stateMachine.OnParrySuccess();
-            return;
-        }
-
-        // 实际受伤：玩家走 CharacterStats，敌人走 EnemyBase
+        EnemyBase enemy = null;
         if (stats != null)
         {
-            stats.TakeDamage(damage);
-            CombatEvents.InvokeDamageTaken(transform.position, damage);
+            if (stats.IsDead)
+            {
+                return CombatHitResult.Ignored;
+            }
         }
         else
         {
-            EnemyBase enemy = GetComponent<EnemyBase>();
-            if (enemy != null)
+            enemy = GetComponent<EnemyBase>();
+            if (enemy == null || enemy.IsDead)
             {
-                enemy.TakeDamage(damage, knockbackDirX, knockbackForce);
-                return; // EnemyBase 内部处理击退，不重复施加
+                return CombatHitResult.Ignored;
             }
+        }
+
+        if (stateMachine != null && stateMachine.IsInParryWindow && hit.IsParryable)
+        {
+            stateMachine.OnParrySuccess();
+            hit.Source?.OnParried();
+            return CombatHitResult.Parried;
+        }
+
+        if (stats != null)
+        {
+            stats.TakeDamage(hit.Damage);
+            CombatEvents.InvokeDamageTaken(transform.position, hit.Damage);
+        }
+        else
+        {
+            enemy.TakeDamage(hit.Damage, hit.KnockbackDirectionX, hit.KnockbackForce);
+            return CombatHitResult.Damaged;
         }
 
         // 通知状态机进入受击
@@ -69,8 +78,12 @@ public class Hurtbox : MonoBehaviour
             if (rb != null)
             {
                 rb.velocity = Vector2.zero;
-                rb.AddForce(new Vector2(knockbackDirX * knockbackForce, 2f), ForceMode2D.Impulse);
+                rb.AddForce(
+                    new Vector2(hit.KnockbackDirectionX * hit.KnockbackForce, 2f),
+                    ForceMode2D.Impulse);
             }
         }
+
+        return CombatHitResult.Damaged;
     }
 }

@@ -1,5 +1,6 @@
 using UnityEngine;
 using System.Collections.Generic;
+using Game.Gameplay;
 
 /// <summary>
 /// 攻击判定框：挂在角色子 GameObject 上，配合 Trigger Collider2D 使用。
@@ -91,10 +92,19 @@ public class Hitbox : MonoBehaviour
         if (knockbackDir == Vector2.zero) knockbackDir = Vector2.right;
 
         int finalDamage = CalculateDamage(hurtbox.gameObject);
-        hurtbox.ReceiveHit(finalDamage, knockbackDir.x, knockbackForce, this);
-        owner?.GetComponent<PlayerStateMachine>()?.MarkHit();
-        CombatEvents.InvokeHitLanded(hurtbox.transform.position, finalDamage);
-        ApplyElementalEffects(hurtbox.gameObject);
+        var source = owner != null ? owner.GetComponent<IParryResponder>() : null;
+        var result = hurtbox.ReceiveHit(new CombatHit(
+            finalDamage,
+            knockbackDir.x,
+            knockbackForce,
+            isParryable,
+            source));
+        if (result == CombatHitResult.Damaged)
+        {
+            owner?.GetComponent<PlayerStateMachine>()?.MarkHit();
+            CombatEvents.InvokeHitLanded(hurtbox.transform.position, finalDamage);
+            ApplyElementalEffects(hurtbox.gameObject);
+        }
     }
 
     int CalculateDamage(GameObject target)

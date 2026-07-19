@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using Game.Gameplay;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -14,6 +15,16 @@ namespace Game.Tests.PlayMode
     {
         private const BindingFlags InstanceFlags =
             BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+
+        private sealed class RecordingParryResponder : IParryResponder
+        {
+            public int CallCount { get; private set; }
+
+            public void OnParried()
+            {
+                CallCount++;
+            }
+        }
 
         [UnityTest]
         public IEnumerator LightAttackActivatesHitboxAndDamagesOneActiveGruntOnce()
@@ -210,13 +221,406 @@ namespace Game.Tests.PlayMode
                 "Die must revoke counter authorization even if stale state tries to reopen it.");
         }
 
+        [UnityTest]
+        public IEnumerator ParryableCombatHitUsesOnlyHurtboxDecisionAndCallsSourceOnce()
+        {
+            yield return LoadBattleScene();
+
+            DisableActiveEnemyBehaviours();
+            var player = GameObject.Find("Player");
+            var stateMachine = FindComponent(player, "PlayerStateMachine");
+            var stats = FindComponent(player, "CharacterStats");
+            var hurtbox = FindComponent(player, "Hurtbox");
+            var source = new RecordingParryResponder();
+            var hpBefore = GetIntField(stats, "currentHp");
+
+            Invoke(stateMachine, "RequestParry");
+            var firstResult = ReceiveCombatHit(
+                hurtbox,
+                new CombatHit(12, -1f, 3f, true, source));
+
+            Assert.That(firstResult, Is.EqualTo(CombatHitResult.Parried));
+            Assert.That(GetIntField(stats, "currentHp"), Is.EqualTo(hpBefore));
+            Assert.That(GetStateName(stateMachine), Is.EqualTo("ParrySuccess"));
+            Assert.That(source.CallCount, Is.EqualTo(1));
+
+            var secondResult = ReceiveCombatHit(
+                hurtbox,
+                new CombatHit(12, -1f, 3f, true, source));
+
+            Assert.That(secondResult, Is.EqualTo(CombatHitResult.Damaged),
+                "Once the live parry window is consumed, a second contact must follow normal damage.");
+            Assert.That(source.CallCount, Is.EqualTo(1),
+                "A terminal second contact must not notify the same source again.");
+        }
+
+        [UnityTest]
+        public IEnumerator UnparryableCombatHitDamagesInsideParryWindowWithoutCallingSource()
+        {
+            yield return LoadBattleScene();
+
+            DisableActiveEnemyBehaviours();
+            var player = GameObject.Find("Player");
+            var stateMachine = FindComponent(player, "PlayerStateMachine");
+            var stats = FindComponent(player, "CharacterStats");
+            var hurtbox = FindComponent(player, "Hurtbox");
+            var source = new RecordingParryResponder();
+            var hpBefore = GetIntField(stats, "currentHp");
+
+            Invoke(stateMachine, "RequestParry");
+            var result = ReceiveCombatHit(
+                hurtbox,
+                new CombatHit(9, 1f, 2f, false, source));
+
+            Assert.That(result, Is.EqualTo(CombatHitResult.Damaged));
+            Assert.That(GetIntField(stats, "currentHp"), Is.EqualTo(hpBefore - 9));
+            Assert.That(GetStateName(stateMachine), Is.EqualTo("Hurt"));
+            Assert.That(source.CallCount, Is.Zero);
+        }
+
+        [UnityTest]
+        public IEnumerator LivingEnemyResponderEntersStunnedWithoutResettingDuplicateParry()
+        {
+            yield return LoadBattleScene();
+
+            Component grunt = null;
+            yield return WaitForActiveSceneComponent("Grunt", component => grunt = component);
+            DisableActiveEnemyBehaviours();
+            Assert.That(grunt, Is.InstanceOf<IParryResponder>(),
+                "EnemyBase must expose the gameplay parry responder contract.");
+            var responder = (IParryResponder)grunt;
+
+            responder.OnParried();
+            Assert.That(GetPropertyValue(grunt, "CurrentState")?.ToString(), Is.EqualTo("Stunned"));
+
+            SetFieldValue(grunt, "_stateTimer", 0.4f);
+            responder.OnParried();
+
+            Assert.That(GetPropertyValue(grunt, "CurrentState")?.ToString(), Is.EqualTo("Stunned"));
+            Assert.That((float)GetFieldValue(grunt, "_stateTimer"), Is.EqualTo(0.4f),
+                "A duplicate callback while already stunned must not restart the stun duration.");
+        }
+
+        [UnityTest]
+        public IEnumerator HitboxResolvesOwnerResponderAndKeepsPerHurtboxDeduplication()
+        {
+            yield return LoadBattleScene();
+
+            Component grunt = null;
+            yield return WaitForActiveSceneComponent("Grunt", component => grunt = component);
+            DisableActiveEnemyBehaviours();
+            var player = GameObject.Find("Player");
+            var stateMachine = FindComponent(player, "PlayerStateMachine");
+            var playerCollider = player.GetComponent<Collider2D>();
+            var hitboxObject = new GameObject("EnemyHitboxProbe");
+            hitboxObject.transform.position = new Vector3(100f, 100f, 0f);
+            hitboxObject.AddComponent<BoxCollider2D>().isTrigger = true;
+            var hitboxType = stateMachine.GetType().Assembly.GetType("Hitbox");
+            var hitbox = hitboxObject.AddComponent(hitboxType);
+            SetFieldValue(hitbox, "owner", grunt.gameObject);
+            SetFieldValue(hitbox, "damage", 7);
+            SetFieldValue(hitbox, "isParryable", true);
+
+            Invoke(stateMachine, "RequestParry");
+            Invoke(hitbox, "EnableHitbox");
+            InvokeWithArguments(hitbox, "OnTriggerEnter2D", playerCollider);
+
+            Assert.That(GetStateName(stateMachine), Is.EqualTo("ParrySuccess"));
+            Assert.That(GetPropertyValue(grunt, "CurrentState")?.ToString(), Is.EqualTo("Stunned"));
+            SetFieldValue(grunt, "_stateTimer", 0.4f);
+
+            InvokeWithArguments(hitbox, "OnTriggerEnter2D", playerCollider);
+            Assert.That((float)GetFieldValue(grunt, "_stateTimer"), Is.EqualTo(0.4f),
+                "The same Hurtbox must remain deduplicated for one active Hitbox window.");
+
+            UnityEngine.Object.Destroy(hitboxObject);
+        }
+
+        [UnityTest]
+        public IEnumerator ParriedProjectileReversesSurvivesThenDamagesEnemy()
+        {
+            yield return LoadBattleScene();
+
+            Component grunt = null;
+            yield return WaitForActiveSceneComponent("Grunt", component => grunt = component);
+            DisableActiveEnemyBehaviours();
+            var player = GameObject.Find("Player");
+            var stateMachine = FindComponent(player, "PlayerStateMachine");
+            var playerCollider = player.GetComponent<Collider2D>();
+            var projectileOwner = new GameObject("ProjectileOwner");
+            var projectile = CreateProjectile(stateMachine, Vector2.right, projectileOwner);
+
+            Invoke(stateMachine, "RequestParry");
+            InvokeWithArguments(projectile, "OnTriggerEnter2D", playerCollider);
+
+            Assert.That(GetStateName(stateMachine), Is.EqualTo("ParrySuccess"));
+            Assert.That(GetFieldValue(projectile, "owner"), Is.Null);
+            Assert.That(projectile.gameObject.tag, Is.EqualTo("PlayerProjectile"));
+            Assert.That(projectile.GetComponent<Rigidbody2D>().velocity.x, Is.LessThan(0f));
+
+            yield return null;
+            Assert.That(projectile != null && projectile.gameObject.activeInHierarchy, Is.True,
+                "A parried projectile must survive the original player-contact branch for reflected flight.");
+
+            FreezeEnemyAt(grunt, new Vector3(50f, 50f, 0f));
+            SetIntField(grunt, "maxHp", 500);
+            SetIntField(grunt, "hp", 500);
+            InvokeWithArguments(projectile, "OnTriggerEnter2D", grunt.GetComponent<Collider2D>());
+
+            Assert.That(GetIntField(grunt, "hp"), Is.LessThan(500),
+                "A reflected projectile must route enemy damage through CombatHit.");
+            yield return null;
+            Assert.That(projectile == null, Is.True,
+                "A reflected projectile must end after damaging an enemy.");
+            UnityEngine.Object.Destroy(projectileOwner);
+        }
+
+        [UnityTest]
+        public IEnumerator OrdinaryProjectileDamageDestroysAfterPlayerContact()
+        {
+            yield return LoadBattleScene();
+
+            DisableActiveEnemyBehaviours();
+            var player = GameObject.Find("Player");
+            var stateMachine = FindComponent(player, "PlayerStateMachine");
+            var stats = FindComponent(player, "CharacterStats");
+            var hpBefore = GetIntField(stats, "currentHp");
+            var projectileOwner = new GameObject("ProjectileOwner");
+            var projectile = CreateProjectile(stateMachine, Vector2.left, projectileOwner);
+
+            InvokeWithArguments(projectile, "OnTriggerEnter2D", player.GetComponent<Collider2D>());
+
+            Assert.That(GetIntField(stats, "currentHp"), Is.LessThan(hpBefore));
+            yield return null;
+            Assert.That(projectile == null, Is.True,
+                "An ordinary damaging player contact must retain the existing terminal lifecycle.");
+            UnityEngine.Object.Destroy(projectileOwner);
+        }
+
+        [UnityTest]
+        public IEnumerator HurtboxWithoutDamageReceiverReturnsIgnored()
+        {
+            yield return LoadBattleScene();
+
+            var application = GameObject.Find("[GameApplication]");
+            var assembly = application.GetComponents<Component>()
+                .First(component => component != null && component.GetType().Name == "GameApplication")
+                .GetType().Assembly;
+            var target = new GameObject("ReceiverlessHurtbox");
+            var hurtbox = target.AddComponent(assembly.GetType("Hurtbox"));
+
+            var result = ReceiveCombatHit(
+                hurtbox,
+                new CombatHit(5, 1f, 1f, false, new RecordingParryResponder()));
+
+            Assert.That(result, Is.EqualTo(CombatHitResult.Ignored));
+            UnityEngine.Object.Destroy(target);
+        }
+
+        [UnityTest]
+        public IEnumerator ParryCancelsActiveEliteComboAndLaterAttacksStillWork()
+        {
+            yield return LoadBattleScene();
+
+            DisableActiveEnemyBehaviours();
+            var player = GameObject.Find("Player");
+            var stateMachine = FindComponent(player, "PlayerStateMachine");
+            var stats = FindComponent(player, "CharacterStats");
+            SetFieldValue(stateMachine, "slowMoDuration", 0.05f);
+            SetFieldValue(stateMachine, "counterWindowDuration", 0.05f);
+            var elite = CreateEnemyProbe(stateMachine, "Elite", "EliteComboProbe");
+            elite.transform.position = player.transform.position - new Vector3(0.7f, 0.2f, 0f);
+            SetFieldValue(elite, "comboCount", 3);
+            SetFieldValue(elite, "comboInterval", 0.05f);
+            Physics2D.SyncTransforms();
+
+            var combatEventsType = stateMachine.GetType().Assembly.GetType("CombatEvents");
+            var damageTakenEvent = combatEventsType.GetEvent("OnDamageTaken", BindingFlags.Static | BindingFlags.Public);
+            var damageCallbacks = 0;
+            Action<Vector3, int> damageProbe = (position, damage) => damageCallbacks++;
+            damageTakenEvent.AddEventHandler(null, damageProbe);
+            try
+            {
+                var hpBeforeParry = GetIntField(stats, "currentHp");
+                Invoke(stateMachine, "RequestParry");
+                Invoke(elite, "OnAttackStart");
+
+                Assert.That(GetStateName(stateMachine), Is.EqualTo("ParrySuccess"),
+                    "The first real Elite combo strike must be consumed by the live parry window.");
+                Assert.That(GetPropertyValue(elite, "CurrentState")?.ToString(), Is.EqualTo("Stunned"));
+
+                yield return new WaitForSecondsRealtime(0.8f);
+
+                Assert.That(GetIntField(stats, "currentHp"), Is.EqualTo(hpBeforeParry),
+                    "Queued Elite combo strikes must not execute after the source accepts parry.");
+                Assert.That(damageCallbacks, Is.Zero,
+                    "Cancelled combo strikes must not emit later player-damage callbacks.");
+
+                elite.transform.position = new Vector3(100f, 100f, 0f);
+                (elite as Behaviour).enabled = true;
+                yield return WaitForEnemyToLeaveState(elite, "Stunned", 240);
+                yield return WaitForPlayerIdle(stateMachine);
+
+                elite.transform.position = player.transform.position - new Vector3(0.7f, 0.2f, 0f);
+                SetFieldValue(elite, "comboCount", 1);
+                elite.GetComponent<Rigidbody2D>().velocity = Vector2.zero;
+                Invoke(elite, "FacePlayer");
+                (elite as Behaviour).enabled = false;
+                Physics2D.SyncTransforms();
+                var facingDirection = (int)GetFieldValue(elite, "_facingDirection");
+                var attackCenter = (Vector2)elite.transform.position
+                                   + new Vector2(facingDirection * 0.7f, 0.2f);
+                Assert.That(
+                    Physics2D.OverlapBoxAll(attackCenter, new Vector2(1f, 0.8f), 0f)
+                        .Any(collider => collider.gameObject == player),
+                    Is.True,
+                    "The recovered Elite's real melee attack box must overlap the Player fixture.");
+                var hpBeforeLaterAttack = GetIntField(stats, "currentHp");
+                Invoke(elite, "OnAttackStart");
+                yield return null;
+
+                Assert.That(GetIntField(stats, "currentHp"), Is.LessThan(hpBeforeLaterAttack),
+                    "Stopping the parried coroutine must not permanently disable future attacks after recovery.");
+                Assert.That(damageCallbacks, Is.EqualTo(1));
+            }
+            finally
+            {
+                damageTakenEvent.RemoveEventHandler(null, damageProbe);
+                if (elite != null)
+                {
+                    UnityEngine.Object.Destroy(elite.gameObject);
+                }
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator DeadEnemyCanonicalContactReturnsIgnored()
+        {
+            yield return LoadBattleScene();
+
+            DisableActiveEnemyBehaviours();
+            var player = GameObject.Find("Player");
+            var stateMachine = FindComponent(player, "PlayerStateMachine");
+            var grunt = CreateEnemyProbe(stateMachine, "Grunt", "DeadGruntCanonicalProbe");
+            SetIntField(grunt, "expValue", 0);
+            InvokeWithArguments(grunt, "TakeDamage", 100000, 0f, 0f);
+            Assert.That(GetBoolProperty(grunt, "IsDead"), Is.True);
+
+            var hurtbox = FindComponent(grunt.gameObject, "Hurtbox");
+            var directResult = ReceiveCombatHit(
+                hurtbox,
+                new CombatHit(10, 1f, 3f, false, new RecordingParryResponder()));
+            Assert.That(directResult, Is.EqualTo(CombatHitResult.Ignored),
+                "A dead EnemyBase is no longer a valid damage receiver.");
+            UnityEngine.Object.Destroy(grunt.gameObject);
+            yield return null;
+        }
+
+        [UnityTest]
+        public IEnumerator DeadEnemyHitboxContactHasNoCombatOrElementalSideEffects()
+        {
+            yield return LoadBattleScene();
+
+            DisableActiveEnemyBehaviours();
+            var player = GameObject.Find("Player");
+            var stateMachine = FindComponent(player, "PlayerStateMachine");
+            var grunt = CreateEnemyProbe(stateMachine, "Grunt", "DeadGruntHitboxProbe");
+            SetIntField(grunt, "expValue", 0);
+            grunt.gameObject.AddComponent(grunt.GetType().Assembly.GetType("CharacterStats"));
+            InvokeWithArguments(grunt, "TakeDamage", 100000, 0f, 0f);
+            Assert.That(GetBoolProperty(grunt, "IsDead"), Is.True);
+
+            var hitbox = FindComponent(GameObject.Find("AttackHitbox"), "Hitbox");
+            var inventory = ConfigureElementalInventory(stateMachine.GetType().Assembly, "elem_burn");
+            var combatEventsType = stateMachine.GetType().Assembly.GetType("CombatEvents");
+            var hitLandedEvent = combatEventsType.GetEvent("OnHitLanded", BindingFlags.Static | BindingFlags.Public);
+            var hitCallbacks = 0;
+            Action<Vector3, int> hitProbe = (position, damage) => hitCallbacks++;
+            hitLandedEvent.AddEventHandler(null, hitProbe);
+            try
+            {
+                Invoke(hitbox, "EnableHitbox");
+                InvokeWithArguments(hitbox, "OnTriggerEnter2D", grunt.GetComponent<Collider2D>());
+
+                var observedSideEffects = new List<string>();
+                if (GetBoolProperty(stateMachine, "HasHitThisAttack"))
+                    observedSideEffects.Add("MarkHit");
+                if (hitCallbacks != 0)
+                    observedSideEffects.Add($"OnHitLanded:{hitCallbacks}");
+                if (FindComponentByName(grunt.gameObject, "ActiveEffect") != null)
+                    observedSideEffects.Add("ActiveEffect");
+
+                Assert.That(observedSideEffects, Is.Empty,
+                    "Corpse contact must not unlock combo, emit hit events, or apply elemental effects.");
+            }
+            finally
+            {
+                hitLandedEvent.RemoveEventHandler(null, hitProbe);
+                inventory.GetType().GetMethod("Reset", InstanceFlags).Invoke(inventory, null);
+                if (grunt != null)
+                {
+                    UnityEngine.Object.Destroy(grunt.gameObject);
+                }
+            }
+            yield return null;
+        }
+
+        [UnityTest]
+        public IEnumerator DeadCharacterStatsReceiverReturnsIgnored()
+        {
+            yield return LoadBattleScene();
+
+            var application = GameObject.Find("[GameApplication]");
+            var assembly = application.GetComponents<Component>()
+                .First(component => component != null && component.GetType().Name == "GameApplication")
+                .GetType().Assembly;
+            var target = new GameObject("DeadStatsReceiver");
+            target.transform.position = new Vector3(100f, 100f, 0f);
+            target.AddComponent<Rigidbody2D>().gravityScale = 0f;
+            target.AddComponent<BoxCollider2D>();
+            var stats = target.AddComponent(assembly.GetType("CharacterStats"));
+            var hurtbox = target.AddComponent(assembly.GetType("Hurtbox"));
+            SetFieldValue(hurtbox, "stats", stats);
+            InvokeWithArguments(stats, "TakeDamage", 100000);
+            Assert.That(GetBoolProperty(stats, "IsDead"), Is.True);
+
+            var result = ReceiveCombatHit(
+                hurtbox,
+                new CombatHit(10, 1f, 3f, false, new RecordingParryResponder()));
+
+            Assert.That(result, Is.EqualTo(CombatHitResult.Ignored));
+            UnityEngine.Object.Destroy(target);
+        }
+
         private static IEnumerator LoadBattleScene()
         {
             Time.timeScale = 1f;
+            MovePersistentEnemiesIntoActiveScene();
             yield return SceneManager.LoadSceneAsync("BattleScene", LoadSceneMode.Single);
             yield return null;
             yield return null;
             yield return WaitForApplicationReady();
+        }
+
+        private static void MovePersistentEnemiesIntoActiveScene()
+        {
+            var activeScene = SceneManager.GetActiveScene();
+            if (!activeScene.IsValid() || !activeScene.isLoaded)
+            {
+                return;
+            }
+
+            var persistentEnemies = Resources.FindObjectsOfTypeAll<Component>()
+                .Where(component => component != null
+                                    && component.gameObject.activeInHierarchy
+                                    && IsEnemyType(component.GetType())
+                                    && component.gameObject.scene != activeScene)
+                .ToArray();
+            foreach (var enemy in persistentEnemies)
+            {
+                enemy.transform.SetParent(null);
+                SceneManager.MoveGameObjectToScene(enemy.gameObject, activeScene);
+            }
         }
 
         private static IEnumerator WaitForApplicationReady()
@@ -299,6 +703,17 @@ namespace Game.Tests.PlayMode
         {
             foreach (var component in Resources.FindObjectsOfTypeAll<Component>())
             {
+                if (component is MonoBehaviour spawner
+                    && component.GetType().Name == "WaveSpawner"
+                    && component.gameObject.activeInHierarchy)
+                {
+                    spawner.StopAllCoroutines();
+                    spawner.enabled = false;
+                }
+            }
+
+            foreach (var component in Resources.FindObjectsOfTypeAll<Component>())
+            {
                 if (!(component is Behaviour behaviour)
                     || !component.gameObject.activeInHierarchy
                     || !IsEnemyType(component.GetType()))
@@ -376,11 +791,106 @@ namespace Game.Tests.PlayMode
             return component;
         }
 
+        private static Component CreateProjectile(Component stateMachine, Vector2 direction, GameObject owner)
+        {
+            var projectileObject = new GameObject("ProjectileProbe");
+            projectileObject.transform.position = new Vector3(100f, 100f, 0f);
+            projectileObject.tag = "EnemyProjectile";
+            projectileObject.AddComponent<BoxCollider2D>().isTrigger = true;
+            var body = projectileObject.AddComponent<Rigidbody2D>();
+            body.gravityScale = 0f;
+            var projectileType = stateMachine.GetType().Assembly.GetType("Projectile");
+            Assert.That(projectileType, Is.Not.Null);
+            var projectile = projectileObject.AddComponent(projectileType);
+            InvokeWithArguments(projectile, "Launch", direction, owner);
+            return projectile;
+        }
+
+        private static Component CreateEnemyProbe(Component stateMachine, string typeName, string objectName)
+        {
+            var enemyObject = new GameObject(objectName);
+            enemyObject.AddComponent<SpriteRenderer>();
+            var body = enemyObject.AddComponent<Rigidbody2D>();
+            body.gravityScale = 0f;
+            body.freezeRotation = true;
+            enemyObject.AddComponent<BoxCollider2D>();
+            enemyObject.AddComponent(stateMachine.GetType().Assembly.GetType("HitEffectPlayer"));
+            enemyObject.tag = "Enemy";
+            var enemyType = stateMachine.GetType().Assembly.GetType(typeName);
+            Assert.That(enemyType, Is.Not.Null);
+            var enemy = enemyObject.AddComponent(enemyType);
+            (enemy as Behaviour).enabled = false;
+            return enemy;
+        }
+
+        private static IEnumerator WaitForEnemyToLeaveState(Component enemy, string stateName, int maxFrames)
+        {
+            for (var frame = 0; frame < maxFrames; frame++)
+            {
+                if (GetPropertyValue(enemy, "CurrentState")?.ToString() != stateName)
+                {
+                    yield break;
+                }
+
+                yield return new WaitForSecondsRealtime(0.01f);
+            }
+
+            Assert.Fail($"{enemy.GetType().Name} did not leave {stateName} within {maxFrames} frames.");
+        }
+
+        private static object ConfigureElementalInventory(Assembly assembly, string elementId)
+        {
+            var inventoryType = assembly.GetType("Inventory");
+            var inventory = inventoryType.GetProperty("Instance", BindingFlags.Static | BindingFlags.Public)
+                .GetValue(null);
+            inventoryType.GetMethod("Reset", InstanceFlags).Invoke(inventory, null);
+            var addMethod = inventoryType.GetMethod("AddOrUpgrade", InstanceFlags);
+            var parameters = addMethod.GetParameters();
+            var arguments = parameters
+                .Select(parameter => parameter.DefaultValue == DBNull.Value ? null : parameter.DefaultValue)
+                .ToArray();
+            arguments[0] = elementId;
+            arguments[1] = "Element Probe";
+            arguments[2] = "Element Probe";
+            arguments[3] = "elemental";
+            addMethod.Invoke(inventory, arguments);
+            return inventory;
+        }
+
+        private static Component FindComponentByName(GameObject gameObject, string typeName)
+        {
+            return gameObject.GetComponents<Component>()
+                .FirstOrDefault(component => component != null && component.GetType().Name == typeName);
+        }
+
+        private static CombatHitResult ReceiveCombatHit(Component hurtbox, CombatHit hit)
+        {
+            var method = hurtbox.GetType().GetMethod(
+                "ReceiveHit",
+                InstanceFlags,
+                null,
+                new[] { typeof(CombatHit) },
+                null);
+            Assert.That(method, Is.Not.Null,
+                "Hurtbox must expose the canonical ReceiveHit(CombatHit) entry point.");
+            return (CombatHitResult)method.Invoke(hurtbox, new object[] { hit });
+        }
+
         private static void Invoke(Component component, string methodName)
         {
-            var method = component.GetType().GetMethod(methodName, InstanceFlags);
+            InvokeWithArguments(component, methodName);
+        }
+
+        private static object InvokeWithArguments(Component component, string methodName, params object[] arguments)
+        {
+            var methods = component.GetType().GetMethods(InstanceFlags)
+                .Where(method => method.Name == methodName && method.GetParameters().Length == arguments.Length)
+                .ToArray();
+            Assert.That(methods, Has.Length.EqualTo(1),
+                $"Expected one {component.GetType().Name}.{methodName} overload with {arguments.Length} arguments.");
+            var method = methods.Single();
             Assert.That(method, Is.Not.Null, $"Expected {component.GetType().Name}.{methodName}().");
-            method.Invoke(component, null);
+            return method.Invoke(component, arguments);
         }
 
         private static void SetIntField(Component component, string fieldName, int value)
@@ -409,6 +919,13 @@ namespace Game.Tests.PlayMode
             var field = component.GetType().GetField(fieldName, InstanceFlags);
             Assert.That(field, Is.Not.Null, $"Expected {component.GetType().Name}.{fieldName}.");
             return field.GetValue(component);
+        }
+
+        private static object GetPropertyValue(Component component, string propertyName)
+        {
+            var property = component.GetType().GetProperty(propertyName, InstanceFlags);
+            Assert.That(property, Is.Not.Null, $"Expected {component.GetType().Name}.{propertyName}.");
+            return property.GetValue(component);
         }
 
         private static void SetFieldValue(Component component, string fieldName, object value)

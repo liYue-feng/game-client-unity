@@ -1,5 +1,6 @@
 using UnityEngine;
 using System.Collections;
+using Game.Gameplay;
 
 /// <summary>
 /// 敌人基类：所有敌人共享的核心逻辑。
@@ -10,7 +11,7 @@ using System.Collections;
 /// 黄色=可弹反，红色=不可弹反（必须闪避）。
 /// </summary>
 [RequireComponent(typeof(Rigidbody2D))]
-public abstract class EnemyBase : MonoBehaviour
+public abstract class EnemyBase : MonoBehaviour, IParryResponder
 {
     [Header("一级属性")]
     public PrimaryAttributes primary = new PrimaryAttributes
@@ -310,6 +311,21 @@ public abstract class EnemyBase : MonoBehaviour
     {
         ChangeState(EnemyState.Stunned);
         _stateTimer = duration;
+    }
+
+    public void OnParried()
+    {
+        if (IsDead || CurrentState == EnemyState.Stunned)
+        {
+            return;
+        }
+
+        StopAllCoroutines();
+        if (_rb != null)
+        {
+            _rb.velocity = Vector2.zero;
+        }
+        Stun();
     }
 
     /// <summary>死亡</summary>

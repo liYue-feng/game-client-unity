@@ -1,5 +1,6 @@
 using UnityEngine;
 using System.Collections;
+using Game.Gameplay;
 
 /// <summary>
 /// 精英敌人：三连击 + 蓄力重击，可闪避玩家攻击。
@@ -97,7 +98,12 @@ public class Elite : EnemyBase
                 var hurtbox = hit.GetComponent<Hurtbox>();
                 if (hurtbox != null)
                 {
-                    hurtbox.ReceiveHit(dmg, _facingDirection, knockback, null);
+                    hurtbox.ReceiveHit(new CombatHit(
+                        dmg,
+                        _facingDirection,
+                        knockback,
+                        isCurrentAttackParryable,
+                        this));
                 }
             }
         }

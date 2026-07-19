@@ -1,5 +1,6 @@
 using UnityEngine;
 using System.Collections;
+using Game.Gameplay;
 
 /// <summary>
 /// Boss敌人：双阶段战斗，50%血量狂暴。
@@ -195,8 +196,12 @@ public class Boss : EnemyBase
                 var hurtbox = hit.GetComponent<Hurtbox>();
                 if (hurtbox != null)
                 {
-                    // 不可弹反攻击通过 isParryable=false 的 hitbox 传递
-                    hurtbox.ReceiveHit(aoeDamage, 0f, 8f, null);
+                    hurtbox.ReceiveHit(new CombatHit(
+                        aoeDamage,
+                        0f,
+                        8f,
+                        false,
+                        this));
                 }
             }
         }
@@ -214,7 +219,12 @@ public class Boss : EnemyBase
                 var hurtbox = hit.GetComponent<Hurtbox>();
                 if (hurtbox != null)
                 {
-                    hurtbox.ReceiveHit(dmg, _facingDirection, knockback, null);
+                    hurtbox.ReceiveHit(new CombatHit(
+                        dmg,
+                        _facingDirection,
+                        knockback,
+                        isCurrentAttackParryable,
+                        this));
                 }
             }
         }

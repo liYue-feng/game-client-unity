@@ -1,4 +1,5 @@
 using UnityEngine;
+using Game.Gameplay;
 
 /// <summary>
 /// 杂兵：最简单的近战敌人。
@@ -36,9 +37,12 @@ public class Grunt : EnemyBase
                 var hurtbox = hit.GetComponent<Hurtbox>();
                 if (hurtbox != null)
                 {
-                    // 杂兵攻击是可弹反的，所以传入一个虚拟hitbox信息
-                    // 实际弹反判定在 Hurtbox.ReceiveHit 中处理
-                    hurtbox.ReceiveHit(damage, _facingDirection, 5f, null);
+                    hurtbox.ReceiveHit(new CombatHit(
+                        damage,
+                        _facingDirection,
+                        5f,
+                        isCurrentAttackParryable,
+                        this));
                 }
             }
         }
