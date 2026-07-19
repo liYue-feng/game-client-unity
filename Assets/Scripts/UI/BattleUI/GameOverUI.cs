@@ -1,162 +1,218 @@
+using System;
 using UnityEngine;
 using UnityEngine.UI;
-using System;
 
-/// <summary>
-/// 游戏结束界面 — 死亡覆层 + 结算按钮
-/// 通过 GameOverUI.Show() 静态方法调用
-/// </summary>
 public class GameOverUI : MonoBehaviour
 {
     public static GameOverUI Instance { get; private set; }
 
     public event Action OnRestart;
-    public event Action OnReturnToMenu;
 
     private GameObject _overlay;
     private Text _resultText;
     private Font _font;
+    private GameObject _canvasRoot;
+    private Texture2D _overlayTexture;
 
-    void Awake()
+    private void Awake()
     {
-        if (Instance != null) { Destroy(gameObject); return; }
+        if (Instance != null && !ReferenceEquals(Instance, this))
+        {
+            Destroy(gameObject);
+            return;
+        }
+
         Instance = this;
-        DontDestroyOnLoad(gameObject);
     }
 
-    /// <summary> 显示游戏结束界面 </summary>
     public static void Show(bool victory, CombatResultData data = null)
     {
-        var go = new GameObject("GameOverUI_Runtime");
-        var ui = go.AddComponent<GameOverUI>();
-        ui.BuildAndShow(victory, data);
+        if (Instance == null)
+        {
+            Debug.LogError("[GameOverUI] Scene-owned instance is not installed.");
+            return;
+        }
+
+        Instance.DisplayGameOver(victory, data);
     }
 
-    /// <summary> 在已有 GameOverUI 实例上显示 </summary>
     public void DisplayGameOver(bool victory, CombatResultData data = null)
     {
-        BuildAndShow(victory, data);
+        if (_canvasRoot == null)
+        {
+            Build(data);
+        }
+
+        _resultText.text = victory ? "\u80dc \u5229" : "\u843d \u8d25";
+        _resultText.color = victory
+            ? new Color(0.65f, 0.15f, 0.15f)
+            : new Color(0.1f, 0.1f, 0.1f);
+        _canvasRoot.SetActive(true);
     }
 
-    void BuildAndShow(bool victory, CombatResultData data)
+    private void Build(CombatResultData data)
     {
         _font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
 
-        // Canvas
-        var canvasGo = new GameObject("OverlayCanvas");
-        canvasGo.transform.SetParent(transform);
-        var canvas = canvasGo.AddComponent<Canvas>();
+        _canvasRoot = new GameObject("OverlayCanvas");
+        _canvasRoot.transform.SetParent(transform, false);
+        var canvas = _canvasRoot.AddComponent<Canvas>();
         canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-        canvas.sortingOrder = 100; // 最顶层
-        canvasGo.AddComponent<CanvasScaler>().referenceResolution = new Vector2(1080, 1920);
-        canvasGo.AddComponent<GraphicRaycaster>();
+        canvas.sortingOrder = 100;
+        _canvasRoot.AddComponent<CanvasScaler>().referenceResolution = new Vector2(1080, 1920);
+        _canvasRoot.AddComponent<GraphicRaycaster>();
 
-        // 半透明覆层
         _overlay = new GameObject("DarkOverlay");
-        _overlay.transform.SetParent(canvasGo.transform, false);
-        var overlayImg = _overlay.AddComponent<RawImage>();
-        overlayImg.texture = MakeOverlayTex(4, 4);
-        overlayImg.color = new Color(0, 0, 0, 0.7f);
-        var ovRect = _overlay.GetComponent<RectTransform>();
-        ovRect.anchorMin = Vector2.zero;
-        ovRect.anchorMax = Vector2.one;
-        ovRect.sizeDelta = Vector2.zero;
+        _overlay.transform.SetParent(_canvasRoot.transform, false);
+        var overlayImage = _overlay.AddComponent<RawImage>();
+        _overlayTexture = MakeOverlayTexture(4, 4);
+        overlayImage.texture = _overlayTexture;
+        overlayImage.color = new Color(0f, 0f, 0f, 0.7f);
+        var overlayRect = _overlay.GetComponent<RectTransform>();
+        overlayRect.anchorMin = Vector2.zero;
+        overlayRect.anchorMax = Vector2.one;
+        overlayRect.sizeDelta = Vector2.zero;
 
-        // 结果面板
-        var panel = CreatePanel(canvasGo.transform, "ResultPanel", 600, 500);
+        var panel = CreatePanel(_canvasRoot.transform, "ResultPanel", 600, 500);
         panel.transform.localPosition = Vector3.zero;
 
-        // 标题
-        var title = CreateText(panel.transform, "Title",
-            victory ? "胜  利" : "落  败", 72, TextAnchor.MiddleCenter);
-        title.color = victory
-            ? new Color(0.65f, 0.15f, 0.15f)   // 朱砂红（胜）
-            : new Color(0.1f, 0.1f, 0.1f);      // 墨黑（败）
-        title.rectTransform.anchoredPosition = new Vector2(0, 160);
-        title.rectTransform.sizeDelta = new Vector2(400, 100);
+        _resultText = CreateText(panel.transform, "Title", string.Empty, 72, TextAnchor.MiddleCenter);
+        _resultText.rectTransform.anchoredPosition = new Vector2(0, 160);
+        _resultText.rectTransform.sizeDelta = new Vector2(400, 100);
 
-        // 结算数据
         if (data != null)
         {
-            var statsY = 80;
-            CreateStatLine(panel.transform, "击杀数", data.killCount.ToString(), new Vector2(0, statsY));
-            CreateStatLine(panel.transform, "获得经验", data.expGained.ToString(), new Vector2(0, statsY - 45));
-            CreateStatLine(panel.transform, "最大连击", data.maxCombo.ToString(), new Vector2(0, statsY - 90));
-            CreateStatLine(panel.transform, "存活时间",
-                $"{data.survivalTime / 60:D2}:{data.survivalTime % 60:D2}", new Vector2(0, statsY - 135));
+            const int statsY = 80;
+            CreateStatLine(panel.transform, "\u51fb\u6740\u6570", data.killCount.ToString(), new Vector2(0, statsY));
+            CreateStatLine(panel.transform, "\u83b7\u5f97\u7ecf\u9a8c", data.expGained.ToString(), new Vector2(0, statsY - 45));
+            CreateStatLine(panel.transform, "\u6700\u5927\u8fde\u51fb", data.maxCombo.ToString(), new Vector2(0, statsY - 90));
+            CreateStatLine(
+                panel.transform,
+                "\u5b58\u6d3b\u65f6\u95f4",
+                $"{data.survivalTime / 60:D2}:{data.survivalTime % 60:D2}",
+                new Vector2(0, statsY - 135));
         }
 
-        // 按钮
-        CreateInkButton(panel.transform, "BtnRestart", "再来一局", () =>
+        CreateInkButton(
+            panel.transform,
+            "BtnRestart",
+            "\u518d\u6765\u4e00\u5c40",
+            () => OnRestart?.Invoke(),
+            new Vector2(0, -160));
+    }
+
+    private Texture2D MakeOverlayTexture(int width, int height)
+    {
+        var texture = new Texture2D(width, height);
+        for (var y = 0; y < height; y++)
         {
-            OnRestart?.Invoke();
-            SceneTransitionManager.Instance?.LoadScene("BattleScene");
-        }, new Vector2(-140, -160));
+            for (var x = 0; x < width; x++)
+            {
+                texture.SetPixel(x, y, Color.black);
+            }
+        }
 
-        CreateInkButton(panel.transform, "BtnMenu", "返回主菜单", () =>
+        texture.filterMode = FilterMode.Bilinear;
+        texture.Apply();
+        return texture;
+    }
+
+    private void CreateStatLine(Transform parent, string label, string value, Vector2 position)
+    {
+        var statObject = new GameObject($"Stat_{label}");
+        statObject.transform.SetParent(parent, false);
+        var statRect = statObject.AddComponent<RectTransform>();
+        statRect.anchoredPosition = position;
+        statRect.sizeDelta = new Vector2(400, 40);
+
+        var text = CreateText(
+            statObject.transform,
+            "T",
+            $"{label}: {value}",
+            28,
+            TextAnchor.MiddleCenter);
+        text.color = new Color(0.15f, 0.15f, 0.15f);
+        text.rectTransform.anchoredPosition = Vector2.zero;
+        text.rectTransform.sizeDelta = new Vector2(400, 40);
+    }
+
+    private GameObject CreatePanel(Transform parent, string objectName, int width, int height)
+    {
+        var panel = new GameObject(objectName);
+        panel.transform.SetParent(parent, false);
+        panel.AddComponent<RectTransform>().sizeDelta = new Vector2(width, height);
+        panel.AddComponent<InkPanel>();
+        return panel;
+    }
+
+    private Text CreateText(
+        Transform parent,
+        string objectName,
+        string content,
+        int fontSize,
+        TextAnchor alignment)
+    {
+        var textObject = new GameObject(objectName);
+        textObject.transform.SetParent(parent, false);
+        textObject.AddComponent<RectTransform>();
+        var text = textObject.AddComponent<Text>();
+        text.text = content;
+        text.fontSize = fontSize;
+        text.alignment = alignment;
+        text.font = _font;
+        return text;
+    }
+
+    private void CreateInkButton(
+        Transform parent,
+        string objectName,
+        string label,
+        Action callback,
+        Vector2 position)
+    {
+        var buttonObject = new GameObject(objectName);
+        buttonObject.transform.SetParent(parent, false);
+        var rect = buttonObject.AddComponent<RectTransform>();
+        rect.anchoredPosition = position;
+        rect.sizeDelta = new Vector2(240, 60);
+        var background = buttonObject.AddComponent<Image>();
+        background.color = new Color(0.96f, 0.94f, 0.91f, 1f);
+        var button = buttonObject.AddComponent<Button>();
+        button.targetGraphic = background;
+        button.onClick.AddListener(() => callback());
+
+        var labelObject = new GameObject("Label");
+        labelObject.transform.SetParent(buttonObject.transform, false);
+        var labelText = labelObject.AddComponent<Text>();
+        labelText.text = label;
+        labelText.font = _font;
+        labelText.fontSize = 28;
+        labelText.alignment = TextAnchor.MiddleCenter;
+        labelText.color = new Color(0.1f, 0.1f, 0.1f, 1f);
+        labelText.raycastTarget = false;
+        var labelRect = labelObject.GetComponent<RectTransform>();
+        labelRect.anchorMin = Vector2.zero;
+        labelRect.anchorMax = Vector2.one;
+        labelRect.offsetMin = Vector2.zero;
+        labelRect.offsetMax = Vector2.zero;
+    }
+
+    private void OnDestroy()
+    {
+        OnRestart = null;
+        if (_overlayTexture != null)
         {
-            OnReturnToMenu?.Invoke();
-            SceneTransitionManager.Instance?.LoadScene("MenuScene");
-        }, new Vector2(140, -160));
+            Destroy(_overlayTexture);
+            _overlayTexture = null;
+        }
+
+        if (ReferenceEquals(Instance, this))
+        {
+            Instance = null;
+        }
     }
-
-    Texture2D MakeOverlayTex(int w, int h)
-    {
-        var tex = new Texture2D(w, h);
-        for (int y = 0; y < h; y++)
-            for (int x = 0; x < w; x++)
-                tex.SetPixel(x, y, Color.black);
-        tex.filterMode = FilterMode.Bilinear;
-        tex.Apply();
-        return tex;
-    }
-
-    void CreateStatLine(Transform parent, string label, string value, Vector2 pos)
-    {
-        var go = new GameObject($"Stat_{label}");
-        go.transform.SetParent(parent, false);
-        go.AddComponent<RectTransform>().anchoredPosition = pos;
-        go.GetComponent<RectTransform>().sizeDelta = new Vector2(400, 40);
-
-        var txt = CreateText(go.transform, "T", $"{label}: {value}", 28, TextAnchor.MiddleCenter);
-        txt.color = new Color(0.15f, 0.15f, 0.15f);
-        txt.rectTransform.anchoredPosition = Vector2.zero;
-        txt.rectTransform.sizeDelta = new Vector2(400, 40);
-    }
-
-    #region 工具方法
-
-    GameObject CreatePanel(Transform p, string n, int w, int h)
-    {
-        var go = new GameObject(n); go.transform.SetParent(p, false);
-        go.AddComponent<RectTransform>().sizeDelta = new Vector2(w, h);
-        go.AddComponent<InkPanel>();
-        return go;
-    }
-
-    Text CreateText(Transform p, string n, string c, int s, TextAnchor a)
-    {
-        var go = new GameObject(n); go.transform.SetParent(p, false);
-        go.AddComponent<RectTransform>();
-        var t = go.AddComponent<Text>();
-        t.text = c; t.fontSize = s; t.alignment = a; t.font = _font;
-        return t;
-    }
-
-    void CreateInkButton(Transform p, string n, string t, Action cb, Vector2 pos)
-    {
-        var go = new GameObject(n); go.transform.SetParent(p, false);
-        var rt = go.AddComponent<RectTransform>();
-        rt.anchoredPosition = pos; rt.sizeDelta = new Vector2(240, 60);
-        var ib = go.AddComponent<InkButton>();
-        ib.buttonText = t; ib.fontSize = 28;
-        go.GetComponent<Button>().onClick.AddListener(() => cb());
-    }
-
-    #endregion
 }
 
-/// <summary> 战斗结算数据 </summary>
 public class CombatResultData
 {
     public int killCount;

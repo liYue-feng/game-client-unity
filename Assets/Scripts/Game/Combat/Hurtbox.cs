@@ -58,21 +58,13 @@ public class Hurtbox : MonoBehaviour
         }
 
         // 通知状态机进入受击
-        if (stateMachine != null)
+        if (stateMachine != null && (stats == null || !stats.IsDead))
         {
-            if (stats != null && stats.IsDead)
-            {
-                stateMachine.ForceDie();
-                CombatEvents.InvokePlayerDeath();
-            }
-            else
-            {
-                stateMachine.ForceHurt();
-            }
+            stateMachine.ForceHurt();
         }
 
         // 击退（仅玩家，敌人由 EnemyBase.TakeDamage 处理）
-        if (stats != null)
+        if (stats != null && !stats.IsDead)
         {
             Rigidbody2D rb = GetComponent<Rigidbody2D>();
             if (rb != null)

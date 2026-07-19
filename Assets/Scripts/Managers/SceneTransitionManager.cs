@@ -145,7 +145,6 @@ public class SceneTransitionManager : MonoBehaviour, IGameService
         {
             elapsed += Time.unscaledDeltaTime;
             _transitionProgress = Mathf.Lerp(from, to, elapsed / transitionDuration);
-            OnGUI(); // 触发一帧渲染
             yield return null;
         }
         _transitionProgress = to;

@@ -13,6 +13,8 @@ public class PlayerInputBridge : MonoBehaviour
     private InputMediator _input;
     private PlayerStateMachine _stateMachine;
 
+    public bool InputEnabled { get; private set; } = true;
+
     private void Awake()
     {
         _input = GetComponent<InputMediator>();
@@ -21,6 +23,7 @@ public class PlayerInputBridge : MonoBehaviour
 
     private void Update()
     {
+        if (!InputEnabled) return;
         if (_stateMachine.CurrentState == PlayerState.Die) return;
 
         // 攻击（优先级：重击 > 轻攻击）
@@ -44,5 +47,10 @@ public class PlayerInputBridge : MonoBehaviour
         {
             _stateMachine.RequestDash();
         }
+    }
+
+    public void SetInputEnabled(bool enabled)
+    {
+        InputEnabled = enabled;
     }
 }

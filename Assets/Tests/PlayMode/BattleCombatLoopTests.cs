@@ -8,6 +8,7 @@ using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.TestTools;
+using UnityEngine.UI;
 
 namespace Game.Tests.PlayMode
 {
@@ -24,6 +25,277 @@ namespace Game.Tests.PlayMode
             {
                 CallCount++;
             }
+        }
+
+        [UnityTest]
+        public IEnumerator LethalHurtboxCompletesDefeatExactlyOnce()
+        {
+            yield return LoadBattleScene();
+
+            DisableActiveEnemyBehaviours();
+            var run = FindActiveSceneComponent("BattleRunController");
+            var setup = FindActiveSceneComponent("BattleSceneSetup");
+            var timeController = FindActiveSceneComponent("BattleTimeController");
+            var player = GameObject.Find("Player");
+            var stats = FindComponent(player, "CharacterStats");
+            var stateMachine = FindComponent(player, "PlayerStateMachine");
+            var hurtbox = FindComponent(player, "Hurtbox");
+            var inputBridge = FindComponent(player, "PlayerInputBridge");
+            var playerController = FindComponent(player, "PlayerController");
+            var playerBody = player.GetComponent<Rigidbody2D>();
+            playerBody.gravityScale = 0f;
+            playerBody.velocity = new Vector2(8f, 4f);
+            var combatEventsType = stateMachine.GetType().Assembly.GetType("CombatEvents");
+            var deathEvent = combatEventsType?.GetEvent("OnPlayerDeath", BindingFlags.Static | BindingFlags.Public);
+            Assert.That(deathEvent, Is.Not.Null);
+            var legacyDeathCount = 0;
+            Action legacyDeathProbe = () => legacyDeathCount++;
+            deathEvent.AddEventHandler(null, legacyDeathProbe);
+
+            try
+            {
+                Assert.That(ReceiveCombatHit(
+                    hurtbox,
+                    new CombatHit(100000, 1f, 3f, false, new RecordingParryResponder())),
+                    Is.EqualTo(CombatHitResult.Damaged));
+                yield return new WaitForSecondsRealtime(0.12f);
+
+                var gameOver = FindActiveSceneComponent("GameOverUI");
+                Assert.That(GetPropertyValue(run, "State").ToString(), Is.EqualTo("Defeat"));
+                Assert.That(GetPropertyValue(run, "Outcome").ToString(), Is.EqualTo("Defeat"));
+                Assert.That(GetStateName(stateMachine), Is.EqualTo("Die"));
+                Assert.That(playerBody.velocity, Is.EqualTo(Vector2.zero));
+                Assert.That(((Behaviour)playerController).enabled, Is.False);
+                Assert.That(legacyDeathCount, Is.EqualTo(1));
+                Assert.That(GetBoolProperty(inputBridge, "InputEnabled"), Is.False);
+                Assert.That((bool)GetPropertyValue(setup, "BattleHotkeysEnabled"), Is.False);
+                Assert.That((float)GetPropertyValue(timeController, "EffectiveScale"), Is.EqualTo(0f));
+                Assert.That((int)GetPropertyValue(timeController, "ActiveRequestCount"), Is.EqualTo(1));
+                Assert.That(GetFieldValue(gameOver, "_overlay") as GameObject, Is.Not.Null);
+                Assert.That(((GameObject)GetFieldValue(gameOver, "_overlay")).activeInHierarchy, Is.True);
+                Assert.That(gameOver.transform.Cast<Transform>().Count(child => child.name == "OverlayCanvas"), Is.EqualTo(1));
+
+                var resultToken = GetFieldValue(run, "_battleResultToken");
+                Invoke(stats, "RaiseDeathEvent");
+                ReceiveCombatHit(hurtbox, new CombatHit(100000, 1f, 3f, false, null));
+                Invoke(stateMachine, "ForceDie");
+                yield return null;
+
+                Assert.That(GetPropertyValue(run, "State").ToString(), Is.EqualTo("Defeat"));
+                Assert.That(legacyDeathCount, Is.EqualTo(1));
+                Assert.That(FindLoadedComponents("GameOverUI"), Has.Count.EqualTo(1));
+                Assert.That(gameOver.transform.Cast<Transform>().Count(child => child.name == "OverlayCanvas"), Is.EqualTo(1));
+                Assert.That(GetFieldValue(run, "_battleResultToken"), Is.EqualTo(resultToken));
+                Assert.That((int)GetPropertyValue(timeController, "ActiveRequestCount"), Is.EqualTo(1));
+            }
+            finally
+            {
+                deathEvent.RemoveEventHandler(null, legacyDeathProbe);
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator WaveCompletionWinsBeforeLaterPlayerDeath()
+        {
+            yield return LoadBattleScene();
+
+            DisableActiveEnemyBehaviours();
+            var run = FindActiveSceneComponent("BattleRunController");
+            var spawner = FindActiveSceneComponent("WaveSpawner");
+            var player = GameObject.Find("Player");
+            var stats = FindComponent(player, "CharacterStats");
+            var stateMachine = FindComponent(player, "PlayerStateMachine");
+            var hurtbox = FindComponent(player, "Hurtbox");
+            var combatEventsType = stateMachine.GetType().Assembly.GetType("CombatEvents");
+            var deathEvent = combatEventsType?.GetEvent("OnPlayerDeath", BindingFlags.Static | BindingFlags.Public);
+            Assert.That(deathEvent, Is.Not.Null);
+            var legacyDeathCount = 0;
+            Action legacyDeathProbe = () => legacyDeathCount++;
+            deathEvent.AddEventHandler(null, legacyDeathProbe);
+
+            try
+            {
+                InvokeRunWaveCompletion(spawner, run);
+
+                Assert.That(GetPropertyValue(run, "State").ToString(), Is.EqualTo("Victory"));
+                Assert.That(GetPropertyValue(run, "Outcome").ToString(), Is.EqualTo("Victory"));
+                Assert.That(GetStateName(stateMachine), Is.Not.EqualTo("Die"));
+                Assert.That(legacyDeathCount, Is.Zero);
+                Assert.That(FindLoadedComponents("GameOverUI"), Has.Count.EqualTo(1));
+                Assert.That(GetFieldValue(FindActiveSceneComponent("GameOverUI"), "_overlay") as GameObject, Is.Not.Null);
+
+                Assert.That(ReceiveCombatHit(
+                    hurtbox,
+                    new CombatHit(100000, 1f, 3f, false, new RecordingParryResponder())),
+                    Is.EqualTo(CombatHitResult.Damaged));
+                yield return null;
+
+                Assert.That(GetPropertyValue(run, "State").ToString(), Is.EqualTo("Victory"));
+                Assert.That(GetPropertyValue(run, "Outcome").ToString(), Is.EqualTo("Victory"));
+                Assert.That(GetStateName(stateMachine), Is.Not.EqualTo("Die"));
+                Assert.That(legacyDeathCount, Is.Zero);
+                Assert.That(FindLoadedComponents("GameOverUI"), Has.Count.EqualTo(1));
+            }
+            finally
+            {
+                deathEvent.RemoveEventHandler(null, legacyDeathProbe);
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator TerminalResultBlocksPlayerAndBattleHotkeysAtZeroScale()
+        {
+            yield return LoadBattleScene();
+
+            DisableActiveEnemyBehaviours();
+            var run = FindActiveSceneComponent("BattleRunController");
+            var spawner = FindActiveSceneComponent("WaveSpawner");
+            var setup = FindActiveSceneComponent("BattleSceneSetup");
+            var player = GameObject.Find("Player");
+            var stats = FindComponent(player, "CharacterStats");
+            var stateMachine = FindComponent(player, "PlayerStateMachine");
+            var inputBridge = FindComponent(player, "PlayerInputBridge");
+            var inputMediator = FindComponent(player, "InputMediator");
+            var playerController = FindComponent(player, "PlayerController");
+            var playerBody = player.GetComponent<Rigidbody2D>();
+            playerBody.gravityScale = 0f;
+            playerBody.velocity = new Vector2(7f, 3f);
+
+            InvokeRunWaveCompletion(spawner, run);
+            Assert.That(Time.timeScale, Is.EqualTo(0f).Within(0.0001f));
+            Assert.That(GetBoolProperty(inputBridge, "InputEnabled"), Is.False);
+            Assert.That((bool)GetPropertyValue(setup, "BattleHotkeysEnabled"), Is.False);
+            Assert.That(GetStateName(stateMachine), Is.EqualTo("Idle"));
+            Assert.That(playerBody.velocity, Is.EqualTo(Vector2.zero));
+            Assert.That(((Behaviour)playerController).enabled, Is.False);
+            var staminaBefore = GetIntField(stats, "currentStamina");
+            var facingBefore = (int)GetPropertyValue(playerController, "FacingDirection");
+            var stateBefore = GetStateName(stateMachine);
+            var positionBefore = player.transform.position;
+
+            SetFieldValue(inputMediator, "<AttackPressed>k__BackingField", true);
+            SetFieldValue(inputMediator, "<HeavyAttackPressed>k__BackingField", true);
+            SetFieldValue(inputMediator, "<DashPressed>k__BackingField", true);
+            SetFieldValue(inputMediator, "<ParryPressed>k__BackingField", true);
+            Invoke(inputBridge, "Update");
+            SetFieldValue(inputMediator, "<PausePressed>k__BackingField", true);
+            SetFieldValue(inputMediator, "<InventoryPressed>k__BackingField", true);
+            Invoke(setup, "Update");
+            SetFieldValue(inputMediator, "<MoveInput>k__BackingField", (float)-facingBefore);
+            ((Behaviour)inputMediator).enabled = false;
+            yield return null;
+            yield return null;
+
+            Assert.That((int)GetPropertyValue(playerController, "FacingDirection"), Is.EqualTo(facingBefore),
+                "Terminal movement input must not flip the player.");
+            Assert.That(GetStateName(stateMachine), Is.EqualTo(stateBefore),
+                "The public input gate must block attack consumption independently of time scale.");
+            Assert.That(player.transform.position, Is.EqualTo(positionBefore));
+            Assert.That(playerBody.velocity, Is.EqualTo(Vector2.zero));
+            Assert.That(GetIntField(stats, "currentStamina"), Is.EqualTo(staminaBefore),
+                "The terminal input gate must block heavy attack, dash, and parry stamina consumption.");
+            Assert.That((bool)GetFieldValue(setup, "_isPaused"), Is.False);
+            Assert.That((bool)GetFieldValue(setup, "_isInventoryOpen"), Is.False);
+        }
+
+        [UnityTest]
+        public IEnumerator RestartButtonReloadsFreshRunningBattleScene()
+        {
+            yield return LoadBattleScene();
+
+            DisableActiveEnemyBehaviours();
+            var oldRun = FindActiveSceneComponent("BattleRunController");
+            var oldSpawner = FindActiveSceneComponent("WaveSpawner");
+            var oldPool = FindUniqueLoadedComponent("ObjectPool");
+            var oldPlayer = GameObject.Find("Player");
+            var oldPlayerController = FindComponent(oldPlayer, "PlayerController");
+            var oldRunId = oldRun.GetInstanceID();
+            var oldSpawnerId = oldSpawner.GetInstanceID();
+            var oldPoolId = oldPool.GetInstanceID();
+            var oldPlayerId = oldPlayer.GetInstanceID();
+
+            InvokeRunWaveCompletion(oldSpawner, oldRun);
+            Assert.That(((Behaviour)oldPlayerController).enabled, Is.False,
+                "Terminal completion must disable the old PlayerController before restart.");
+            var oldGameOver = FindActiveSceneComponent("GameOverUI");
+            var restartObject = FindDescendant(oldGameOver.transform, "BtnRestart");
+            Assert.That(restartObject, Is.Not.Null);
+            var restartButton = restartObject.GetComponent<Button>();
+            Assert.That(restartButton, Is.Not.Null);
+
+            restartButton.onClick.Invoke();
+            Assert.That(((Behaviour)oldPlayerController).enabled, Is.True,
+                "Restart Dispose must restore the old PlayerController before scene unload.");
+            restartButton.onClick.Invoke();
+
+            Component newRun = null;
+            yield return WaitForFreshBattleRun(oldRunId, found => newRun = found);
+            yield return WaitForApplicationReady();
+            yield return WaitForSceneTransitionComplete();
+
+            var newSpawner = FindActiveSceneComponent("WaveSpawner");
+            var newPool = FindUniqueLoadedComponent("ObjectPool");
+            var newPlayer = GameObject.Find("Player");
+            var newSetup = FindActiveSceneComponent("BattleSceneSetup");
+            var newInputBridge = FindComponent(newPlayer, "PlayerInputBridge");
+            var newPlayerController = FindComponent(newPlayer, "PlayerController");
+            var newGameOver = FindActiveSceneComponent("GameOverUI");
+
+            Assert.That(oldRun == null, Is.True);
+            Assert.That(oldSpawner == null, Is.True);
+            Assert.That(oldPool == null, Is.True);
+            Assert.That(oldPlayer == null, Is.True);
+            Assert.That(oldGameOver == null, Is.True);
+            Assert.That(newRun.GetInstanceID(), Is.Not.EqualTo(oldRunId));
+            Assert.That(newSpawner.GetInstanceID(), Is.Not.EqualTo(oldSpawnerId));
+            Assert.That(newPool.GetInstanceID(), Is.Not.EqualTo(oldPoolId));
+            Assert.That(newPlayer.GetInstanceID(), Is.Not.EqualTo(oldPlayerId));
+            Assert.That(GetPropertyValue(newRun, "State").ToString(), Is.EqualTo("Running"));
+            Assert.That(GetPropertyValue(newRun, "Outcome").ToString(), Is.EqualTo("None"));
+            Assert.That(GetBoolProperty(newInputBridge, "InputEnabled"), Is.True);
+            Assert.That(((Behaviour)newPlayerController).enabled, Is.True);
+            Assert.That((bool)GetPropertyValue(newSetup, "BattleHotkeysEnabled"), Is.True);
+            Assert.That(Time.timeScale, Is.EqualTo(1f).Within(0.0001f));
+            Assert.That(GetFieldValue(newGameOver, "_overlay"), Is.Null);
+            Assert.That(FindLoadedComponents("GameOverUI"), Has.Count.EqualTo(1));
+            Assert.That(FindLoadedComponents("EventSystem"), Has.Count.EqualTo(1));
+            var eventSystem = FindUniqueLoadedComponent("EventSystem");
+            Assert.That(eventSystem.GetComponents<Component>().Count(item => item.GetType().Name == "StandaloneInputModule"),
+                Is.EqualTo(1));
+            var instance = newGameOver.GetType().GetProperty("Instance", BindingFlags.Static | BindingFlags.Public)
+                ?.GetValue(null);
+            Assert.That(instance, Is.SameAs(newGameOver));
+        }
+
+        [UnityTest]
+        public IEnumerator StaticGameOverShowNeverCreatesOrDuplicatesSceneUi()
+        {
+            yield return LoadBattleScene();
+
+            var gameOver = FindActiveSceneComponent("GameOverUI");
+            var gameOverType = gameOver.GetType();
+            var show = gameOverType.GetMethod("Show", BindingFlags.Static | BindingFlags.Public);
+            Assert.That(show, Is.Not.Null);
+
+            show.Invoke(null, new object[] { true, null });
+            show.Invoke(null, new object[] { false, null });
+            Assert.That(FindLoadedComponents("GameOverUI"), Has.Count.EqualTo(1));
+            Assert.That(gameOver.transform.Cast<Transform>().Count(child => child.name == "OverlayCanvas"),
+                Is.EqualTo(1));
+
+            UnityEngine.Object.Destroy(gameOver.gameObject);
+            yield return null;
+            Assert.That(FindLoadedComponents("GameOverUI"), Is.Empty);
+
+            LogAssert.Expect(LogType.Error, "[GameOverUI] Scene-owned instance is not installed.");
+            show.Invoke(null, new object[] { true, null });
+            yield return null;
+
+            Assert.That(FindLoadedComponents("GameOverUI"), Is.Empty,
+                "Static Show must not lazily create a UI outside BattleSceneSetup ownership.");
+            Assert.That(gameOverType.GetProperty("Instance", BindingFlags.Static | BindingFlags.Public)
+                    ?.GetValue(null),
+                Is.Null);
         }
 
         [UnityTest]
@@ -1003,6 +1275,64 @@ namespace Game.Tests.PlayMode
             }
 
             Assert.Fail("GameApplication did not reach Ready within 120 frames.");
+        }
+
+        private static IEnumerator WaitForFreshBattleRun(int oldRunId, Action<Component> found)
+        {
+            var deadline = Time.realtimeSinceStartup + 10f;
+            while (Time.realtimeSinceStartup < deadline)
+            {
+                var activeScene = SceneManager.GetActiveScene();
+                var run = Resources.FindObjectsOfTypeAll<Component>()
+                    .FirstOrDefault(item => item != null
+                                            && item.GetType().Name == "BattleRunController"
+                                            && item.gameObject.scene == activeScene
+                                            && item.GetInstanceID() != oldRunId);
+                if (run != null)
+                {
+                    found(run);
+                    yield break;
+                }
+
+                yield return null;
+            }
+
+            Assert.Fail("BattleScene restart did not create a fresh BattleRunController within 10 realtime seconds.");
+        }
+
+        private static IEnumerator WaitForSceneTransitionComplete()
+        {
+            var deadline = Time.realtimeSinceStartup + 10f;
+            while (Time.realtimeSinceStartup < deadline)
+            {
+                var transitionManager = FindLoadedComponents("SceneTransitionManager").SingleOrDefault();
+                if (transitionManager != null && !(bool)GetFieldValue(transitionManager, "_isTransitioning"))
+                {
+                    yield break;
+                }
+
+                yield return null;
+            }
+
+            Assert.Fail("SceneTransitionManager did not finish the restart transition within 10 realtime seconds.");
+        }
+
+        private static void InvokeRunWaveCompletion(Component spawner, Component run)
+        {
+            var handlers = GetEventHandlers(spawner, "OnAllWavesComplete")
+                .Where(handler => IsDeclaredWithin(run.GetType(), handler))
+                .ToArray();
+            Assert.That(handlers, Has.Length.EqualTo(1),
+                "WaveSpawner must expose exactly one BattleRunController completion handler.");
+            handlers.Single().DynamicInvoke();
+        }
+
+        private static GameObject FindDescendant(Transform root, string objectName)
+        {
+            return root.Cast<Transform>()
+                .SelectMany(child => new[] { child }.Concat(child.GetComponentsInChildren<Transform>(true)))
+                .FirstOrDefault(child => child.name == objectName)
+                ?.gameObject;
         }
 
         private static IEnumerator WaitForActiveSceneComponent(string typeName, Action<Component> found)

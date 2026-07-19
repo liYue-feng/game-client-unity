@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.EventSystems;
 
 /// <summary>
 /// 战斗场景搭建器：运行时动态创建场景中的所有对象。
@@ -27,6 +28,8 @@ public class BattleSceneSetup : MonoBehaviour
     private GameObject _player;
     private UpgradeManager _upgradeManager;
     private WaveSpawner _waveSpawner;
+    private BattleRunController _battleRunController;
+    private GameOverUI _gameOverUI;
 
     // 战斗统计
     private int _killCount;
@@ -65,6 +68,7 @@ public class BattleSceneSetup : MonoBehaviour
         var ___ = SummonManager.Instance;
         RequireService(LoadingScreen.Instance, nameof(LoadingScreen)).Hide();
 
+        EnsureEventSystem();
         CreateBattleTimeController();
         CreateCamera();
         CreateGround();
@@ -75,10 +79,13 @@ public class BattleSceneSetup : MonoBehaviour
         ApplyTalentBonuses();
         SummonManager.Instance.InitializeForBattle(_player);
         CreateWaveSpawner();
+        CreateGameOverUI();
+        CreateBattleRunController();
         CreateHUD();
         CreateInventoryUI();
         CreatePauseMenu();
         SetupEffectListeners();
+        StartBattleWaves();
     }
 
     private static T RequireService<T>(T service, string serviceName) where T : UnityEngine.Object
@@ -96,6 +103,46 @@ public class BattleSceneSetup : MonoBehaviour
     {
         var controllerObject = new GameObject("BattleTimeController");
         _battleTimeController = controllerObject.AddComponent<BattleTimeController>();
+    }
+
+    private void EnsureEventSystem()
+    {
+        var activeScene = gameObject.scene;
+        EventSystem keeper = null;
+        foreach (var eventSystem in Resources.FindObjectsOfTypeAll<EventSystem>())
+        {
+            if (eventSystem == null || !eventSystem.gameObject.scene.IsValid())
+            {
+                continue;
+            }
+
+            if (keeper == null && eventSystem.gameObject.scene == activeScene)
+            {
+                keeper = eventSystem;
+                continue;
+            }
+
+            Destroy(eventSystem.gameObject);
+        }
+
+        if (keeper == null)
+        {
+            var eventSystemObject = new GameObject("EventSystem");
+            keeper = eventSystemObject.AddComponent<EventSystem>();
+        }
+
+        var modules = keeper.GetComponents<StandaloneInputModule>();
+        if (modules.Length == 0)
+        {
+            keeper.gameObject.AddComponent<StandaloneInputModule>();
+        }
+        else
+        {
+            for (var index = 1; index < modules.Length; index++)
+            {
+                Destroy(modules[index]);
+            }
+        }
     }
 
     /// <summary>创建主相机，挂载屏幕震动和卡帧</summary>
@@ -254,10 +301,36 @@ public class BattleSceneSetup : MonoBehaviour
         ConfigureWaves();
 
         // 开始刷怪
-        _waveSpawner.StartWaves();
     }
 
     /// <summary>配置测试波次</summary>
+    private void StartBattleWaves()
+    {
+        _waveSpawner.StartWaves();
+    }
+
+    private void CreateGameOverUI()
+    {
+        var gameOverObject = new GameObject("[GameOverUI]");
+        _gameOverUI = gameOverObject.AddComponent<GameOverUI>();
+    }
+
+    private void CreateBattleRunController()
+    {
+        var controllerObject = new GameObject("BattleRunController");
+        _battleRunController = controllerObject.AddComponent<BattleRunController>();
+        _battleRunController.Configure(
+            _player,
+            _player.GetComponent<CharacterStats>(),
+            _player.GetComponent<PlayerStateMachine>(),
+            _player.GetComponent<PlayerInputBridge>(),
+            _waveSpawner,
+            _battleTimeController,
+            _gameOverUI,
+            this,
+            CaptureCombatResultData);
+    }
+
     private void ConfigureWaves()
     {
         var waves = new EnemySpawnGroup[10];
@@ -383,6 +456,23 @@ public class BattleSceneSetup : MonoBehaviour
         }
     }
 
+    private CombatResultData CaptureCombatResultData()
+    {
+        var stats = _player.GetComponent<CharacterStats>();
+        return new CombatResultData
+        {
+            killCount = _killCount,
+            expGained = stats.currentExp + stats.ExpToNextLevel * (stats.level - 1),
+            maxCombo = 0,
+            survivalTime = Mathf.RoundToInt(Time.time - _startTime),
+            playerLevel = stats.level,
+            bossKills = _bossKills,
+            elementalUpgradeCount = _elementalUpgradeCount,
+            summonUpgradeCount = _summonUpgradeCount,
+            styleSwitchCount = _styleSwitchCount
+        };
+    }
+
     private void HandleEnemyDeath(GameObject enemy)
     {
         AudioManager.Instance.PlaySFX("death");
@@ -485,6 +575,11 @@ public class BattleSceneSetup : MonoBehaviour
 
     private void OnDestroy()
     {
+        if (_battleRunController != null)
+        {
+            _battleRunController.Dispose();
+        }
+
         if (_waveSpawner != null)
         {
             _waveSpawner.Dispose();

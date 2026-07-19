@@ -256,17 +256,25 @@ namespace Game.Tests.PlayMode
 
                 var currentPool = FindUniqueLoadedComponent("ObjectPool");
                 var currentSpawner = FindUniqueActiveSceneComponent("WaveSpawner");
+                var currentRun = FindUniqueActiveSceneComponent("BattleRunController");
+                var currentGameOver = FindUniqueActiveSceneComponent("GameOverUI");
                 List<GameObject> currentEnemies = null;
                 yield return WaitForSpawnerEnemies(currentSpawner, enemies => currentEnemies = enemies);
+                AssertBattleRunSceneOwnership(currentRun, currentGameOver, currentSpawner);
+                AssertSingleSceneEventSystem();
 
                 var expectedKeys = new[] { "archer", "boss", "elite", "grunt" };
                 for (var iteration = 0; iteration < 5; iteration++)
                 {
                     var oldPool = currentPool;
                     var oldSpawner = currentSpawner;
+                    var oldRun = currentRun;
+                    var oldGameOver = currentGameOver;
                     var oldEnemies = currentEnemies.ToArray();
                     var oldPoolId = oldPool.GetInstanceID();
                     var oldSpawnerId = oldSpawner.GetInstanceID();
+                    var oldRunId = oldRun.GetInstanceID();
+                    var oldGameOverId = oldGameOver.GetInstanceID();
                     var oldEnemyIds = oldEnemies.Select(enemy => enemy.GetInstanceID()).ToArray();
                     Assert.That(oldEnemies, Is.Not.Empty,
                         $"Reload iteration {iteration + 1} must capture at least one active enemy.");
@@ -280,6 +288,10 @@ namespace Game.Tests.PlayMode
                         $"Reload iteration {iteration + 1} must destroy old ObjectPool {oldPoolId}.");
                     Assert.That(oldSpawner == null, Is.True,
                         $"Reload iteration {iteration + 1} must destroy old WaveSpawner {oldSpawnerId}.");
+                    Assert.That(oldRun == null, Is.True,
+                        $"Reload iteration {iteration + 1} must destroy old BattleRunController {oldRunId}.");
+                    Assert.That(oldGameOver == null, Is.True,
+                        $"Reload iteration {iteration + 1} must destroy old GameOverUI {oldGameOverId}.");
                     for (var enemyIndex = 0; enemyIndex < oldEnemies.Length; enemyIndex++)
                     {
                         Assert.That(oldEnemies[enemyIndex] == null, Is.True,
@@ -289,10 +301,16 @@ namespace Game.Tests.PlayMode
                     var activeScene = SceneManager.GetActiveScene();
                     currentPool = FindUniqueActiveSceneComponent("ObjectPool");
                     currentSpawner = FindUniqueActiveSceneComponent("WaveSpawner");
+                    currentRun = FindUniqueActiveSceneComponent("BattleRunController");
+                    currentGameOver = FindUniqueActiveSceneComponent("GameOverUI");
                     Assert.That(FindComponents("ObjectPool"), Has.Count.EqualTo(1));
                     Assert.That(FindComponents("WaveSpawner"), Has.Count.EqualTo(1));
+                    Assert.That(FindComponents("BattleRunController"), Has.Count.EqualTo(1));
+                    Assert.That(FindComponents("GameOverUI"), Has.Count.EqualTo(1));
                     Assert.That(currentPool.GetInstanceID(), Is.Not.EqualTo(oldPoolId));
                     Assert.That(currentSpawner.GetInstanceID(), Is.Not.EqualTo(oldSpawnerId));
+                    Assert.That(currentRun.GetInstanceID(), Is.Not.EqualTo(oldRunId));
+                    Assert.That(currentGameOver.GetInstanceID(), Is.Not.EqualTo(oldGameOverId));
 
                     List<GameObject> nextEnemies = null;
                     yield return WaitForSpawnerEnemies(currentSpawner, enemies => nextEnemies = enemies);
@@ -312,6 +330,8 @@ namespace Game.Tests.PlayMode
                         GetEnumerableFieldValues(currentSpawner, "_registeredPoolKeys").Cast<string>());
                     AssertFactoryOwners(currentPool, currentSpawner);
                     AssertEnemyDeathOwners(currentEnemies, currentSpawner);
+                    AssertBattleRunSceneOwnership(currentRun, currentGameOver, currentSpawner);
+                    AssertSingleSceneEventSystem();
                     Assert.That(failures, Is.Empty, string.Join("\n\n", failures));
                 }
             }
@@ -526,6 +546,42 @@ namespace Game.Tests.PlayMode
             var matches = FindComponents(typeName);
             Assert.That(matches, Has.Count.EqualTo(1), $"Expected exactly one loaded {typeName}.");
             return matches.Single();
+        }
+
+        private static void AssertBattleRunSceneOwnership(
+            Component run,
+            Component gameOver,
+            Component spawner)
+        {
+            var activeScene = SceneManager.GetActiveScene();
+            Assert.That(run.gameObject.scene, Is.EqualTo(activeScene));
+            Assert.That(gameOver.gameObject.scene, Is.EqualTo(activeScene));
+            Assert.That(GetEventHandlers(spawner.GetType(), spawner, "OnAllWavesComplete")
+                    .Count(handler => IsDeclaredWithin(run.GetType(), handler)),
+                Is.EqualTo(1));
+            Assert.That(GetEventHandlers(gameOver.GetType(), gameOver, "OnRestart")
+                    .Count(handler => IsDeclaredWithin(run.GetType(), handler)),
+                Is.EqualTo(1));
+
+            var stats = GameObject.Find("Player")?.GetComponents<Component>()
+                .FirstOrDefault(component => component != null && component.GetType().Name == "CharacterStats");
+            Assert.That(stats, Is.Not.Null);
+            Assert.That(GetEventHandlers(stats.GetType(), stats, "OnDeath")
+                    .Count(handler => IsDeclaredWithin(run.GetType(), handler)),
+                Is.EqualTo(1));
+
+            var instance = gameOver.GetType().GetProperty("Instance", BindingFlags.Static | BindingFlags.Public)
+                ?.GetValue(null);
+            Assert.That(instance, Is.SameAs(gameOver));
+        }
+
+        private static void AssertSingleSceneEventSystem()
+        {
+            var eventSystem = FindUniqueActiveSceneComponent("EventSystem");
+            Assert.That(FindComponents("EventSystem"), Has.Count.EqualTo(1));
+            Assert.That(eventSystem.GetComponents<Component>()
+                    .Count(component => component.GetType().Name == "StandaloneInputModule"),
+                Is.EqualTo(1));
         }
 
         private static Component FindUniqueActiveSceneComponent(string typeName)

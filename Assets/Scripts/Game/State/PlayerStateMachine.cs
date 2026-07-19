@@ -443,9 +443,6 @@ public class PlayerStateMachine : MonoBehaviour
             case PlayerState.Dash:
                 _dashCooldownTimer = _stats.dashCooldown;
                 break;
-            case PlayerState.Die:
-                _stats.RaiseDeathEvent();
-                break;
         }
     }
 
