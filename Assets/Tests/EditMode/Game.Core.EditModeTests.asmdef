@@ -3,7 +3,8 @@
   "rootNamespace": "Game.Tests.EditMode",
   "references": [
     "Game.Core",
-    "Game.Network"
+    "Game.Network",
+    "Game.Gameplay"
   ],
   "includePlatforms": [
     "Editor"

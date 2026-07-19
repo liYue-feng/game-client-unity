@@ -2,7 +2,8 @@
   "name": "Game.PlayModeTests",
   "rootNamespace": "Game.Tests.PlayMode",
   "references": [
-    "Game.Network"
+    "Game.Network",
+    "Game.Gameplay"
   ],
   "includePlatforms": [],
   "excludePlatforms": [],
