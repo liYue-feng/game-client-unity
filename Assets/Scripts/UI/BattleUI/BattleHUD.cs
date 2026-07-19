@@ -137,7 +137,11 @@ public class BattleHUD : MonoBehaviour
         }
 
         // 左上角：HP+耐力面板
-        var panel = CreateInkPanel(_canvas.transform, "StatusPanel", new Vector2(320, 140), new Vector2(180, -100));
+        var panel = CreateInkPanel(_canvas.transform, "StatusPanel", new Vector2(320, 140), new Vector2(20, -20));
+        var statusRect = panel.GetComponent<RectTransform>();
+        statusRect.anchorMin = new Vector2(0f, 1f);
+        statusRect.anchorMax = new Vector2(0f, 1f);
+        statusRect.pivot = new Vector2(0f, 1f);
 
         // 血条
         var (hpSlider, hpFillImg) = CreateInkSlider(panel.transform, "HPBar", new Vector2(280, 36), new Vector2(0, 20), ShuiMoPalette.CinnabarRed);
@@ -203,7 +207,7 @@ public class BattleHUD : MonoBehaviour
     private void CreateExpBar(CharacterStats stats)
     {
         // 底部面板
-        var panel = CreateInkPanel(_canvas.transform, "ExpPanel", new Vector2(500, 80), new Vector2(0, -50));
+        var panel = CreateInkPanel(_canvas.transform, "ExpPanel", new Vector2(500, 80), new Vector2(0, 20));
         var panelRect = panel.GetComponent<RectTransform>();
         panelRect.anchorMin = new Vector2(0.5f, 0);
         panelRect.anchorMax = new Vector2(0.5f, 0);
@@ -318,9 +322,11 @@ public class BattleHUD : MonoBehaviour
                 new Vector2(460f, 30f),
                 new Vector2(0f, -16f),
                 ShuiMoPalette.CinnabarRed);
-            var bossName = CreateBattleLabel(panel.transform, "BossName", new Vector2(-165f, -52f), 18);
+            var bossName = CreateBattleLabel(panel.transform, "BossName", new Vector2(-145f, -46f), 18);
+            bossName.rectTransform.sizeDelta = new Vector2(210f, 24f);
             bossName.alignment = TextAnchor.MiddleLeft;
-            var phase = CreateBattleLabel(panel.transform, "PhaseText", new Vector2(165f, -52f), 18);
+            var phase = CreateBattleLabel(panel.transform, "PhaseText", new Vector2(145f, -46f), 18);
+            phase.rectTransform.sizeDelta = new Vector2(210f, 24f);
             phase.alignment = TextAnchor.MiddleRight;
 
             _bossHpBar = panel.gameObject.AddComponent<BossHPBar>();

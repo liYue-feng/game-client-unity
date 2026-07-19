@@ -887,6 +887,161 @@ namespace Game.Tests.PlayMode
         }
 
         [UnityTest]
+        public IEnumerator BossTelegraphFreezesBeforeTheNextPhysicsStep()
+        {
+            yield return LoadBattleScene();
+            DisableActiveEnemyAutomation();
+            var player = GameObject.Find("Player");
+            var stats = player.GetComponents<Component>()
+                .Single(component => component.GetType().Name == "CharacterStats");
+            var originalHp = (int)GetField(stats, "currentHp");
+            var boss = CreateEnemyProbe("Boss", "B2BossTelegraphDriftProbe");
+            try
+            {
+                ((Behaviour)boss).enabled = false;
+                boss.transform.position = player.transform.position + new Vector3(-2f, 0f, 0f);
+                SetField(boss, "_player", player.transform);
+                SetField(boss, "_attackPattern", 1);
+                Invoke(boss, "FacePlayer");
+                var body = boss.GetComponent<Rigidbody2D>();
+                body.gravityScale = 0f;
+                body.velocity = new Vector2(5f, 0f);
+                Physics2D.SyncTransforms();
+
+                Assert.That((bool)Invoke(boss, "TryStartPreparedAttack"), Is.True);
+                Assert.That(GetProperty(boss, "CurrentAttackPhase").ToString(), Is.EqualTo("Telegraph"));
+                var plan = (EnemyAttackPlan)GetProperty(boss, "CurrentAttackPlan");
+                var line = ((Component)GetField(boss, "_telegraphView"))
+                    .GetComponentInChildren<LineRenderer>();
+                var beforePhysics = Enumerable.Range(0, line.positionCount)
+                    .Select(index => line.transform.TransformPoint(line.GetPosition(index)))
+                    .ToArray();
+
+                yield return new WaitForFixedUpdate();
+
+                var afterPhysics = Enumerable.Range(0, line.positionCount)
+                    .Select(index => line.transform.TransformPoint(line.GetPosition(index)))
+                    .ToArray();
+                Assert.That(
+                    afterPhysics.Zip(beforePhysics, Vector3.Distance).Max(),
+                    Is.LessThan(0.001f),
+                    "B2_WHOLE_REVIEW_RED_TELEGRAPH_DRIFT: Telegraph world geometry must freeze before the next physics step.");
+
+                var hpBefore = (int)GetField(stats, "currentHp");
+                var strength = Enum.Parse(boss.GetType().Assembly.GetType("CombatFeedbackStrength"), "Heavy");
+                Invoke(boss, "ResolvePlanHit", plan, strength);
+                Assert.That((int)GetField(stats, "currentHp"), Is.LessThan(hpBefore),
+                    "The eventual hit must still consume the frozen Telegraph footprint.");
+            }
+            finally
+            {
+                Invoke(boss, "CancelCombatActions");
+                UnityEngine.Object.DestroyImmediate(boss.gameObject);
+                SetField(stats, "currentHp", originalHp);
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator BossChargeResolutionKeepsTheTelegraphedWorldFootprintAfterMovement()
+        {
+            yield return VerifyBossPreparedHitUsesTelegraphedWorldOrigin(
+                1,
+                new Vector2(0.5f, 0f),
+                new Vector2(3f, 0f),
+                "B2_WHOLE_REVIEW_RED_BOSS_CHARGE_ORIGIN");
+        }
+
+        [UnityTest]
+        public IEnumerator BossSlamResolutionKeepsTheTelegraphedWorldFootprintAfterMovement()
+        {
+            yield return VerifyBossPreparedHitUsesTelegraphedWorldOrigin(
+                2,
+                new Vector2(1.5f, 0f),
+                new Vector2(0f, 3f),
+                "B2_WHOLE_REVIEW_RED_BOSS_SLAM_ORIGIN");
+        }
+
+        private static IEnumerator VerifyBossPreparedHitUsesTelegraphedWorldOrigin(
+            int attackPattern,
+            Vector2 playerOffset,
+            Vector2 bossMovement,
+            string failureMarker)
+        {
+            yield return LoadBattleScene();
+            DisableActiveEnemyAutomation();
+            var player = GameObject.Find("Player");
+            var stats = player.GetComponents<Component>()
+                .Single(component => component.GetType().Name == "CharacterStats");
+            var playerBody = player.GetComponent<Rigidbody2D>();
+            var originalPlayerPosition = player.transform.position;
+            var originalGravityScale = playerBody.gravityScale;
+            var originalHp = (int)GetField(stats, "currentHp");
+            var boss = CreateEnemyProbe("Boss", $"B2BossOriginProbe{attackPattern}");
+            try
+            {
+                ((Behaviour)boss).enabled = false;
+                var attackOrigin = new Vector3(0f, 4f, 0f);
+                boss.transform.position = attackOrigin;
+                var bossBody = boss.GetComponent<Rigidbody2D>();
+                bossBody.gravityScale = 0f;
+                bossBody.velocity = Vector2.zero;
+                player.transform.position = attackOrigin + (Vector3)playerOffset;
+                playerBody.gravityScale = 0f;
+                playerBody.velocity = Vector2.zero;
+                SetField(boss, "_player", player.transform);
+                SetField(boss, "_attackPattern", attackPattern);
+                Invoke(boss, "FacePlayer");
+                Physics2D.SyncTransforms();
+
+                Assert.That((bool)Invoke(boss, "TryStartPreparedAttack"), Is.True);
+                var plan = (EnemyAttackPlan)GetProperty(boss, "CurrentAttackPlan");
+                var advertisedCenter = (Vector2)boss.transform.TransformPoint(plan.LocalOffset);
+                Assert.That(
+                    IsInsidePlanFootprint((Vector2)player.transform.position, advertisedCenter, plan),
+                    Is.True,
+                    "The player probe must begin inside the geometry shown during Telegraph.");
+
+                boss.transform.position += (Vector3)bossMovement;
+                Physics2D.SyncTransforms();
+                var hpBefore = (int)GetField(stats, "currentHp");
+                var strength = Enum.Parse(boss.GetType().Assembly.GetType("CombatFeedbackStrength"), "Heavy");
+                Invoke(boss, "ResolvePlanHit", plan, strength);
+
+                Assert.That(
+                    (int)GetField(stats, "currentHp"),
+                    Is.LessThan(hpBefore),
+                    $"{failureMarker}: Commit movement must not move damage away from the telegraphed world footprint.");
+            }
+            finally
+            {
+                Invoke(boss, "CancelCombatActions");
+                UnityEngine.Object.DestroyImmediate(boss.gameObject);
+                SetField(stats, "currentHp", originalHp);
+                player.transform.position = originalPlayerPosition;
+                playerBody.gravityScale = originalGravityScale;
+                playerBody.velocity = Vector2.zero;
+                Physics2D.SyncTransforms();
+            }
+        }
+
+        private static bool IsInsidePlanFootprint(
+            Vector2 point,
+            Vector2 center,
+            EnemyAttackPlan plan)
+        {
+            if (plan.Shape == EnemyTelegraphShape.Circle)
+            {
+                return Vector2.Distance(point, center) <= plan.Radius;
+            }
+
+            var forward = plan.AimDirection.normalized;
+            var perpendicular = new Vector2(-forward.y, forward.x);
+            var delta = point - center;
+            return Mathf.Abs(Vector2.Dot(delta, forward)) <= plan.Size.x * 0.5f &&
+                   Mathf.Abs(Vector2.Dot(delta, perpendicular)) <= plan.Size.y * 0.5f;
+        }
+
+        [UnityTest]
         public IEnumerator TelegraphViewMatchesBoxAndBossCirclePlanBoundsWithoutCollider()
         {
             yield return LoadBattleScene();
@@ -1573,6 +1728,104 @@ namespace Game.Tests.PlayMode
                 }
 
                 Invoke(pool, "Clear", key);
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator ObjectPoolReuseDoesNotResumePoisonFromThePreviousEnemyLease()
+        {
+            yield return LoadBattleScene();
+            var spawner = FindActiveSceneComponent("WaveSpawner");
+            ((MonoBehaviour)spawner).StopAllCoroutines();
+            var pool = FindActiveSceneComponent("ObjectPool");
+            var assembly = spawner.GetType().Assembly;
+            var gruntType = assembly.GetType("Grunt");
+            var poisonType = assembly.GetType("PoisonDot");
+            var key = $"b2_poison_lease_{Guid.NewGuid():N}";
+            var sourceA = new GameObject("B2PoisonLeaseSourceA");
+            GameObject leased = null;
+            var resolvedEvent = assembly.GetType("CombatEvents")
+                .GetEvent("OnHitResolved", BindingFlags.Static | BindingFlags.Public);
+            var contextType = assembly.GetType("CombatFeedbackContext");
+            var captureMethod = typeof(BattleEnemyExperienceTests).GetMethod(
+                    nameof(CaptureResolvedHit),
+                    BindingFlags.Static | BindingFlags.NonPublic)
+                .MakeGenericMethod(contextType);
+            var resolvedProbe = Delegate.CreateDelegate(resolvedEvent.EventHandlerType, captureMethod);
+
+            Func<GameObject> factory = () =>
+            {
+                var enemyObject = new GameObject("B2PoisonLeaseGrunt");
+                enemyObject.SetActive(false);
+                enemyObject.tag = "Enemy";
+                enemyObject.AddComponent<SpriteRenderer>();
+                var body = enemyObject.AddComponent<Rigidbody2D>();
+                body.gravityScale = 0f;
+                body.freezeRotation = true;
+                enemyObject.AddComponent<BoxCollider2D>();
+                enemyObject.AddComponent(gruntType);
+                return enemyObject;
+            };
+
+            resolvedEvent.AddEventHandler(null, resolvedProbe);
+            try
+            {
+                Assert.That((bool)Invoke(pool, "Register", key, factory, 1), Is.True);
+                var first = (GameObject)Invoke(pool, "Get", key);
+                leased = first;
+                var firstEnemy = first.GetComponents<Component>()
+                    .Single(component => component.GetType().Name == "Grunt");
+                Invoke(firstEnemy, "PrepareForSpawn", new EnemyWaveStats(100, 10, 2f));
+                var poison = first.AddComponent(poisonType);
+                Invoke(poison, "AddStack", sourceA);
+                Invoke(poison, "AddStack", sourceA);
+                Invoke(poison, "AddStack", sourceA);
+
+                Invoke(pool, "Return", key, first);
+                leased = null;
+                var second = (GameObject)Invoke(pool, "Get", key);
+                leased = second;
+                Assert.That(second, Is.SameAs(first),
+                    "The one-object pool must reuse the poisoned Enemy instance.");
+                var secondEnemy = second.GetComponents<Component>()
+                    .Single(component => component.GetType().Name == "Grunt");
+                Invoke(secondEnemy, "PrepareForSpawn", new EnemyWaveStats(120, 12, 2.2f));
+
+                _resolvedHitCount = 0;
+                _lastResolvedHit = null;
+                var hpBefore = (int)GetField(secondEnemy, "hp");
+                yield return new WaitForSeconds(0.6f);
+
+                var failures = new List<string>();
+                if ((int)GetField(secondEnemy, "hp") != hpBefore)
+                {
+                    failures.Add("the new lease lost HP to the old PoisonDot");
+                }
+                if (_resolvedHitCount != 0)
+                {
+                    failures.Add($"the new lease published {_resolvedHitCount} stale resolved hit(s)");
+                }
+                if (_lastResolvedHit != null &&
+                    ReferenceEquals(ReadRuntimeProperty(_lastResolvedHit, "Source"), sourceA))
+                {
+                    failures.Add("the stale resolved hit retained source A");
+                }
+                Assert.That(
+                    failures,
+                    Is.Empty,
+                    "B2_WHOLE_REVIEW_RED_POISON_LEASE: " + string.Join("; ", failures));
+            }
+            finally
+            {
+                resolvedEvent.RemoveEventHandler(null, resolvedProbe);
+                _resolvedHitCount = 0;
+                _lastResolvedHit = null;
+                if (leased != null)
+                {
+                    Invoke(pool, "Return", key, leased);
+                }
+                Invoke(pool, "Clear", key);
+                UnityEngine.Object.DestroyImmediate(sourceA);
             }
         }
 

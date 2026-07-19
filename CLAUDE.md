@@ -81,7 +81,7 @@ game_client_unity/
 
 当前战斗使用 `UnityEngine.Input` 和自定义 `GestureInput`。未使用的 Input System 包会破坏当前手写 ProjectSettings 下的 PlayMode 初始化，因此 Phase A1 已移除；需要新输入后端时必须连同有效配置和回归测试一起接入。
 
-## 当前工程阶段（2026-07-19 已验证）
+## 当前工程阶段（2026-07-20 已验证）
 
 - Phase A2 已建立自动 Offline 生命周期：`RuntimeBootstrap -> [GameApplication] -> [GameServices]`，仅应用根跨场景持久化，默认进入 `BattleScene`
 - Phase A3 已完成 service-owned 网络边界：`NetworkClient`、WebSocket transport、主线程 dispatcher、连接 host 及唯一心跳/重连策略均有自动测试；A3 收口验证为 EditMode `88/88`、PlayMode `11/11`
@@ -90,7 +90,11 @@ game_client_unity/
 - `BattleRunController` 统一 Victory/Defeat/Restart；终局冻结动作、移动与热键，结果 UI 只提供 Restart，重开后 Player、Pool、Spawner、UI、EventSystem 和时间状态均为新战局
 - B1 自动截图探针已生成并由父级最终批准 `Logs/phase-b1-combat.png` 与 `Logs/phase-b1-result.png`，两图均为 960x540；combat 为 dark `2639`、chromatic `117796`、variance `304.99`、Player `57.60px`、Grunt `48.00px`、SHA-256 `59E202689676AE66397A1315A4B014C0BF777FB890314AEDF61BD457F1941E93`，result 为 dark `297973`、light `217068`、variance `6281.16`、SHA-256 `9FA4EC1CCE2B36D3B935DC2D133A6B36445038446843AFCF6E3D52AC9932F966`
 - B1 最终有效回归为 focused visual `2/2` 连续三次、combat `33/33`、五次重载 smoke `3/3`、EditMode `111/111`、PlayMode `47/47` 连续两次、Pester `5/5`；资源完整性、canonical hit/parry、唯一时间写入和场景/武器 teardown 门禁均通过
-- 后续工作为 Phase B2 战斗表现/敌人体验，以及 Phase C UI、Prefab、动画、资源加载和打包工程化
+- Phase B2 已完成敌人战斗体验竖切：确定性波次缩放与池复用、左右出生和战场相机、四类敌人冻结攻击计划/预警/结算、实际 HP 差值反馈、场景内墨粒子、波次目标与单 Boss HUD 均由真实运行路径驱动
+- Boss 攻击在进入 Telegraph 前同步停止并冻结 `localToWorldMatrix`，冲锋/砸地结算不再随 Commit 位移偏离预警；`PoisonDot` 在敌人池租约结束和新租约准备时清空层数、计时器与来源，旧租约不会污染复用敌人
+- B2 最终有效验证为 visual `2/2` 连续三次、core `49/49`、enemy `39/39`、combat `37/37`、EditMode `160/160`、PlayMode `92/92` 连续两次、smoke `3/3`、Pester `5/5`；Task 7 规范审查、质量复审和完整分支复审均 PASS
+- 父级最终批准两张 960x540 证据图：`Logs/phase-b2-wave-combat.png`（101674 bytes，dark `8473`、light `506624`、chromatic `73868`、colors `112`、variance `560.11`、Player `29.12px`、Grunt `24.27px`、SHA-256 `2AEABB48FDB548F7F8E3CA072B0ECB2AA5999CCC7B83250A0BC7A07B33B74DF0`）和 `Logs/phase-b2-boss-telegraph.png`（122543 bytes，dark `12998`、light `500312`、chromatic `86814`、colors `139`、variance `809.23`、Boss `48.54px`、Circle `485.39px`、SHA-256 `68B6022A192CE43FBF69EAB5265B7A695A52CE6F19AB84125445FE570DD37350`）
+- 后续工作仍为 Phase A4 Online/MainMenu/真实后端联调，以及 Phase C UI、Prefab、动画、资源加载和打包工程化
 
 ## 服务器仓库
 

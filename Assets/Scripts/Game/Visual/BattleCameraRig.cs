@@ -6,6 +6,8 @@ using UnityEngine;
 /// </summary>
 public sealed class BattleCameraRig : MonoBehaviour
 {
+    private const float VerticalFramingOffset = 0.4f;
+
     private Transform _target;
     private Camera _camera;
     private BattleArenaBounds _bounds;
@@ -53,6 +55,6 @@ public sealed class BattleCameraRig : MonoBehaviour
         var x = minimum > maximum
             ? _bounds.CenterX
             : Mathf.Clamp(_target.position.x, minimum, maximum);
-        transform.position = new Vector3(x, 0f, 0f);
+        transform.position = new Vector3(x, VerticalFramingOffset, 0f);
     }
 }

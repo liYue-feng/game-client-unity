@@ -79,6 +79,16 @@ public class PoisonDot : MonoBehaviour
         _source = source;
         _stacks = Mathf.Min(5, _stacks + 1);
         _timer = _duration; // 刷新持续时间
+        enabled = true;
+    }
+
+    internal void ResetForEnemyLease()
+    {
+        _stacks = 0;
+        _tickTimer = 0f;
+        _timer = 0f;
+        _source = null;
+        enabled = false;
     }
 
     private void Update()

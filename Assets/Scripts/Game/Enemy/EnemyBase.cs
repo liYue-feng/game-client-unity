@@ -61,6 +61,8 @@ public abstract class EnemyBase : MonoBehaviour, IParryResponder
     private bool _baselineInitialized;
     private Color _baselineColor;
     private bool _baselineParryable;
+    private Matrix4x4 _currentAttackLocalToWorld;
+    private bool _hasCurrentAttackLocalToWorld;
 
     protected virtual void Awake()
     {
@@ -123,6 +125,7 @@ public abstract class EnemyBase : MonoBehaviour, IParryResponder
         }
 
         CancelOwnedAttack();
+        ResetLeaseTransientEffects();
         StopDeathFade();
         IsDead = false;
         CurrentState = EnemyState.Idle;
@@ -363,6 +366,15 @@ public abstract class EnemyBase : MonoBehaviour, IParryResponder
             return false;
         }
 
+        if (_rb != null)
+        {
+            _rb.velocity = Vector2.zero;
+            _rb.angularVelocity = 0f;
+        }
+
+        // Commit movement must not shift damage away from the geometry shown during Telegraph.
+        _currentAttackLocalToWorld = transform.localToWorldMatrix;
+        _hasCurrentAttackLocalToWorld = true;
         CurrentAttackPlan = plan;
         CurrentAttackPhase = EnemyAttackPhase.Telegraph;
         isCurrentAttackParryable = plan.IsParryable;
@@ -408,6 +420,7 @@ public abstract class EnemyBase : MonoBehaviour, IParryResponder
         }
 
         _attackRoutine = null;
+        _hasCurrentAttackLocalToWorld = false;
         CurrentAttackPhase = EnemyAttackPhase.Complete;
         ChangeState(EnemyState.Chase);
     }
@@ -424,7 +437,10 @@ public abstract class EnemyBase : MonoBehaviour, IParryResponder
         EnemyAttackPlan plan,
         CombatFeedbackStrength strength)
     {
-        var center = (Vector2)transform.TransformPoint(plan.LocalOffset);
+        var localToWorld = _hasCurrentAttackLocalToWorld
+            ? _currentAttackLocalToWorld
+            : transform.localToWorldMatrix;
+        var center = (Vector2)localToWorld.MultiplyPoint3x4(plan.LocalOffset);
         Collider2D[] hits;
         if (plan.Shape == EnemyTelegraphShape.Box)
         {
@@ -473,6 +489,7 @@ public abstract class EnemyBase : MonoBehaviour, IParryResponder
         }
 
         _attackRoutine = null;
+        _hasCurrentAttackLocalToWorld = false;
         CurrentAttackPhase = EnemyAttackPhase.Complete;
         if (_telegraphView != null)
         {
@@ -650,5 +667,18 @@ public abstract class EnemyBase : MonoBehaviour, IParryResponder
     protected virtual void OnDisable()
     {
         CancelOwnedAttack();
+        if (!gameObject.activeInHierarchy)
+        {
+            ResetLeaseTransientEffects();
+        }
+    }
+
+    private void ResetLeaseTransientEffects()
+    {
+        var poison = GetComponent<PoisonDot>();
+        if (poison != null)
+        {
+            poison.ResetForEnemyLease();
+        }
     }
 }

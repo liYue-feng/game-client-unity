@@ -115,7 +115,7 @@ function Invoke-UnityTests {
 
 ## Baseline Gate
 
-- [ ] Create the isolated worktree, confirm the exact base, and define the serial runner.
+- [x] Create the isolated worktree, confirm the exact base, and define the serial runner.
 
 ```powershell
 git worktree add .worktrees/phase-b2-enemy-combat-experience -b feature/phase-b2-enemy-combat-experience e64475b543bb37d2cf3c3becdb4f78e9c109f5bf
@@ -126,7 +126,7 @@ git rev-parse HEAD
 
 Expected: clean feature branch and exact HEAD `e64475b543bb37d2cf3c3becdb4f78e9c109f5bf`.
 
-- [ ] Run asset integrity, Pester, full EditMode, and full PlayMode serially.
+- [x] Run asset integrity, Pester, full EditMode, and full PlayMode serially.
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File tools/validation/Test-UnityAssetIntegrity.ps1
@@ -168,7 +168,7 @@ Write-Output "verified=$local"
 - Produces: immutable `EnemyStatBaseline`, `EnemyWaveMultipliers`, `EnemyWaveStats`, and `EnemyWaveScaling.Calculate(EnemyStatBaseline, int waveIndex, EnemyWaveMultipliers)`.
 - Constraint: these types stay under `Game.Gameplay`; they contain no MonoBehaviour, scene lookup, mutable static state, or company-framework dependency.
 
-- [ ] **Step 1: Write a behavioral RED for the current compounding formula**
+- [x] **Step 1: Write a behavioral RED for the current compounding formula**
 
 Create `EnemyExperienceCoreTests.cs` with a reflection-based characterization test that compiles before the new core APIs exist:
 
@@ -220,7 +220,7 @@ namespace Game.Tests.EditMode.Gameplay
 }
 ```
 
-- [ ] **Step 2: Run focused EditMode RED**
+- [x] **Step 2: Run focused EditMode RED**
 
 ```powershell
 Invoke-UnityTests -Platform EditMode -Filter 'Game.Tests.EditMode.Gameplay.EnemyExperienceCoreTests' -ResultPath 'Logs/B2-task1-red.xml' -LogPath 'Logs/B2-task1-red.log' -ExpectFailure
@@ -228,7 +228,7 @@ Invoke-UnityTests -Platform EditMode -Filter 'Game.Tests.EditMode.Gameplay.Enemy
 
 Expected: one assertion failure showing the second wave-1 HP is larger than the first. The RED must be this observed compounding behavior, not a missing-type compiler error.
 
-- [ ] **Step 3: Implement the minimal pure arena model**
+- [x] **Step 3: Implement the minimal pure arena model**
 
 Implement normalized bounds and a deterministic fallback. Reachability and arena bounds outrank staying off-screen:
 
@@ -301,7 +301,7 @@ namespace Game.Gameplay
 }
 ```
 
-- [ ] **Step 4: Implement immutable wave scaling**
+- [x] **Step 4: Implement immutable wave scaling**
 
 Use readonly values and calculate every spawn from baseline:
 
@@ -366,7 +366,7 @@ namespace Game.Gameplay
 }
 ```
 
-- [ ] **Step 5: Replace the RED fixture with permanent typed core tests**
+- [x] **Step 5: Replace the RED fixture with permanent typed core tests**
 
 Keep the same test class, remove the temporary reflection test, and cover idempotence plus arena fallbacks:
 
@@ -396,7 +396,7 @@ public void SpawnPlannerReturnsAnInBoundsReachablePoint(
 }
 ```
 
-- [ ] **Step 6: Run focused GREEN and full EditMode**
+- [x] **Step 6: Run focused GREEN and full EditMode**
 
 ```powershell
 Invoke-UnityTests -Platform EditMode -Filter 'Game.Tests.EditMode.Gameplay.EnemyExperienceCoreTests' -ResultPath 'Logs/B2-task1-green.xml' -LogPath 'Logs/B2-task1-green.log'
@@ -407,11 +407,11 @@ git diff --check
 
 Expected: focused tests pass, full EditMode is baseline `111` plus the new tests with zero failures, asset integrity passes, and diff check is clean.
 
-- [ ] **Step 7: Run specification review, then code-quality review**
+- [x] **Step 7: Run specification review, then code-quality review**
 
 Specification reviewer checks exact planner priority, immutable baseline behavior, normalization, namespace, and Phase C exclusions. After specification PASS, quality reviewer checks value semantics, numeric boundaries, test independence, and absence of Unity scene dependencies.
 
-- [ ] **Step 8: Commit once and push once**
+- [x] **Step 8: Commit once and push once**
 
 ```powershell
 git add Assets/Scripts/Gameplay/BattleArena.cs Assets/Scripts/Gameplay/BattleArena.cs.meta Assets/Scripts/Gameplay/EnemyWaveScaling.cs Assets/Scripts/Gameplay/EnemyWaveScaling.cs.meta Assets/Tests/EditMode/Gameplay/EnemyExperienceCoreTests.cs Assets/Tests/EditMode/Gameplay/EnemyExperienceCoreTests.cs.meta
@@ -446,7 +446,7 @@ if ($local -ne $remote) { throw "Task 1 push mismatch" }
 - Produces: `BattleCameraRig.Configure(Transform target, BattleArenaBounds bounds, Camera camera)`, `SetFollowEnabled(bool)`, and `IsFollowing`.
 - Constraint: do not modify `Assets/Scripts/Game/Combat/ObjectPool.cs`; current Enemy types must finish preparation before their first physics step/Update and must not add runtime-state logic to `OnEnable`.
 
-- [ ] **Step 1: Write deterministic PlayMode RED tests against current spawn and camera behavior**
+- [x] **Step 1: Write deterministic PlayMode RED tests against current spawn and camera behavior**
 
 Create `BattleEnemyExperienceTests.cs`. Include local reflection helpers (`LoadBattleScene`, `FindActiveSceneComponent`, `GetField`, `SetField`, `Invoke`) following the existing PlayMode convention, then add these two tests:
 
@@ -516,7 +516,7 @@ private static object Invoke(Component component, string name, params object[] a
         .Invoke(component, args);
 ```
 
-- [ ] **Step 2: Run focused PlayMode RED**
+- [x] **Step 2: Run focused PlayMode RED**
 
 ```powershell
 Invoke-UnityTests -Platform PlayMode -Filter 'Game.Tests.PlayMode.BattleEnemyExperienceTests' -ResultPath 'Logs/B2-task2-red.xml' -LogPath 'Logs/B2-task2-red.log' -ExpectFailure
@@ -524,7 +524,7 @@ Invoke-UnityTests -Platform PlayMode -Filter 'Game.Tests.PlayMode.BattleEnemyExp
 
 Expected: the forced Grunt is at world x=14 and outside chase range, and the camera has no `[BattleCameraRig]` parent/does not keep the moved player visible.
 
-- [ ] **Step 3: Capture and restore one immutable baseline per Enemy instance**
+- [x] **Step 3: Capture and restore one immutable baseline per Enemy instance**
 
 In `EnemyBase`, replace Start-time stat mutation with explicit factory initialization:
 
@@ -572,7 +572,7 @@ protected virtual void ResetSubclassState() { }
 
 `EnemyBase.Start` only resolves the Player. Override `ResetSubclassState` in Archer (`_shootCooldownTimer = 0f`), Elite (`_currentCombo = 0; _isHeavyAttack = false`), and Boss (`_isEnraged = false; _attackPattern = 0`). Keep `ResetForPool()` as a compatibility wrapper that applies wave-0 stats from Baseline.
 
-- [ ] **Step 4: Make WaveSpawner plan world positions and scale from baseline**
+- [x] **Step 4: Make WaveSpawner plan world positions and scale from baseline**
 
 Add `using Game.Gameplay;`, store configured arena/player/camera, set the Spawner transform to x=0, and use this flow inside `SpawnEnemy` without yielding:
 
@@ -606,7 +606,7 @@ private void SpawnEnemy(EnemySpawnEntry entry)
 
 Call `enemyBase.InitializeCombatBaseline()` at the end of `CreateEnemy`. Replace `EnemySpawnEntry.spawnX` with `ArenaSpawnSide preferredSide`, configure deterministic alternating sides in `BattleSceneSetup.ConfigureWaves`, and delete legacy `ApplyWaveScaling`.
 
-- [ ] **Step 5: Add a parent camera rig that composes with CameraShaker**
+- [x] **Step 5: Add a parent camera rig that composes with CameraShaker**
 
 Create `BattleCameraRig.cs`:
 
@@ -648,11 +648,11 @@ public sealed class BattleCameraRig : MonoBehaviour
 
 `BattleSceneSetup.CreateCamera` creates `[BattleCameraRig]`, parents `Main Camera` under it with local `(0,0,-10)`, then adds/reuses `CameraShaker` on the child. After Player creation, configure the rig and WaveSpawner from one `BattleArenaBounds(-groundWidth/2, groundWidth/2)`. Do not change the existing `BattleRunController.Configure` signature. Add a narrow, one-time `ConfigureCameraRig(BattleCameraRig rig)` post-configuration injection; BattleSceneSetup calls it immediately after the existing Configure call. Terminal completion and Dispose call `SetFollowEnabled(false)` before time scale reaches zero.
 
-- [ ] **Step 6: Convert RED fixtures to final integration regressions**
+- [x] **Step 6: Convert RED fixtures to final integration regressions**
 
 Update the spawn test to set `preferredSide = ArenaSpawnSide.Right` and assert the spawned Grunt both starts reachable and reduces horizontal distance over real AI frames without moving/freezing it. Add `ObjectPoolReusePreparesTheSameBossBeforeItsFirstPhysicsStep` using a unique one-object pool key and the real sequence `ObjectPool.Register -> Get -> PrepareForSpawn -> mutate -> Return -> Get -> PrepareForSpawn`. Assert the two GameObjects are the same instance. Immediately after the second Prepare and before the first `WaitForFixedUpdate`, assert baseline-derived HP/damage/speed, Boss enrage/pattern reset, zero Rigidbody velocity/angularVelocity, baseline Sprite color/flip, enabled Collider, and no active attack/telegraph. Then cross one FixedUpdate and assert the state remains clean. Clear the unique key in `finally`.
 
-- [ ] **Step 7: Run focused and full GREEN gates**
+- [x] **Step 7: Run focused and full GREEN gates**
 
 ```powershell
 Invoke-UnityTests -Platform PlayMode -Filter 'Game.Tests.PlayMode.BattleEnemyExperienceTests' -ResultPath 'Logs/B2-task2-green.xml' -LogPath 'Logs/B2-task2-green.log'
@@ -665,11 +665,11 @@ git diff -- Assets/Scripts/Game/Combat/ObjectPool.cs
 
 Expected: focused/full tests pass, asset integrity passes, diff check is clean, and the ObjectPool diff is empty.
 
-- [ ] **Step 8: Run specification review, then code-quality review**
+- [x] **Step 8: Run specification review, then code-quality review**
 
 Specification review checks planner integration, exact baseline capture timing, no `ObjectPool` API change, camera/shake Transform ownership, terminal freeze, and restart replacement. Quality review starts only after PASS and checks coroutine cleanup, event bindings, null handling, and deterministic tests.
 
-- [ ] **Step 9: Commit once and push once**
+- [x] **Step 9: Commit once and push once**
 
 ```powershell
 git add Assets/Scripts/Game/Visual/BattleCameraRig.cs Assets/Scripts/Game/Visual/BattleCameraRig.cs.meta Assets/Scripts/Game/BattleSceneSetup.cs Assets/Scripts/Game/BattleRunController.cs Assets/Scripts/Game/Dungeon/WaveSpawner.cs Assets/Scripts/Game/Enemy/EnemyBase.cs Assets/Scripts/Game/Enemy/Archer.cs Assets/Scripts/Game/Enemy/Elite.cs Assets/Scripts/Game/Enemy/Boss.cs Assets/Tests/PlayMode/BattleEnemyExperienceTests.cs Assets/Tests/PlayMode/BattleEnemyExperienceTests.cs.meta
@@ -694,7 +694,7 @@ if ($local -ne $remote) { throw "Task 2 push mismatch" }
 - `EnemyAttackPlan` exposes `AttackId`, phase durations, `IsParryable`, shape/geometry, frozen facing/aim, hit count/interval, damage, knockback, `TotalDuration`, and `IsValid`.
 - `EnemyAttackTimeline.Evaluate(float elapsed)` is the only pure phase evaluator consumed by Task 4.
 
-- [ ] **Step 1: Write normalization and phase tests plus a compile-only API seam**
+- [x] **Step 1: Write normalization and phase tests plus a compile-only API seam**
 
 Add the tests first. To obtain behavioral XML rather than a missing-type compile failure, add the exact public declarations in `EnemyAttackPlan.cs` with raw field assignment and a temporary `Evaluate` that returns `Complete`; do not add normalization or real phase behavior yet.
 
@@ -746,7 +746,7 @@ public static EnemyAttackPlan Circle(string attackId, float telegraphDuration,
     int hitCount, float hitInterval, int damage, float knockback);
 ```
 
-- [ ] **Step 2: Run focused behavioral RED**
+- [x] **Step 2: Run focused behavioral RED**
 
 ```powershell
 Invoke-UnityTests -Platform EditMode -Filter 'Game.Tests.EditMode.Gameplay.EnemyExperienceCoreTests' -ResultPath 'Logs/B2-task3-red.xml' -LogPath 'Logs/B2-task3-red.log' -ExpectFailure
@@ -754,7 +754,7 @@ Invoke-UnityTests -Platform EditMode -Filter 'Game.Tests.EditMode.Gameplay.Enemy
 
 Expected: normalization assertions fail on negative duration/size and the timeline returns Complete instead of Telegraph. The XML must be complete; a compiler failure is not accepted as this task's RED.
 
-- [ ] **Step 3: Implement the immutable plan and timeline**
+- [x] **Step 3: Implement the immutable plan and timeline**
 
 Use one private constructor behind `Box` and `Circle`. Apply these exact rules:
 
@@ -793,11 +793,11 @@ public EnemyAttackPhase Evaluate(float elapsed)
 }
 ```
 
-- [ ] **Step 4: Add edge tests**
+- [x] **Step 4: Add edge tests**
 
 Add tests for invalid empty ID, zero Box size, zero Circle radius, zero aim fallback, `HitCount=1`, elapsed NaN, and exact zero-duration phase transitions. Assert every property is read-only via reflection.
 
-- [ ] **Step 5: Run focused and full GREEN gates**
+- [x] **Step 5: Run focused and full GREEN gates**
 
 ```powershell
 Invoke-UnityTests -Platform EditMode -Filter 'Game.Tests.EditMode.Gameplay.EnemyExperienceCoreTests' -ResultPath 'Logs/B2-task3-green.xml' -LogPath 'Logs/B2-task3-green.log'
@@ -807,11 +807,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/validation/Test-UnityA
 git diff --check
 ```
 
-- [ ] **Step 6: Run specification review, then code-quality review**
+- [x] **Step 6: Run specification review, then code-quality review**
 
 Specification review checks every committed plan field, frozen aim, combo-window normalization, only Box/Circle, and no MonoBehaviour. Quality review then checks immutability, finite-number handling, exact boundaries, and table-test completeness.
 
-- [ ] **Step 7: Commit once and push once**
+- [x] **Step 7: Commit once and push once**
 
 ```powershell
 git add Assets/Scripts/Gameplay/EnemyAttackPlan.cs Assets/Scripts/Gameplay/EnemyAttackPlan.cs.meta Assets/Tests/EditMode/Gameplay/EnemyExperienceCoreTests.cs
@@ -848,7 +848,7 @@ if ($local -ne $remote) { throw "Task 3 push mismatch" }
 - Produces: `AttackTelegraphView.Show(EnemyAttackPlan)`, `SetProgress(float)`, `Hide()`, `IsVisible`, `CurrentShape`, and read-only rendered bounds for tests.
 - Constraint: attack view has no Collider; all physical queries use the same plan snapshot. No enemy may call `StartCoroutine` for an attack outside EnemyBase ownership.
 
-- [ ] **Step 1: Write RED tests for late planning and orphaned combos**
+- [x] **Step 1: Write RED tests for late planning and orphaned combos**
 
 Add two real-behavior tests to `BattleEnemyExperienceTests`:
 
@@ -886,7 +886,7 @@ public IEnumerator EliteMustNotReturnToChaseBeforeItsOwnedComboEnds()
 
 `CreateEnemyProbe` creates an inactive GameObject, adds SpriteRenderer/Rigidbody2D/BoxCollider2D and the requested Enemy type, activates it beside the real Player, initializes baseline, and returns the Enemy Component. Clean it in `finally`.
 
-- [ ] **Step 2: Run focused PlayMode RED**
+- [x] **Step 2: Run focused PlayMode RED**
 
 ```powershell
 Invoke-UnityTests -Platform PlayMode -Filter 'Game.Tests.PlayMode.BattleEnemyExperienceTests' -ResultPath 'Logs/B2-task4-red.xml' -LogPath 'Logs/B2-task4-red.log' -ExpectFailure
@@ -894,7 +894,7 @@ Invoke-UnityTests -Platform PlayMode -Filter 'Game.Tests.PlayMode.BattleEnemyExp
 
 Expected: Elite changes directly to Attack instead of applying the heavy Telegraph, and its generic 0.05-second Attack returns to Chase before the three-hit coroutine completes.
 
-- [ ] **Step 3: Implement the independent Box/Circle telegraph view**
+- [x] **Step 3: Implement the independent Box/Circle telegraph view**
 
 `AttackTelegraphView` owns one child LineRenderer with `useWorldSpace=false`, no Collider, and a scene-owned material destroyed in `OnDestroy`. Use 5 points for Box and 33 points for Circle. The view stores the plan snapshot and generates positions from its geometry:
 
@@ -925,7 +925,7 @@ public void Hide()
 
 Expose computed local min/max bounds for tests. `Hide`, `OnDisable`, and `OnDestroy` are idempotent.
 
-- [ ] **Step 4: Make EnemyBase the sole owner of attack sequencing**
+- [x] **Step 4: Make EnemyBase the sole owner of attack sequencing**
 
 Remove generic timer-driven Telegraph->Attack and Attack->Chase transitions. Implement one routine:
 
@@ -998,7 +998,7 @@ public void CancelActiveCombatActions()
 
 The method does not remove or return enemies and is safe to call repeatedly. In `BattleRunController.Complete`, call `_waveSpawner.CancelActiveCombatActions()` immediately after `_runState.TryComplete(outcome)` succeeds, before requesting the BattleResult zero-scale token and before `DisplayGameOver`. This applies identically to Victory and Defeat.
 
-- [ ] **Step 5: Implement plans and execution for all four enemy types**
+- [x] **Step 5: Implement plans and execution for all four enemy types**
 
 - Grunt: parryable Box, offset `(facing*0.6, 0.2)`, size `(0.8,0.6)`, one hit.
 - Archer: parryable narrow Box aiming along the frozen Player direction; Commit launches one Projectile with `plan.AimDirection` and starts cooldown.
@@ -1007,7 +1007,7 @@ The method does not remove or return enemies and is safe to call repeatedly. In 
 
 Each `ExecuteAttackPlan` uses `plan.LocalOffset/Size/Radius`, `plan.HitCount`, `plan.HitInterval`, `plan.Damage`, and `plan.Knockback`; remove duplicate geometry literals from the physical query. Projectile launch must not recalculate Player direction at Commit.
 
-- [ ] **Step 6: Update and extend PlayMode regressions**
+- [x] **Step 6: Update and extend PlayMode regressions**
 
 Replace the two RED tests with persistent assertions on `CurrentAttackPlan` and `CurrentAttackPhase`. Add:
 
@@ -1021,7 +1021,7 @@ Replace the two RED tests with persistent assertions on `CurrentAttackPlan` and 
 - In both terminal tests, record Player HP at completion, release only the captured `_battleResultToken` through `BattleTimeController.ReleaseTimeScale`, set the controller field to default through the existing test helper so cleanup stays idempotent, advance longer than the remaining plan duration, and assert Player HP never changes. This proves cancellation rather than relying on time scale 0 to mask an orphaned hit.
 - Extend `RestartButtonReloadsFreshRunningBattleScene`: after the replacement BattleScene is ready, spawn a new Enemy through its replacement WaveSpawner, invoke protected `TryStartPreparedAttack` through reflection, observe Telegraph then Commit/a resolved hit, and assert no terminal cancellation state or hidden-view state leaked from the old scene.
 
-- [ ] **Step 7: Run focused and full GREEN gates**
+- [x] **Step 7: Run focused and full GREEN gates**
 
 ```powershell
 Invoke-UnityTests -Platform PlayMode -Filter 'Game.Tests.PlayMode.BattleEnemyExperienceTests' -ResultPath 'Logs/B2-task4-green.xml' -LogPath 'Logs/B2-task4-green.log'
@@ -1036,11 +1036,11 @@ git diff --check
 
 Expected static result: Enemy attack coroutines start only through EnemyBase ownership; death fade may retain its separately tracked coroutine. WaveSpawner owns one public active-combat cancellation boundary, and BattleRunController invokes it before the BattleResult time-scale request.
 
-- [ ] **Step 8: Run specification review, then code-quality review**
+- [x] **Step 8: Run specification review, then code-quality review**
 
 Specification review checks prepare-before-Telegraph, frozen aim, shared visual/physics geometry, Box/Circle only, attack cancellation, terminal Victory/Defeat ordering, restart recovery, and all four archetypes. Quality review then checks coroutine reentrancy, idempotent active-enemy traversal, state transitions, material destruction, zero-duration behavior, and B1 compatibility.
 
-- [ ] **Step 9: Commit once and push once**
+- [x] **Step 9: Commit once and push once**
 
 ```powershell
 git add Assets/Scripts/Game/Visual/AttackTelegraphView.cs Assets/Scripts/Game/Visual/AttackTelegraphView.cs.meta Assets/Scripts/Game/Enemy/EnemyBase.cs Assets/Scripts/Game/Enemy/Grunt.cs Assets/Scripts/Game/Enemy/Archer.cs Assets/Scripts/Game/Enemy/Elite.cs Assets/Scripts/Game/Enemy/Boss.cs Assets/Scripts/Game/Enemy/Projectile.cs Assets/Scripts/Game/Dungeon/WaveSpawner.cs Assets/Scripts/Game/BattleRunController.cs Assets/Tests/PlayMode/BattleEnemyExperienceTests.cs Assets/Tests/PlayMode/BattleCombatLoopTests.cs
@@ -1100,7 +1100,7 @@ if ($local -ne $remote) { throw "Task 4 push mismatch" }
 - Produces: `CombatHitResolver.ResolveAndPublish(Hurtbox target, CombatHit hit, GameObject source, CombatFeedbackSourceKind sourceKind, CombatFeedbackStrength strength, int facingDirection)` so every production source resolves and publishes exactly once.
 - Produces: scene-owned `CombatFeedbackController.Configure(...)`, `Handle(CombatFeedbackContext)`, `ClearTransient()`, and `Dispose()`.
 
-- [ ] **Step 1: Write PlayMode RED tests for inaccurate and missing feedback**
+- [x] **Step 1: Write PlayMode RED tests for inaccurate and missing feedback**
 
 Add three tests to `BattleEnemyExperienceTests`:
 
@@ -1168,7 +1168,7 @@ public IEnumerator InkParticlePoolMustInitializeExactlyOnce()
 }
 ```
 
-- [ ] **Step 2: Run focused PlayMode RED**
+- [x] **Step 2: Run focused PlayMode RED**
 
 ```powershell
 Invoke-UnityTests -Platform PlayMode -Filter 'Game.Tests.PlayMode.BattleEnemyExperienceTests' -ResultPath 'Logs/B2-task5-red.xml' -LogPath 'Logs/B2-task5-red.log' -ExpectFailure -ExpectedFailureMessage 'B2_RED_ACTUAL_DAMAGE'
@@ -1176,7 +1176,7 @@ Invoke-UnityTests -Platform PlayMode -Filter 'Game.Tests.PlayMode.BattleEnemyExp
 
 Expected: reported enemy damage exceeds the actual HP delta, Player does not flash white, and InkParticlePool either has twice `poolSize` entries or is persistent.
 
-- [ ] **Step 3: Add pure hit outcome and generation-safe lease rules with EditMode tests**
+- [x] **Step 3: Add pure hit outcome and generation-safe lease rules with EditMode tests**
 
 Implement:
 
@@ -1208,7 +1208,7 @@ public readonly struct ParticleLeaseToken : System.IEquatable<ParticleLeaseToken
 
 Add EditMode tests proving Damaged preserves the HP delta, Parried/Ignored use zero, duplicate Return fails, reacquiring one slot invalidates its prior token, and InvalidateAll invalidates every slot.
 
-- [ ] **Step 4: Preserve ReceiveHit and add one resolving implementation**
+- [x] **Step 4: Preserve ReceiveHit and add one resolving implementation**
 
 Refactor `Hurtbox` without duplicating logic:
 
@@ -1235,7 +1235,7 @@ public CombatHitOutcome ResolveHit(CombatHit hit)
 
 Keep the exact B1 enum and compatibility tests. Implement `CombatHitResolver.ResolveAndPublish` as the only production adapter: it calls `target.ResolveHit(hit)`, creates one `CombatFeedbackContext`, publishes it once, and returns the outcome. Migrate every production caller in the Files list to this adapter. Elemental ticks/bounces and Blade/Poison/Seal/Sword style damage resolve through the target Hurtbox instead of calling `CharacterStats.TakeDamage` or `EnemyBase.TakeDamage` and spawning guessed numbers. BloodStyle's self-paid HP cost remains a resource cost, not an enemy hit, and stays outside resolved-hit feedback.
 
-- [ ] **Step 5: Add one resolved-hit event and one feedback owner**
+- [x] **Step 5: Add one resolved-hit event and one feedback owner**
 
 `CombatEvents.InvokeHitResolved` invokes `OnHitResolved` once and maps damaged enemy/player outcomes to the legacy `OnHitLanded`/`OnDamageTaken` events using `AppliedDamage`. Do not re-fire legacy `OnParrySuccess`; PlayerStateMachine already owns that compatibility event.
 
@@ -1268,7 +1268,7 @@ private void HandleResolvedHit(CombatFeedbackContext context)
 
 Remove BattleSceneSetup's old ink/slash/audio/damage/parry handlers and migrate CameraShaker/HitStopController away from legacy event subscriptions so no feedback plays twice. ComboCounter may keep `OnHitLanded`, now carrying AppliedDamage.
 
-- [ ] **Step 6: Make InkParticlePool scene-owned and generation-safe**
+- [x] **Step 6: Make InkParticlePool scene-owned and generation-safe**
 
 `BattleSceneSetup` explicitly creates one `[InkParticlePool]`; remove all `DontDestroyOnLoad` and double initialization. `InkParticlePool.Instance` returns the installed scene instance and never initializes twice. Pair each particle slot with `ParticleLeaseToken`:
 
@@ -1294,15 +1294,15 @@ public bool Return(InkParticleHandle handle)
 
 `InkHitEffect` stores handles, not bare GameObjects. `ClearAll` cancels its splash routine and returns active valid handles. Pool OnDestroy invalidates leases and clears static ownership only when it owns Instance. `HitEffectPlayer.OnDisable` restores its saved color; InkSlashEffect exposes idempotent `Hide`.
 
-- [ ] **Step 7: Clear transient feedback before BattleResult freezes time**
+- [x] **Step 7: Clear transient feedback before BattleResult freezes time**
 
 Do not change `BattleRunController.Configure`. Add a narrow, one-time `ConfigureCombatFeedback(CombatFeedbackController controller)` post-configuration injection, called by BattleSceneSetup after the existing Configure call. In the first terminal path call `ClearTransient()` before requesting the zero-scale BattleResult token. Dispose calls controller Dispose before scene pools disappear. Restart tests must capture old ink pool/particles and assert they are destroyed before accepting the new scene.
 
-- [ ] **Step 8: Convert RED tests and add permanent compatibility/lifecycle coverage**
+- [x] **Step 8: Convert RED tests and add permanent compatibility/lifecycle coverage**
 
 Update tests to assert `CombatFeedbackContext.AppliedDamage` equals HP delta exactly, one target flash/number/ink feedback per hit, player flash, one parry feedback with no HP loss, and no duplicate legacy callbacks. Add `ResolveHitReturnsOutcomeWhileReceiveHitPreservesB1Result` and restart-during-splash generation tests.
 
-- [ ] **Step 9: Run focused and full GREEN gates**
+- [x] **Step 9: Run focused and full GREEN gates**
 
 ```powershell
 Invoke-UnityTests -Platform EditMode -Filter 'Game.Tests.EditMode.Gameplay.EnemyExperienceCoreTests' -ResultPath 'Logs/B2-task5-core-green.xml' -LogPath 'Logs/B2-task5-core-green.log'
@@ -1319,11 +1319,11 @@ git diff --check
 
 Expected static result: production Game code calls `CombatHitResolver.ResolveAndPublish`; `ReceiveHit` remains only as the Hurtbox wrapper. Direct `enemy.TakeDamage`/`stats.TakeDamage` remain only inside Hurtbox plus the documented BloodStyle self-cost; ElementalEffect and Blade/Poison/Seal/Sword have no bypass. InkParticlePool has no `DontDestroyOnLoad`.
 
-- [ ] **Step 10: Run specification review, then code-quality review**
+- [x] **Step 10: Run specification review, then code-quality review**
 
 Specification review checks actual HP delta, compatibility wrapper, single feedback event, no double presentation, generation-safe reuse, terminal-before-freeze cleanup, and scene ownership. Quality review then checks all producers, event unsubscription, stale coroutine returns, static owner cleanup, and failure isolation.
 
-- [ ] **Step 11: Commit once and push once**
+- [x] **Step 11: Commit once and push once**
 
 ```powershell
 git add Assets/Scripts/Gameplay/CombatHitOutcome.cs Assets/Scripts/Gameplay/CombatHitOutcome.cs.meta Assets/Scripts/Gameplay/ParticleLeaseRegistry.cs Assets/Scripts/Gameplay/ParticleLeaseRegistry.cs.meta Assets/Tests/EditMode/Gameplay/EnemyExperienceCoreTests.cs Assets/Scripts/Game/Combat/CombatFeedbackContext.cs Assets/Scripts/Game/Combat/CombatFeedbackContext.cs.meta Assets/Scripts/Game/Combat/CombatHitResolver.cs Assets/Scripts/Game/Combat/CombatHitResolver.cs.meta Assets/Scripts/Game/Visual/CombatFeedbackController.cs Assets/Scripts/Game/Visual/CombatFeedbackController.cs.meta Assets/Scripts/Game/Combat/CombatEvents.cs Assets/Scripts/Game/Combat/Hurtbox.cs Assets/Scripts/Game/Combat/Hitbox.cs Assets/Scripts/Game/Combat/SummonAI.cs Assets/Scripts/Game/Combat/ElementalEffect.cs Assets/Scripts/Game/Enemy/Grunt.cs Assets/Scripts/Game/Enemy/Elite.cs Assets/Scripts/Game/Enemy/Boss.cs Assets/Scripts/Game/Enemy/Projectile.cs Assets/Scripts/Game/Weapons/AutoWeapon.cs Assets/Scripts/Game/Style/Impl/BladeStyle.cs Assets/Scripts/Game/Style/Impl/PoisonStyle.cs Assets/Scripts/Game/Style/Impl/SealStyle.cs Assets/Scripts/Game/Style/Impl/SwordStyle.cs Assets/Scripts/Game/Visual/HitEffectPlayer.cs Assets/Scripts/Game/Visual/InkParticlePool.cs Assets/Scripts/Game/Visual/InkHitEffect.cs Assets/Scripts/Game/Visual/InkSlashEffect.cs Assets/Scripts/Game/Visual/CameraShaker.cs Assets/Scripts/Game/Visual/HitStopController.cs Assets/Scripts/Game/BattleSceneSetup.cs Assets/Scripts/Game/BattleRunController.cs Assets/Tests/PlayMode/BattleEnemyExperienceTests.cs Assets/Tests/PlayMode/BattleCombatLoopTests.cs
@@ -1359,7 +1359,7 @@ if ($local -ne $remote) { throw "Task 5 push mismatch" }
 - Produces EnemyBase `OnHealthChanged(int current, int max)` and Boss `CurrentPhase` / `OnPhaseChanged(int)`.
 - Produces `BattleHUD.InitializeForBattle(CharacterStats, WaveSpawner)`, scene-owned `WaveObjectiveView`, and event-bound `BossHPBar.BindBoss/UnbindBoss`.
 
-- [ ] **Step 1: Write PlayMode RED for absent objective and Boss HUD wiring**
+- [x] **Step 1: Write PlayMode RED for absent objective and Boss HUD wiring**
 
 Add two tests:
 
@@ -1388,7 +1388,7 @@ public IEnumerator RealBossSpawnMustBindOneVisibleBossHpBar()
 }
 ```
 
-- [ ] **Step 2: Run focused PlayMode RED**
+- [x] **Step 2: Run focused PlayMode RED**
 
 ```powershell
 Invoke-UnityTests -Platform PlayMode -Filter 'Game.Tests.PlayMode.BattleEnemyExperienceTests' -ResultPath 'Logs/B2-task6-red.xml' -LogPath 'Logs/B2-task6-red.log' -ExpectFailure
@@ -1396,7 +1396,7 @@ Invoke-UnityTests -Platform PlayMode -Filter 'Game.Tests.PlayMode.BattleEnemyExp
 
 Expected: no WaveObjectiveView exists and no BossHPBar is created/bound after a real pooled Boss spawn.
 
-- [ ] **Step 3: Add the pure HUD formatting model and EditMode tests**
+- [x] **Step 3: Add the pure HUD formatting model and EditMode tests**
 
 Implement exactly one 0-based-to-user-facing conversion:
 
@@ -1423,7 +1423,7 @@ namespace Game.Gameplay
 
 Add tests for first/last wave, negative input, zero total, over-range wave, and negative alive count. Add a Boss phase idempotence PlayMode test rather than duplicating Unity event behavior in the pure model.
 
-- [ ] **Step 4: Publish current-run wave, alive, and Boss events**
+- [x] **Step 4: Publish current-run wave, alive, and Boss events**
 
 In WaveSpawner:
 
@@ -1436,11 +1436,11 @@ public event Action<Boss> OnBossRemoved;
 
 Publish wave started before the first spawn. After `PrepareForSpawn`, death binding, and `_aliveEnemies.Add`, publish alive count, then Boss spawned with final scaled MaxHp. On confirmed death remove once, publish alive count, and publish Boss removed once. Dispose publishes removal for any bound Boss before clearing delegates. Keep B1 `OnWaveStart` as a delegating compatibility event until all old tests/callers migrate; do not publish two internal wave truths.
 
-- [ ] **Step 5: Publish health and phase truth from Enemy/Boss**
+- [x] **Step 5: Publish health and phase truth from Enemy/Boss**
 
 EnemyBase raises `OnHealthChanged(hp,maxHp)` after PrepareForSpawn and after every actual HP change. Boss exposes `CurrentPhase` initialized to 1; `EnterEnrage` changes it to 2 and raises `OnPhaseChanged(2)` once. Reset returns phase to 1 before `OnBossSpawned`. UI must never infer phase from an independent 50% calculation.
 
-- [ ] **Step 6: Create event-driven WaveObjectiveView and BossHPBar**
+- [x] **Step 6: Create event-driven WaveObjectiveView and BossHPBar**
 
 `WaveObjectiveView` owns two `Text` references and only renders `WaveObjectiveState`:
 
@@ -1456,13 +1456,13 @@ BattleHUD creates the compact view in the existing Canvas and subscribes to the 
 
 Refactor BossHPBar to remove Update polling. `BindBoss` first calls `UnbindBoss`, subscribes health/phase events, renders current values, and activates. `UnbindBoss` removes every handler, clears the reference, and hides. Boss removed, HUD disable/destroy, and replacement binding all call UnbindBoss idempotently.
 
-- [ ] **Step 7: Update scene wiring and lifecycle regressions**
+- [x] **Step 7: Update scene wiring and lifecycle regressions**
 
 Change BattleSceneSetup's HUD coroutine to call `InitializeForBattle(stats, _waveSpawner)`. Extend restart/reload tests to capture old WaveObjectiveView/BossHPBar IDs and delegate targets; after reload require one new HUD pair, no old objects, and no delegates targeting the destroyed HUD.
 
 Convert the Boss RED helper to set Task 2 `preferredSide`, then assert the bar's max/value equal the scaled Boss values, one phase event at enrage, immediate HP update, and hide/unbind after death/return. Assert alive count never becomes negative or decrements twice.
 
-- [ ] **Step 8: Run focused and full GREEN gates**
+- [x] **Step 8: Run focused and full GREEN gates**
 
 ```powershell
 Invoke-UnityTests -Platform EditMode -Filter 'Game.Tests.EditMode.Gameplay.EnemyExperienceCoreTests' -ResultPath 'Logs/B2-task6-core-green.xml' -LogPath 'Logs/B2-task6-core-green.log'
@@ -1474,11 +1474,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/validation/Test-UnityA
 git diff --check
 ```
 
-- [ ] **Step 9: Run specification review, then code-quality review**
+- [x] **Step 9: Run specification review, then code-quality review**
 
 Specification review checks event order, 1-based display, final scaled Boss HP, event-owned phase, single Boss scope, terminal/restart behavior, and no polling. Quality review then checks handler identity/unsubscription, duplicate death protection, UI layout stability, and no static HUD leaks.
 
-- [ ] **Step 10: Commit once and push once**
+- [x] **Step 10: Commit once and push once**
 
 ```powershell
 git add Assets/Scripts/Gameplay/WaveObjectiveState.cs Assets/Scripts/Gameplay/WaveObjectiveState.cs.meta Assets/Tests/EditMode/Gameplay/EnemyExperienceCoreTests.cs Assets/Scripts/UI/BattleUI/WaveObjectiveView.cs Assets/Scripts/UI/BattleUI/WaveObjectiveView.cs.meta Assets/Scripts/UI/BattleUI/BattleHUD.cs Assets/Scripts/UI/BattleUI/BossHPBar.cs Assets/Scripts/Game/Dungeon/WaveSpawner.cs Assets/Scripts/Game/Enemy/EnemyBase.cs Assets/Scripts/Game/Enemy/Boss.cs Assets/Scripts/Game/BattleSceneSetup.cs Assets/Tests/PlayMode/BattleEnemyExperienceTests.cs Assets/Tests/PlayMode/BattleSceneOfflineSmokeTests.cs
@@ -1505,7 +1505,7 @@ if ($local -ne $remote) { throw "Task 6 push mismatch" }
 - Produces: `Logs/phase-b2-wave-combat.png` and `Logs/phase-b2-boss-telegraph.png`, both exactly 960x540 and freshly generated.
 - Produces no runtime API. Visual fixtures use the real BattleScene, Task 2 camera/spawns, Task 4 telegraph, Task 5 feedback, and Task 6 HUD.
 
-- [ ] **Step 1: Write visual evidence RED tests and stale-output guards**
+- [x] **Step 1: Write visual evidence RED tests and stale-output guards**
 
 Create `BattleEnemyVisualEvidenceTests.cs` under `Game.Tests.PlayMode`. Before scene load each test deletes its output and asserts it is absent. Add:
 
@@ -1574,9 +1574,9 @@ Invoke-UnityTests -Platform PlayMode -Filter 'Game.Tests.PlayMode.B2BaselineVisu
 Invoke-UnityTests -Platform PlayMode -Filter 'Game.Tests.PlayMode.B2BaselineVisualContractTests.BaselineBossPresentationContractFailsBehaviorally' -ResultPath 'Logs/B2-task7-red-boss.xml' -LogPath 'Logs/B2-task7-red-boss.log' -ExpectFailure -ExpectedFailureMessage 'B2_RED_BOSS_TELEGRAPH'
 ```
 
-The committed `BattleEnemyVisualEvidenceTests` is the post-Tasks-1-6 GREEN fixture shown above. Its string-shaped telegraph wait may resolve the final enum and component internally through reflection, but acceptance remains behavioral: visible warning geometry, bound HUD values, resolved hit feedback, and fresh output files.
+The current Task 7 `BattleEnemyVisualEvidenceTests` is the post-Tasks-1-6 GREEN fixture shown above. Its string-shaped telegraph wait may resolve the final enum and component internally through reflection, but acceptance remains behavioral: visible warning geometry, bound HUD values, resolved hit feedback, and fresh output files.
 
-- [ ] **Step 2: Run focused visual tests three times serially**
+- [x] **Step 2: Run focused visual tests three times serially**
 
 ```powershell
 Invoke-UnityTests -Platform PlayMode -Filter 'Game.Tests.PlayMode.BattleEnemyVisualEvidenceTests' -ResultPath 'Logs/B2-task7-visual-1.xml' -LogPath 'Logs/B2-task7-visual-1.log'
@@ -1586,7 +1586,7 @@ Invoke-UnityTests -Platform PlayMode -Filter 'Game.Tests.PlayMode.BattleEnemyVis
 
 Expected: each run is `2/2`, writes both fresh images, exits normally, and produces no native crash. Hashes may differ only if intentionally documented random particles remain; structural pixel metrics and projection bounds must pass every run.
 
-- [ ] **Step 3: Apply objective visual gates**
+- [x] **Step 3: Apply objective visual gates**
 
 Wave frame must prove:
 
@@ -1601,11 +1601,11 @@ Boss frame must prove:
 - Boss HP max/value match the spawned Boss; phase, wave, and alive texts fit their containers.
 - Quantized color count, dark/light/chromatic populations, and luminance variance are nontrivial. Do not approve a technically nonblank but unreadable frame.
 
-- [ ] **Step 4: Parent opens and approves the exact final PNGs**
+- [x] **Step 4: Parent opens and approves the exact final PNGs**
 
 Open `Logs/phase-b2-wave-combat.png` and `Logs/phase-b2-boss-telegraph.png` after the third run. Record APPROVED only after checking framing, warning-to-hit geometry, text fit, no overlap, no stale particle/number, and no blank/solid render. If either image fails, fix the owning runtime/test code, rerun focused tests three times, and repeat both specification and quality review for the changed task surface before continuing.
 
-- [ ] **Step 5: Run complete regression gates serially**
+- [x] **Step 5: Run complete regression gates serially**
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File tools/validation/Test-UnityAssetIntegrity.ps1
@@ -1618,7 +1618,7 @@ Invoke-UnityTests -Platform PlayMode -Filter 'Game.Tests.PlayMode.BattleSceneOff
 
 Expected: asset integrity and Pester `5/5` pass; full EditMode and both full PlayMode runs have identical totals and zero failures; smoke passes with fresh scene-owned CameraRig, Enemy pools, InkParticlePool, HUD, and delegates.
 
-- [ ] **Step 6: Run static and repository hygiene gates**
+- [x] **Step 6: Run static and repository hygiene gates**
 
 ```powershell
 rg -n "Time\.timeScale\s*=" Assets/Scripts
@@ -1633,15 +1633,15 @@ git status --short
 
 Expected: only BattleTimeController writes time scale; ReceiveHit is only the Hurtbox compatibility wrapper; production hit producers use `CombatHitResolver.ResolveAndPublish`, with direct `TakeDamage` limited to the documented Hurtbox compatibility path and BloodStyle self-cost; InkParticlePool is not persistent; enemy attack coroutine ownership is centralized; ObjectPool diff is empty; diff check is clean; no transient Unity scenes, crash dumps, generated PNG/XML/log files, or ignored SDD reports are staged.
 
-- [ ] **Step 7: Run Task 7 specification review, then quality review**
+- [x] **Step 7: Run Task 7 specification review, then quality review**
 
 Specification review checks real-path captures, stale-output deletion, Canvas/Camera restoration, exact 960x540 outputs, both required visual stories, parent inspection, documentation truth, and Phase C/A4 exclusions. Only after PASS, quality review checks cleanup in every exception path, deterministic waiting, pixel/projection gates, and non-flaky test timing.
 
-- [ ] **Step 8: Run an independent whole-branch review**
+- [x] **Step 8: Run an independent whole-branch review**
 
 Review `e64475b543bb37d2cf3c3becdb4f78e9c109f5bf` through the complete working tree. Fix every Critical/Important finding before commit, rerun the affected focused suites plus both full suites, and repeat whole-branch review until PASS. Do not defer an observed combat, lifecycle, or stale-state bug to Phase C merely because it appears during presentation testing.
 
-- [ ] **Step 9: Record exact evidence without placeholders**
+- [x] **Step 9: Record exact evidence without placeholders**
 
 Update CLAUDE, project overview, the B2 design evidence note, and this plan with actual XML totals/paths, Pester result, image byte sizes/SHA-256/pixel metrics, parent visual verdict, review verdicts, final task commit SHAs, skipped checks, and remaining A4/Phase C work. Do not write predicted totals, placeholder markers, or a commit's own not-yet-known SHA.
 
@@ -1675,3 +1675,40 @@ Write-Output "delivered=$localMaster"
 Remove the Phase B2 worktree only after master and origin/master equal the reviewed feature head and the worktree is clean. This final fast-forward adds no commit; the seven task commits remain the reviewable history.
 
 **Commit:** `test: add phase b2 visual evidence`
+
+## Phase B2 最终交付证据（2026-07-20）
+
+Task 1-6 的真实提交为：
+
+| Task | SHA | 交付 |
+|---|---|---|
+| 1 | `d05cd073cca600cd2aaabe482bccab392d5f6be2` | deterministic enemy/wave models |
+| 2 | `613487771d9a1c0c65bf0ac460da0c507d365460` | two-sided spawn and camera framing |
+| 3 | `c4b3e83445f8bfc2a36b2e4bdb28c6e3289f07f5` | frozen attack plans |
+| 4 | `02396ace5562c2471a4ac667d7e52f311241b9a2` | Telegraph/Commit/cancel/parry |
+| 5 | `5bcf2a29c2c3ec8c1903ac1364a8540c8f0b9289` | resolved hit feedback and scene Ink lifecycle |
+| 6 | `06b8c93d823b6961f590286bf6851635027b0fe5` | wave objective and Boss HUD |
+
+Task 7 由包含本记录的提交交付。Git 提交无法在自身内容中稳定记录自身 SHA，因此这里不写自引用 SHA 或占位符；Step 10/11 的 commit、push、master fast-forward 与清理结果由提交后的本地/远端 SHA 核验及最终交付报告证明。
+
+### RED 与复审修复
+
+- disposable `e64475b5` baseline：`Logs/B2-task7-red-wave.xml` 和 `B2-task7-red-boss.xml` 均为 `1/0/1`，分别命中 `B2_RED_WAVE_HUD`、`B2_RED_BOSS_TELEGRAPH`。
+- Task 7 运行时/视觉 RED：`B2-task7-camera-red.xml`、`B2-task7-layout-red-wave.xml`、`B2-task7-layout-red-boss2.xml` 均闭合并验证真实相机/HUD/Circle 缺口。
+- 质量审查 RED：`B2-task7-random-state-red.xml`、`B2-task7-feedback-pixels-red.xml`、`B2-task7-telegraph-pixels-red.xml` 均为 `1/0/1`；修复后保存/恢复 `Random.state`，DamageNumber/Ink/Circle 都有 active/renderable/viewport 与可归属 ROI 像素差。
+- 完整分支审查 RED：Boss charge/slam 结算原点、Telegraph 下一物理步漂移和 Poison 旧租约分别记录在 `B2-whole-review-boss-charge-red.xml`、`B2-whole-review-boss-slam-red.xml`、`B2-whole-review-telegraph-drift-red.xml`、`B2-whole-review-poison-lease-red.xml`，均 `1/0/1`；对应 GREEN 均 `1/1`。
+
+### 最终 GREEN
+
+- visual：`Logs/B2-task7-quality-visual-1.xml`、`-2.xml`、`-3.xml` 均 `2/2`。
+- focused：`Logs/B2-final-review-core-green.xml` `49/49`；`B2-final-review-enemy-green.xml` `39/39`；`B2-final-review-combat-green.xml` `37/37`。
+- full：`Logs/B2-final-reviewed-full-editmode.xml` `160/160`；`B2-final-reviewed-full-playmode-1.xml` 与 `-2.xml` 均 `92/92`；`B2-final-reviewed-smoke.xml` `3/3`。
+- 所有最终 XML 完整且 skipped `0`；对应日志 compiler error `0`、native crash marker `0`，Unity 正常退出。
+- Asset integrity PASS；Pester `5/5` PASS；唯一 `Time.timeScale` 写入、canonical `ResolveHit`、Enemy coroutine ownership、scene-owned Ink、ObjectPool 无基线改动、GUID 唯一和 `git diff --check` 静态门禁均 PASS。
+
+### 最终视觉与审查
+
+- 父级 APPROVED `Logs/phase-b2-wave-combat.png`：960x540，101674 bytes，opaque `518272`、dark `8473`、light `506624`、chromatic `73868`、colors `112`、variance `560.11`、Player `29.12px`、Grunt `24.27px`、damage `20`、ink `7`，SHA-256 `2AEABB48FDB548F7F8E3CA072B0ECB2AA5999CCC7B83250A0BC7A07B33B74DF0`。
+- 父级 APPROVED `Logs/phase-b2-boss-telegraph.png`：960x540，122543 bytes，opaque `518400`、dark `12998`、light `500312`、chromatic `86814`、colors `139`、variance `809.23`、Boss `48.54px`、Circle `485.39px`、radius `4.00`，SHA-256 `68B6022A192CE43FBF69EAB5265B7A695A52CE6F19AB84125445FE570DD37350`。
+- Task 7 specification review PASS；quality re-review PASS；最终 independent whole-branch review PASS，Critical/Important/Minor 均为 0。
+- 要求的测试和审查没有跳过。剩余产品范围是 Phase A4 Online/MainMenu/真实后端联调，以及 Phase C Prefab/Animator/Addressables/AssetBundle/资源缓存和打包工程化。

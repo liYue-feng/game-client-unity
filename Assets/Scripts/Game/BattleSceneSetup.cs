@@ -15,6 +15,8 @@ using UnityEngine.EventSystems;
 /// </summary>
 public class BattleSceneSetup : MonoBehaviour
 {
+    private const float BattleCameraOrthographicSize = 4.45f;
+
     [Header("场景参数")]
     [Tooltip("地面宽度")]
     public float groundWidth = 30f;
@@ -179,7 +181,12 @@ public class BattleSceneSetup : MonoBehaviour
 
         // 水墨风格：相机背景设为宣纸色
         var cam = camObj.GetComponent<Camera>();
-        if (cam != null) cam.backgroundColor = ShuiMoPalette.RicePaper;
+        if (cam != null)
+        {
+            cam.orthographic = true;
+            cam.orthographicSize = BattleCameraOrthographicSize;
+            cam.backgroundColor = ShuiMoPalette.RicePaper;
+        }
 
         // 打击反馈组件
         if (camObj.GetComponent<CameraShaker>() == null)

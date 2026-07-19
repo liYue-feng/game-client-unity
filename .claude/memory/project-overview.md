@@ -33,7 +33,7 @@ Unity C# 游戏客户端，面向"吸血鬼幸存者"类微信小游戏（代号
 - 视觉: PlaceholderSpriteFactory、HitEffectPlayer、InkParticlePool、InkHitEffect、InkSlashEffect
 - 入口: RuntimeBootstrap、GameApplication、BattleSceneSetup
 
-**当前工程状态（2026-07-19 已核对）**:
+**当前工程状态（2026-07-20 已核对）**:
 - `ProjectSettings/`、`Assets/Scenes/` 和 `Assets/Plugins/websocket-sharp.dll` 已存在
 - Phase A1 已修复战斗场景脚本引用和重复资源 GUID，并由自动资源检查验证
 - `BattleScene` 已通过离线 PlayMode 冒烟测试，可创建地面、玩家、刷怪器和战斗 HUD，且不会启动网络或登录流程
@@ -46,7 +46,10 @@ Unity C# 游戏客户端，面向"吸血鬼幸存者"类微信小游戏（代号
 - `BattleRunController` 统一 Victory/Defeat/Restart，终局冻结 PlayerInputBridge、PlayerController 和战斗热键，清零速度并显示单一 scene-owned 结果 UI；重开验证覆盖新 Player/Pool/Spawner/UI/EventSystem 和时间恢复
 - B1 最终有效自动验证为 focused visual `2/2` 连续三次、combat `33/33`、五次重载 smoke `3/3`、EditMode `111/111`、PlayMode `47/47` 连续两次、Pester `5/5`，资源完整性与静态门禁通过
 - 父级已最终批准 960x540 自动证据图：`Logs/phase-b1-combat.png`（dark `2639`、chromatic `117796`、variance `304.99`、Player `57.60px`、Grunt `48.00px`、SHA-256 `59E202689676AE66397A1315A4B014C0BF777FB890314AEDF61BD457F1941E93`）和 `Logs/phase-b1-result.png`（dark `297973`、light `217068`、variance `6281.16`、SHA-256 `9FA4EC1CCE2B36D3B935DC2D133A6B36445038446843AFCF6E3D52AC9932F966`）；combat 无旧 `100000` 或跨局残留，result 无文字/按钮重叠
-- 当前仍没有 Prefab；Phase B2 继续战斗表现与敌人体验，Phase C 负责 UI、动画、Prefab、资源加载和打包工程化
+- Phase B2 由包含本记录的提交交付：确定性波次缩放/池复用、左右出生/相机构图、四类敌人冻结攻击计划与预警结算、统一命中反馈、场景内 Ink 生命周期、波次目标和单 Boss HUD；Boss Telegraph 使用冻结世界矩阵，Poison 状态按敌人池租约重置
+- B2 最终自动验证为 visual `2/2` 连续三次、core `49/49`、enemy `39/39`、combat `37/37`、EditMode `160/160`、PlayMode `92/92` 连续两次、smoke `3/3`、Pester `5/5`，规范/质量/完整分支复审均 PASS
+- 父级 APPROVED 的 960x540 证据为 `Logs/phase-b2-wave-combat.png`（101674 bytes，SHA-256 `2AEABB48FDB548F7F8E3CA072B0ECB2AA5999CCC7B83250A0BC7A07B33B74DF0`）与 `Logs/phase-b2-boss-telegraph.png`（122543 bytes，SHA-256 `68B6022A192CE43FBF69EAB5265B7A695A52CE6F19AB84125445FE570DD37350`）；测试同时验证 DamageNumber、Ink 和 Circle 的可归属像素差
+- 当前仍没有 Prefab；剩余工作为 Phase A4 Online/MainMenu/真实后端联调，以及 Phase C UI、动画、Prefab、资源加载和打包工程化
 - 当前战斗代码只使用旧输入 API；未使用且阻塞 PlayMode 的 Input System 包已移除，后续平台适配时按真实需求重新接入
 - 现代化顺序为已完成的 Phase A 工程/网络基础、当前 Phase B 战斗体验、后续 Phase C UI/资源工程化
 - Phase A 设计见 `docs/superpowers/specs/2026-07-18-unity-client-modernization-phase-a-design.md`

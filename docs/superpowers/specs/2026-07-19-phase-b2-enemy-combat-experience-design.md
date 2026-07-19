@@ -306,3 +306,33 @@ Boss 需要发布最小 `OnHealthChanged(current, max)` 和 `OnPhaseChanged(phas
 - 不实现扇形/环形/复杂组合预警、Cinemachine、DOTween、Boss 出场演出、正式音效、美术资源或 GPU 飘字。
 - 不实现完整掉落经济、自动吸附、多 Boss HUD、完整目标类型系统、五流派重做、元素/召唤完整行为或敌人框架大迁移。
 - 不把 `BattleSceneSetup`、全部 Gameplay 和 Presentation 一次性拆成新程序集；只增加五段竖切所需的窄边界。
+
+## 实施证据（2026-07-20）
+
+Phase B2 已按本设计完成实现和复审。最终行为包括确定性波次缩放与同实例复用、左右出生与战场相机、Grunt/Archer/Elite/Boss 冻结攻击计划、Telegraph/Commit/Recovery、实际 HP 差值反馈、场景内 Ink 生命周期、波次目标和单 Boss HUD。完整分支复审额外关闭了三个真实生命周期问题：Boss Commit 位移后的命中区域使用攻击开始矩阵；进入 Telegraph 前同步清零刚体线速度/角速度，避免下一个物理步拖动预警；`PoisonDot` 在敌人池租约结束和新租约准备时清空层数、计时器及来源。
+
+任务提交（Task 1-6）为：
+
+- Task 1 `d05cd073cca600cd2aaabe482bccab392d5f6be2`
+- Task 2 `613487771d9a1c0c65bf0ac460da0c507d365460`
+- Task 3 `c4b3e83445f8bfc2a36b2e4bdb28c6e3289f07f5`
+- Task 4 `02396ace5562c2471a4ac667d7e52f311241b9a2`
+- Task 5 `5bcf2a29c2c3ec8c1903ac1364a8540c8f0b9289`
+- Task 6 `06b8c93d823b6961f590286bf6851635027b0fe5`
+- Task 7 由包含本记录的提交交付；Git 提交无法稳定内嵌自身 SHA，因此不记录自引用 SHA，也不写占位值。
+
+最终 TDD/回归证据：
+
+- 基线行为 RED：`Logs/B2-task7-red-wave.xml` 命中 `B2_RED_WAVE_HUD`，`Logs/B2-task7-red-boss.xml` 命中 `B2_RED_BOSS_TELEGRAPH`，均为 `1/0/1`。
+- 视觉所有权 RED：真实相机比例、HUD 布局、随机状态、反馈 ROI 和 Circle ROI 均有闭合 XML；最终质量修复 RED 为 `Logs/B2-task7-random-state-red.xml`、`Logs/B2-task7-feedback-pixels-red.xml`、`Logs/B2-task7-telegraph-pixels-red.xml`，均为 `1/0/1` 且命中精确 marker。
+- 完整分支复审 RED：`Logs/B2-whole-review-boss-charge-red.xml`、`B2-whole-review-boss-slam-red.xml`、`B2-whole-review-telegraph-drift-red.xml`、`B2-whole-review-poison-lease-red.xml` 均为 `1/0/1`；对应单测 GREEN 均为 `1/1`。
+- 最终 focused：`Logs/B2-task7-quality-visual-1.xml`、`-2.xml`、`-3.xml` 均为 `2/2`；`B2-final-review-core-green.xml` 为 `49/49`，`B2-final-review-enemy-green.xml` 为 `39/39`，`B2-final-review-combat-green.xml` 为 `37/37`。
+- 最终 full：`Logs/B2-final-reviewed-full-editmode.xml` 为 `160/160`；`B2-final-reviewed-full-playmode-1.xml` 和 `-2.xml` 均为 `92/92`；`B2-final-reviewed-smoke.xml` 为 `3/3`。全部 skipped `0`、编译错误 `0`、native crash marker `0`，Unity 正常退出。
+- `tools/validation/Test-UnityAssetIntegrity.ps1` PASS，Pester `5/5` PASS；静态门禁确认唯一 `Time.timeScale` 写入、canonical `ResolveHit`、Enemy-owned 协程、非持久 Ink pool、ObjectPool 基线无改动和 `git diff --check` 均通过。
+
+父级最终打开并 APPROVED 两张精确 960x540 PNG：
+
+- `Logs/phase-b2-wave-combat.png`：101674 bytes，opaque `518272`、dark `8473`、light `506624`、chromatic `73868`、colors `112`、variance `560.11`、Player `29.12px`、Grunt `24.27px`、damage `20`、ink `7`，SHA-256 `2AEABB48FDB548F7F8E3CA072B0ECB2AA5999CCC7B83250A0BC7A07B33B74DF0`。
+- `Logs/phase-b2-boss-telegraph.png`：122543 bytes，opaque `518400`、dark `12998`、light `500312`、chromatic `86814`、colors `139`、variance `809.23`、Boss `48.54px`、Circle `485.39px`、radius `4.00`，SHA-256 `68B6022A192CE43FBF69EAB5265B7A695A52CE6F19AB84125445FE570DD37350`。
+
+Task 7 规范审查 PASS，质量初审发现的两个 Important 已修复后复审 PASS，独立完整分支审查发现的三个 Important 已逐项 TDD 修复，最终复审 Critical/Important/Minor 均为 0。没有跳过任何要求的测试或审查；提交、推送、master fast-forward 和工作树清理由本证据提交之后的本地/远端 SHA 核验及最终交付报告证明。剩余产品范围仍为 Phase A4 Online/MainMenu/真实后端联调和 Phase C Prefab/Animator/资源加载/打包工程化。
