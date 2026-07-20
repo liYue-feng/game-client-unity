@@ -140,8 +140,9 @@ if (@(Get-IntegrationPortListeners).Count -ne 0) {
 
 $backendLogs = Join-Path $backendRoot 'logs'
 New-Item -ItemType Directory -Force -Path $backendLogs | Out-Null
-$serverExecutable = Join-Path $backendLogs 'a4-integration-server.exe'
-$probeExecutable = Join-Path $backendLogs 'a4-integration-devprobe.exe'
+$runId = [Guid]::NewGuid().ToString('N')
+$serverExecutable = Join-Path $backendLogs "a4-integration-server-$runId.exe"
+$probeExecutable = Join-Path $backendLogs "a4-integration-devprobe-$runId.exe"
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $serverStandardOutput = Join-Path $backendLogs "a4-integration-server-$stamp.stdout.log"
 $serverStandardError = Join-Path $backendLogs "a4-integration-server-$stamp.stderr.log"
@@ -159,8 +160,13 @@ $total = 0
 $passed = 0
 $failed = 0
 $skipped = 0
-$loginEvidence = 0
+$archiveLoginEvidence = 0
+$victoryLoginEvidence = 0
+$defeatLoginEvidence = 0
 $probeEvidence = 0
+$archiveRoundTripEvidence = 0
+$victoryPersistenceEvidence = 0
+$defeatSettlementEvidence = 0
 
 try {
     Push-Location $backendRoot
@@ -208,9 +214,11 @@ try {
         throw "Go devprobe failed with exit code $($probeProcess.ExitCode)."
     }
     $probeOutput = [string](Get-Content -Raw -LiteralPath $probeStandardOutput -Encoding UTF8)
-    $probeEvidence = ([regex]::Matches($probeOutput, 'development session probe passed: protobuf login found=false typed save typed reload')).Count
+    $probeEvidence = ([regex]::Matches(
+        $probeOutput,
+        'development session probe passed: protobuf login found=false typed save typed reload combat duplicate')).Count
     if ($probeEvidence -ne 1) {
-        throw 'Go devprobe did not prove protobuf login, found=false, typed save, and typed reload.'
+        throw 'Go devprobe did not prove protobuf login, found=false, typed save, typed reload, and duplicate combat settlement.'
     }
 
     [Environment]::SetEnvironmentVariable('GAME_BACKEND_INTEGRATION', '1', 'Process')
@@ -219,7 +227,7 @@ try {
         '-projectPath', (Quote-CommandLineArgument $clientRoot),
         '-runTests',
         '-testPlatform', 'PlayMode',
-        '-testFilter', 'Game.Tests.PlayMode.RealBackendOnlineFlowTests.OnlineApplication_LoginSaveAndReloadArchiveAgainstRealBackend',
+        '-testFilter', 'Game.Tests.PlayMode.RealBackendOnlineFlowTests',
         '-testResults', (Quote-CommandLineArgument $unityResults),
         '-logFile', (Quote-CommandLineArgument $unityLog)
     )
@@ -247,9 +255,28 @@ try {
     $passed = [int]$testRun.passed
     $failed = [int]$testRun.failed
     $skipped = [int]$testRun.skipped
-    if ($total -ne 1 -or $passed -ne 1 -or $failed -ne 0 -or $skipped -ne 0) {
+    if ($total -ne 3 -or $passed -ne 3 -or $failed -ne 0 -or $skipped -ne 0) {
         $failureText = @($testDocument.SelectNodes('//failure/message') | ForEach-Object { $_.InnerText }) -join ' | '
         throw "Unity integration result was total=$total passed=$passed failed=$failed skipped=$skipped. $failureText"
+    }
+
+    if (-not (Test-Path -LiteralPath $unityLog -PathType Leaf)) {
+        throw "Unity log was not created: $unityLog"
+    }
+    $unityOutput = [string](Get-Content -Raw -LiteralPath $unityLog -Encoding UTF8)
+    $archiveRoundTripEvidence = ([regex]::Matches(
+        $unityOutput,
+        [regex]::Escape('[REAL_BACKEND] ARCHIVE_ROUND_TRIP_OK'))).Count
+    $victoryPersistenceEvidence = ([regex]::Matches(
+        $unityOutput,
+        [regex]::Escape('[REAL_BACKEND] VICTORY_PERSISTENCE_OK'))).Count
+    $defeatSettlementEvidence = ([regex]::Matches(
+        $unityOutput,
+        [regex]::Escape('[REAL_BACKEND] DEFEAT_SETTLEMENT_OK'))).Count
+    if ($archiveRoundTripEvidence -ne 1 -or
+        $victoryPersistenceEvidence -ne 1 -or
+        $defeatSettlementEvidence -ne 1) {
+        throw "Unity completion evidence was archive=$archiveRoundTripEvidence victory=$victoryPersistenceEvidence defeat=$defeatSettlementEvidence; expected each marker exactly once."
     }
 
     if (-not (Test-Path -LiteralPath $serverStandardOutput -PathType Leaf)) {
@@ -257,9 +284,11 @@ try {
     }
 
     $serverOutput = [string](Get-Content -Raw -LiteralPath $serverStandardOutput -Encoding UTF8)
-    $loginEvidence = ([regex]::Matches($serverOutput, 'dev:integration-client')).Count
-    if ($loginEvidence -lt 1) {
-        throw 'Backend log does not contain the integration-client login request.'
+    $archiveLoginEvidence = ([regex]::Matches($serverOutput, 'dev:integration-client')).Count
+    $victoryLoginEvidence = ([regex]::Matches($serverOutput, 'dev:integration-battle-victory')).Count
+    $defeatLoginEvidence = ([regex]::Matches($serverOutput, 'dev:integration-battle-defeat')).Count
+    if ($archiveLoginEvidence -lt 1 -or $victoryLoginEvidence -lt 1 -or $defeatLoginEvidence -lt 1) {
+        throw "Backend login evidence was archive=$archiveLoginEvidence victory=$victoryLoginEvidence defeat=$defeatLoginEvidence; expected every fixed identity at least once."
     }
 
 }
@@ -355,8 +384,9 @@ if ($cleanupErrors.Count -ne 0) {
 
 Write-Host "GO_TESTS=PASS"
 Write-Host "UNITY_RESULT=total=$total passed=$passed failed=$failed skipped=$skipped exit_code=$($unityProcess.ExitCode)"
-Write-Host "DEVPROBE_EVIDENCE=typed_archive_round_trip:$probeEvidence"
-Write-Host "SERVER_EVIDENCE=login:$loginEvidence"
+Write-Host "DEVPROBE_EVIDENCE=protobuf_archive_and_combat:$probeEvidence"
+Write-Host "UNITY_EVIDENCE=archive:$archiveRoundTripEvidence victory:$victoryPersistenceEvidence defeat:$defeatSettlementEvidence"
+Write-Host "SERVER_EVIDENCE=archive_login:$archiveLoginEvidence victory_login:$victoryLoginEvidence defeat_login:$defeatLoginEvidence"
 Write-Host "UNITY_XML=$unityResults"
 Write-Host "UNITY_LOG=$unityLog"
 Write-Host "SERVER_LOG=$serverStandardOutput"
