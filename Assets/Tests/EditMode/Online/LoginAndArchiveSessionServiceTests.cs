@@ -170,16 +170,23 @@ namespace Game.Tests.EditMode.Online
             using (var service = new ArchiveSessionService())
             {
                 string error = null;
+                var savedCount = 0;
                 service.Failed += value => error = value;
+                service.Saved += () => savedCount++;
 
                 Assert.That(service.Save(data), Is.False);
                 Assert.That(error, Is.EqualTo("Archive data is required."));
                 Assert.That(_transport.SentPayloads, Is.Empty);
 
-                Assert.That(service.Load(), Is.True, "invalid save data must not occupy the active operation slot");
+                const string validData = "{\"gold\":11}";
+                Assert.That(service.Save(validData), Is.True, "invalid save data must not occupy the active operation slot");
                 Assert.That(_transport.SentPayloads, Has.Count.EqualTo(1));
-                Assert.That(Codec.TryDecode(_transport.SentPayloads.Single(), out var sentId, out _), Is.True);
-                Assert.That(sentId, Is.EqualTo(MsgID.LoadArchiveReq));
+                Assert.That(Codec.TryDecode(_transport.SentPayloads.Single(), out var sentId, out var body), Is.True);
+                Assert.That(sentId, Is.EqualTo(MsgID.SaveArchiveReq));
+                Assert.That(JsonUtility.FromJson<SaveArchiveReq>(body).data, Is.EqualTo(validData));
+
+                _client.ReceiveFrame(Codec.Encode(MsgID.SaveArchiveResp, new SaveArchiveResp { success = true }));
+                Assert.That(savedCount, Is.EqualTo(1));
             }
         }
 
