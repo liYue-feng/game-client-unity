@@ -12,6 +12,7 @@ public class InkPanel : MonoBehaviour
     public int borderSize = 6;
 
     private RawImage _bg;
+    private Texture2D _ownedTexture;
 
     void Awake()
     {
@@ -46,11 +47,12 @@ public class InkPanel : MonoBehaviour
             }
         }
 
-        var oldTexture = _bg.texture;
-        _bg.texture = CreatePanelTex(panelWidth, panelHeight);
-        if (oldTexture != null)
+        var oldOwnedTexture = _ownedTexture;
+        _ownedTexture = CreatePanelTex(panelWidth, panelHeight);
+        _bg.texture = _ownedTexture;
+        if (oldOwnedTexture != null)
         {
-            Destroy(oldTexture);
+            Destroy(oldOwnedTexture);
         }
     }
 
@@ -101,14 +103,20 @@ public class InkPanel : MonoBehaviour
 
     void OnDestroy()
     {
-        if (_bg == null || _bg.texture == null)
+        if (_ownedTexture == null)
         {
+            _bg = null;
             return;
         }
 
-        var texture = _bg.texture;
-        _bg.texture = null;
-        Destroy(texture);
+        if (_bg != null && _bg.texture == _ownedTexture)
+        {
+            _bg.texture = null;
+        }
+
+        var ownedTexture = _ownedTexture;
+        _ownedTexture = null;
+        Destroy(ownedTexture);
         _bg = null;
     }
 }

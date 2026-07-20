@@ -103,6 +103,70 @@ namespace Game.Tests.PlayMode
         }
 
         [UnityTest]
+        public IEnumerator InkPanelPreservesExternalTexturesAndDestroysOnlyOwnedTextures()
+        {
+            GameObject panelObject = null;
+            Texture2D externalTexture = null;
+            try
+            {
+                panelObject = new GameObject("InkPanelOwnershipProbe");
+                panelObject.AddComponent<RectTransform>();
+                var image = panelObject.AddComponent<RawImage>();
+                externalTexture = new Texture2D(8, 8);
+                image.texture = externalTexture;
+
+                var inkPanelType = AppDomain.CurrentDomain.GetAssemblies()
+                    .Select(assembly => assembly.GetType("InkPanel"))
+                    .Single(type => type != null);
+                var panel = panelObject.AddComponent(inkPanelType);
+                var configure = inkPanelType.GetMethod(
+                    "Configure",
+                    BindingFlags.Instance | BindingFlags.Public,
+                    null,
+                    new[] { typeof(int), typeof(int) },
+                    null);
+                Assert.That(configure, Is.Not.Null);
+
+                var firstOwnedTexture = image.texture;
+                Assert.That(firstOwnedTexture, Is.Not.SameAs(externalTexture));
+                configure.Invoke(panel, new object[] { 600, 500 });
+                var secondOwnedTexture = image.texture;
+                configure.Invoke(panel, new object[] { 320, 240 });
+                var finalOwnedTexture = image.texture;
+                Assert.That(panelObject.GetComponents<RawImage>(), Has.Length.EqualTo(1));
+
+                yield return null;
+
+                Assert.That(externalTexture == null, Is.False,
+                    "InkPanel must not destroy a texture supplied by another owner.");
+                Assert.That(firstOwnedTexture == null, Is.True);
+                Assert.That(secondOwnedTexture == null, Is.True);
+                Assert.That(finalOwnedTexture == null, Is.False);
+
+                image.texture = externalTexture;
+                UnityEngine.Object.Destroy(panelObject);
+                yield return null;
+
+                Assert.That(panelObject == null, Is.True);
+                Assert.That(finalOwnedTexture == null, Is.True);
+                Assert.That(externalTexture == null, Is.False,
+                    "Destroying InkPanel must preserve an externally replaced texture.");
+            }
+            finally
+            {
+                if (panelObject != null)
+                {
+                    UnityEngine.Object.DestroyImmediate(panelObject);
+                }
+
+                if (externalTexture != null)
+                {
+                    UnityEngine.Object.DestroyImmediate(externalTexture);
+                }
+            }
+        }
+
+        [UnityTest]
         public IEnumerator CombatWorldCaptureShowsRealAttackFraming()
         {
             var outputPath = PrepareOutput("phase-b1-combat.png");
