@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -14,12 +15,43 @@ public class InkPanel : MonoBehaviour
 
     void Awake()
     {
+        Configure(panelWidth, panelHeight);
+    }
+
+    public void Configure(int width, int height)
+    {
+        if (width <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(width), width, "Panel width must be positive.");
+        }
+
+        if (height <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(height), height, "Panel height must be positive.");
+        }
+
+        panelWidth = width;
+        panelHeight = height;
+
         var rect = GetComponent<RectTransform>();
         if (rect == null) { rect = gameObject.AddComponent<RectTransform>(); }
         rect.sizeDelta = new Vector2(panelWidth, panelHeight);
 
-        _bg = gameObject.AddComponent<RawImage>();
+        if (_bg == null)
+        {
+            _bg = GetComponent<RawImage>();
+            if (_bg == null)
+            {
+                _bg = gameObject.AddComponent<RawImage>();
+            }
+        }
+
+        var oldTexture = _bg.texture;
         _bg.texture = CreatePanelTex(panelWidth, panelHeight);
+        if (oldTexture != null)
+        {
+            Destroy(oldTexture);
+        }
     }
 
     Texture2D CreatePanelTex(int w, int h)
@@ -69,7 +101,14 @@ public class InkPanel : MonoBehaviour
 
     void OnDestroy()
     {
-        if (_bg != null && _bg.texture != null)
-            Destroy(_bg.texture);
+        if (_bg == null || _bg.texture == null)
+        {
+            return;
+        }
+
+        var texture = _bg.texture;
+        _bg.texture = null;
+        Destroy(texture);
+        _bg = null;
     }
 }

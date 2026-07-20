@@ -56,6 +56,52 @@ namespace Game.Tests.PlayMode
             }
         }
 
+        [Test]
+        public void InkPanelConfigureValidatesDimensionsAndRebuildsSingleImage()
+        {
+            var panelObject = new GameObject("InkPanelConfigureProbe");
+            try
+            {
+                panelObject.AddComponent<RectTransform>();
+                var inkPanelType = AppDomain.CurrentDomain.GetAssemblies()
+                    .Select(assembly => assembly.GetType("InkPanel"))
+                    .Single(type => type != null);
+                var panel = panelObject.AddComponent(inkPanelType);
+                var configure = inkPanelType.GetMethod(
+                    "Configure",
+                    BindingFlags.Instance | BindingFlags.Public,
+                    null,
+                    new[] { typeof(int), typeof(int) },
+                    null);
+                Assert.That(configure, Is.Not.Null);
+
+                var originalImage = panelObject.GetComponents<RawImage>().Single();
+                var originalTexture = originalImage.texture;
+                configure.Invoke(panel, new object[] { 600, 500 });
+
+                var configuredImage = panelObject.GetComponents<RawImage>().Single();
+                Assert.That(configuredImage, Is.SameAs(originalImage));
+                Assert.That(configuredImage.texture, Is.Not.SameAs(originalTexture));
+                Assert.That(configuredImage.texture.width, Is.EqualTo(600));
+                Assert.That(configuredImage.texture.height, Is.EqualTo(500));
+                Assert.That(panelObject.GetComponent<RectTransform>().rect.size,
+                    Is.EqualTo(new Vector2(600f, 500f)));
+
+                foreach (var invalidSize in new[] { new Vector2Int(0, 500), new Vector2Int(600, 0) })
+                {
+                    var exception = Assert.Throws<TargetInvocationException>(
+                        () => configure.Invoke(panel, new object[] { invalidSize.x, invalidSize.y }));
+                    Assert.That(exception.InnerException, Is.TypeOf<ArgumentOutOfRangeException>());
+                    Assert.That(configuredImage.texture.width, Is.EqualTo(600));
+                    Assert.That(configuredImage.texture.height, Is.EqualTo(500));
+                }
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(panelObject);
+            }
+        }
+
         [UnityTest]
         public IEnumerator CombatWorldCaptureShowsRealAttackFraming()
         {
@@ -170,6 +216,11 @@ namespace Game.Tests.PlayMode
             Assert.That(buttons.Select(button => button.gameObject.name),
                 Is.EquivalentTo(new[] { "BtnRestart", "BtnMainMenu" }));
             var panelRect = resultPanel.GetComponent<RectTransform>();
+            Assert.That(panelRect.rect.size, Is.EqualTo(new Vector2(600f, 500f)));
+            var panelImage = resultPanel.GetComponents<RawImage>().Single();
+            Assert.That(panelImage.texture, Is.Not.Null);
+            Assert.That(panelImage.texture.width, Is.EqualTo((int)panelRect.rect.width));
+            Assert.That(panelImage.texture.height, Is.EqualTo((int)panelRect.rect.height));
             var restartRect = FindDescendant(gameOver.transform, "BtnRestart").GetComponent<RectTransform>();
             var menuRect = FindDescendant(gameOver.transform, "BtnMainMenu").GetComponent<RectTransform>();
             var restartBounds = GetBoundsInParent(restartRect, panelRect);
