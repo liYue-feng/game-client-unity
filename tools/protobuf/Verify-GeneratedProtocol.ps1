@@ -20,6 +20,17 @@ foreach ($forbidden in @('JsonUtility', '[Serializable]')) {
 }
 
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+$runtimeGeneratedPath = Join-Path $projectRoot 'Assets\Scripts\Protocol\Generated\Messages.cs'
+if (-not (Test-Path -LiteralPath $runtimeGeneratedPath -PathType Leaf)) {
+    throw "Unity runtime generated C# protocol is missing: $runtimeGeneratedPath"
+}
+
+$stagedText = [IO.File]::ReadAllText($generatedPath).Replace("`r`n", "`n").Replace("`r", "`n")
+$runtimeText = [IO.File]::ReadAllText($runtimeGeneratedPath).Replace("`r`n", "`n").Replace("`r", "`n")
+if ($stagedText -cne $runtimeText) {
+    throw "Unity runtime generated C# protocol differs from staging: $runtimeGeneratedPath"
+}
+
 $protoFiles = @(Get-ChildItem -LiteralPath $projectRoot -Recurse -Filter '*.proto')
 if ($protoFiles.Count -ne 0) {
     throw "Client must not own a duplicate .proto source: $($protoFiles.FullName -join ', ')"

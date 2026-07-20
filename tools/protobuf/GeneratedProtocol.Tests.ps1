@@ -15,6 +15,33 @@ Describe 'Generated protobuf protocol staging contract' {
         $content | Should Not Match '\[Serializable\]'
     }
 
+    It 'rejects a runtime generated source that differs from staging' {
+        $fixtureRoot = Join-Path ([IO.Path]::GetTempPath()) ("GeneratedProtocolFixture-{0}" -f [guid]::NewGuid())
+        $fixtureToolsPath = Join-Path $fixtureRoot 'tools\protobuf'
+        $fixtureGeneratedPath = Join-Path $fixtureToolsPath 'generated\Messages.cs'
+        $fixtureRuntimePath = Join-Path $fixtureRoot 'Assets\Scripts\Protocol\Generated\Messages.cs'
+        $fixtureVerifier = Join-Path $fixtureToolsPath 'Verify-GeneratedProtocol.ps1'
+        $fixtureSource = @'
+using Google.Protobuf;
+namespace Game.Protocol {
+    public sealed partial class LoginReq { }
+}
+'@
+
+        try {
+            New-Item -ItemType Directory -Path (Split-Path -Parent $fixtureGeneratedPath) -Force | Out-Null
+            New-Item -ItemType Directory -Path (Split-Path -Parent $fixtureRuntimePath) -Force | Out-Null
+            Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Verify-GeneratedProtocol.ps1') -Destination $fixtureVerifier
+            [IO.File]::WriteAllText($fixtureGeneratedPath, $fixtureSource)
+            [IO.File]::WriteAllText($fixtureRuntimePath, "$fixtureSource// stale runtime source`n")
+
+            { & $fixtureVerifier } | Should Throw
+        }
+        finally {
+            Remove-Item -LiteralPath $fixtureRoot -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
     It 'does not introduce a client-side proto source of truth' {
         $clientProtoFiles = @(Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot '..\..') -Recurse -Filter '*.proto')
         $clientProtoFiles.Count | Should Be 0
