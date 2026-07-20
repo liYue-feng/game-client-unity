@@ -4,6 +4,7 @@ using System.Reflection;
 using Game.Core;
 using Game.Network;
 using Game.Online;
+using Game.Protocol;
 using Game.Tests.EditMode.Network.TestDoubles;
 using Game.Tests.EditMode.Online.TestDoubles;
 using NUnit.Framework;
@@ -19,6 +20,7 @@ namespace Game.Tests.EditMode.Online
 
         private GameObject _root;
         private NetworkClient _client;
+        private FakeWebSocketTransport _transport;
         private FakeOnlineConnection _connection;
         private FakeLoginCodeProvider _provider;
         private OnlineSessionHost _host;
@@ -28,6 +30,9 @@ namespace Game.Tests.EditMode.Online
         {
             _root = new GameObject("online-session-host-test-root");
             _client = new NetworkClient();
+            _transport = new FakeWebSocketTransport();
+            _client.SetTransport(_transport);
+            _transport.RaiseOpened();
             _connection = new FakeOnlineConnection();
             _provider = new FakeLoginCodeProvider();
             _host = InvokeInjectedHostInstall(
@@ -61,6 +66,23 @@ namespace Game.Tests.EditMode.Online
             Assert.That(_connection.ConnectCalls, Is.Zero,
                 "GameApplication owns the online start decision; Initialize only wires the session.");
             Assert.That(_host.State, Is.EqualTo(OnlineSessionState.Idle));
+        }
+
+        [Test]
+        public void HostPublishesImmutableProgressBeforeTheOnlineSessionIsReady()
+        {
+            _host.Initialize();
+            _host.StartSession();
+            _connection.RaiseConnected();
+            _provider.Succeed(0);
+            _client.ReceiveFrame(Codec.Encode(MsgID.LoginResp,
+                new LoginResp { Uid = 42, Nickname = "ink-user", Token = "session-token" }));
+            _client.ReceiveFrame(Codec.Encode(MsgID.LoadArchiveResp,
+                new LoadArchiveResp { Found = true, Archive = new PlayerArchive { Gold = 7, UnlockedStyles = { 1, 3 } } }));
+
+            Assert.That(_host.State, Is.EqualTo(OnlineSessionState.Ready));
+            Assert.That(_host.Progress.Gold, Is.EqualTo(7));
+            Assert.That(_host.Progress.UnlockedStyles, Is.EqualTo(new[] { 1, 3 }));
         }
 
         [Test]

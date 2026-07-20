@@ -15,7 +15,7 @@ namespace Game.Online
         private OnlineSessionState _lastState = OnlineSessionState.Idle;
         private string _lastFailureReason;
         private string _lastNickname;
-        private PlayerArchive _lastArchive = new PlayerArchive();
+        private PlayerProgressState _lastProgress = PlayerProgressState.Empty;
         private bool _initialized;
         private bool _shutdown;
 
@@ -25,7 +25,8 @@ namespace Game.Online
         public OnlineSessionState State => _coordinator?.State ?? _lastState;
         public string FailureReason => _coordinator?.FailureReason ?? _lastFailureReason;
         public string Nickname => _coordinator?.Nickname ?? _lastNickname;
-        public PlayerArchive Archive => _coordinator?.Archive ?? _lastArchive;
+        public PlayerProgressState Progress => _coordinator?.Progress ?? _lastProgress;
+        public PlayerArchive Archive => Progress.ToArchive();
 
         public event Action<OnlineSessionState> StateChanged;
         public event Action ArchiveSaved;
@@ -221,7 +222,7 @@ namespace Game.Online
             _lastState = _coordinator.State;
             _lastFailureReason = _coordinator.FailureReason;
             _lastNickname = _coordinator.Nickname;
-            _lastArchive = _coordinator.Archive;
+            _lastProgress = _coordinator.Progress;
         }
 
         private void HandleStateChanged(OnlineSessionState state)
@@ -229,13 +230,13 @@ namespace Game.Online
             _lastState = state;
             _lastFailureReason = _coordinator?.FailureReason;
             _lastNickname = _coordinator?.Nickname;
-            _lastArchive = _coordinator?.Archive;
+            _lastProgress = _coordinator?.Progress ?? _lastProgress;
             StateChanged?.Invoke(state);
         }
 
         private void HandleArchiveSaved()
         {
-            _lastArchive = _coordinator?.Archive;
+            _lastProgress = _coordinator?.Progress ?? _lastProgress;
             ArchiveSaved?.Invoke();
         }
 

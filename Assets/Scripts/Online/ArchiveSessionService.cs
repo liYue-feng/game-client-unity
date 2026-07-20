@@ -10,6 +10,7 @@ namespace Game.Online
         private const string DisconnectedError = "Network client is not connected.";
         private readonly NetworkClient _client;
         private readonly List<IDisposable> _subscriptions = new List<IDisposable>();
+        private PlayerArchive _currentArchive = new PlayerArchive();
         private ArchiveOperation _activeOperation;
         private bool _disposed;
 
@@ -21,7 +22,7 @@ namespace Game.Online
             _subscriptions.Add(_client.On<ErrorResp>(MsgID.Error, HandleErrorResponse));
         }
 
-        public PlayerArchive CurrentArchive { get; private set; } = new PlayerArchive();
+        public PlayerArchive CurrentArchive => _currentArchive.Clone();
         public event Action<PlayerArchive> Loaded;
         public event Action Saved;
         public event Action<string> Failed;
@@ -52,7 +53,7 @@ namespace Game.Online
 
             if (_client.Send(MsgID.SaveArchiveReq, new SaveArchiveReq
             {
-                Archive = archive ?? new PlayerArchive()
+                Archive = archive?.Clone() ?? new PlayerArchive()
             }))
             {
                 return true;
@@ -113,10 +114,10 @@ namespace Game.Online
             }
 
             _activeOperation = ArchiveOperation.None;
-            CurrentArchive = response.Found && response.Archive != null
-                ? response.Archive
+            _currentArchive = response.Found && response.Archive != null
+                ? response.Archive.Clone()
                 : new PlayerArchive();
-            Loaded?.Invoke(CurrentArchive);
+            Loaded?.Invoke(_currentArchive.Clone());
         }
 
         private void HandleSaveResponse(SaveArchiveResp response)

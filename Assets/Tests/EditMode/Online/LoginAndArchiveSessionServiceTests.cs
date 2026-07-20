@@ -98,6 +98,37 @@ namespace Game.Tests.EditMode.Online
         }
 
         [Test]
+        public void LoadAndSaveDetachArchiveMessagesFromCallerMutation()
+        {
+            _transport.RaiseOpened();
+            using (var service = new ArchiveSessionService())
+            {
+                var incoming = new PlayerArchive { Gold = 7, UnlockedStyles = { 1, 3 } };
+                Assert.That(service.Load(), Is.True);
+                _client.ReceiveFrame(Codec.Encode(MsgID.LoadArchiveResp,
+                    new LoadArchiveResp { Found = true, Archive = incoming }));
+                incoming.Gold = 99;
+                incoming.UnlockedStyles[0] = 99;
+                Assert.That(service.CurrentArchive.Gold, Is.EqualTo(7));
+                Assert.That(service.CurrentArchive.UnlockedStyles, Is.EqualTo(new[] { 1, 3 }));
+                var exposedCurrent = service.CurrentArchive;
+                exposedCurrent.Gold = 55;
+                exposedCurrent.UnlockedStyles[0] = 55;
+                Assert.That(service.CurrentArchive.Gold, Is.EqualTo(7));
+                Assert.That(service.CurrentArchive.UnlockedStyles, Is.EqualTo(new[] { 1, 3 }));
+
+                var outgoing = new PlayerArchive { Gold = 11, UnlockedStyles = { 2, 4 } };
+                Assert.That(service.Save(outgoing), Is.True);
+                outgoing.Gold = 99;
+                outgoing.UnlockedStyles[0] = 99;
+                Assert.That(Codec.TryDecode(_transport.SentPayloads.Last(), out _, out var body), Is.True);
+                var sent = SaveArchiveReq.Parser.ParseFrom(body).Archive;
+                Assert.That(sent.Gold, Is.EqualTo(11));
+                Assert.That(sent.UnlockedStyles, Is.EqualTo(new[] { 2, 4 }));
+            }
+        }
+
+        [Test]
         public void SaveEmitsOnlyAfterSuccessfulResponse()
         {
             _transport.RaiseOpened();

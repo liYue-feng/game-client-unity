@@ -22,9 +22,9 @@ function Resolve-ExistingDirectory {
     return (Resolve-Path -LiteralPath $Path).Path
 }
 
-function Get-Port8080Listeners {
+function Get-IntegrationPortListeners {
     $networkProperties = [System.Net.NetworkInformation.IPGlobalProperties]::GetIPGlobalProperties()
-    return @($networkProperties.GetActiveTcpListeners() | Where-Object { $_.Port -eq 8080 })
+    return @($networkProperties.GetActiveTcpListeners() | Where-Object { $_.Port -in @(8080, 8081) })
 }
 
 function Wait-ForHealth {
@@ -134,19 +134,23 @@ if (-not (Test-Path -LiteralPath (Join-Path $backendRoot 'go.mod') -PathType Lea
 if (-not (Test-Path -LiteralPath $UnityEditor -PathType Leaf)) {
     throw "Unity editor does not exist: $UnityEditor"
 }
-if (@(Get-Port8080Listeners).Count -ne 0) {
-    throw 'Port 8080 is already in use; refusing to stop or reuse an unowned process.'
+if (@(Get-IntegrationPortListeners).Count -ne 0) {
+    throw 'Port 8080 or 8081 is already in use; refusing to stop or reuse an unowned process.'
 }
 
 $backendLogs = Join-Path $backendRoot 'logs'
 New-Item -ItemType Directory -Force -Path $backendLogs | Out-Null
 $serverExecutable = Join-Path $backendLogs 'a4-integration-server.exe'
+$probeExecutable = Join-Path $backendLogs 'a4-integration-devprobe.exe'
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $serverStandardOutput = Join-Path $backendLogs "a4-integration-server-$stamp.stdout.log"
 $serverStandardError = Join-Path $backendLogs "a4-integration-server-$stamp.stderr.log"
+$probeStandardOutput = Join-Path $backendLogs "a4-integration-devprobe-$stamp.stdout.log"
+$probeStandardError = Join-Path $backendLogs "a4-integration-devprobe-$stamp.stderr.log"
 $unityResults = Join-Path $clientRoot "Logs\A4-real-backend-$stamp.xml"
 $unityLog = Join-Path $clientRoot "Logs\A4-real-backend-$stamp.log"
 $serverProcess = $null
+$probeProcess = $null
 $unityProcess = $null
 $operationError = $null
 $cleanupErrors = New-Object 'System.Collections.Generic.List[string]'
@@ -156,7 +160,7 @@ $passed = 0
 $failed = 0
 $skipped = 0
 $loginEvidence = 0
-$archiveEvidence = 0
+$probeEvidence = 0
 
 try {
     Push-Location $backendRoot
@@ -169,6 +173,11 @@ try {
         & go build -o $serverExecutable ./cmd/server
         if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $serverExecutable -PathType Leaf)) {
             throw "Go backend build failed with exit code $LASTEXITCODE."
+        }
+
+        & go build -o $probeExecutable ./cmd/devprobe
+        if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $probeExecutable -PathType Leaf)) {
+            throw "Go devprobe build failed with exit code $LASTEXITCODE."
         }
     }
     finally {
@@ -185,6 +194,24 @@ try {
         -WindowStyle Hidden
     Write-Host "BACKEND_PID=$($serverProcess.Id)"
     Wait-ForHealth -Process $serverProcess
+
+    $probeProcess = Start-Process `
+        -FilePath $probeExecutable `
+        -WorkingDirectory $backendRoot `
+        -RedirectStandardOutput $probeStandardOutput `
+        -RedirectStandardError $probeStandardError `
+        -PassThru `
+        -Wait `
+        -WindowStyle Hidden
+    Write-Host "DEVPROBE_PID=$($probeProcess.Id)"
+    if ($probeProcess.ExitCode -ne 0) {
+        throw "Go devprobe failed with exit code $($probeProcess.ExitCode)."
+    }
+    $probeOutput = [string](Get-Content -Raw -LiteralPath $probeStandardOutput -Encoding UTF8)
+    $probeEvidence = ([regex]::Matches($probeOutput, 'development session probe passed: protobuf login found=false typed save typed reload')).Count
+    if ($probeEvidence -ne 1) {
+        throw 'Go devprobe did not prove protobuf login, found=false, typed save, and typed reload.'
+    }
 
     [Environment]::SetEnvironmentVariable('GAME_BACKEND_INTEGRATION', '1', 'Process')
     $unityArguments = @(
@@ -231,12 +258,8 @@ try {
 
     $serverOutput = [string](Get-Content -Raw -LiteralPath $serverStandardOutput -Encoding UTF8)
     $loginEvidence = ([regex]::Matches($serverOutput, 'dev:integration-client')).Count
-    $archiveEvidence = ([regex]::Matches($serverOutput, 'dataLen[^0-9]+24')).Count
     if ($loginEvidence -lt 1) {
         throw 'Backend log does not contain the integration-client login request.'
-    }
-    if ($archiveEvidence -lt 2) {
-        throw "Backend log contains $archiveEvidence archive dataLen=24 entries; expected save and reload evidence."
     }
 
 }
@@ -282,15 +305,39 @@ finally {
 
     try {
         $portDeadline = (Get-Date).AddSeconds(10)
-        while ((Get-Date) -lt $portDeadline -and @(Get-Port8080Listeners).Count -ne 0) {
+        while ((Get-Date) -lt $portDeadline -and @(Get-IntegrationPortListeners).Count -ne 0) {
             Start-Sleep -Milliseconds 250
         }
-        if (@(Get-Port8080Listeners).Count -ne 0) {
-            [void]$cleanupErrors.Add('Port 8080 is still listening after captured backend process cleanup.')
+        if (@(Get-IntegrationPortListeners).Count -ne 0) {
+            [void]$cleanupErrors.Add('Port 8080 or 8081 is still listening after captured backend process cleanup.')
         }
     }
     catch {
-        [void]$cleanupErrors.Add("Verify port 8080 cleanup: $($_.Exception.Message)")
+        [void]$cleanupErrors.Add("Verify port 8080/8081 cleanup: $($_.Exception.Message)")
+    }
+
+    if ($probeProcess -ne $null) {
+        try {
+            $probeProcess.Refresh()
+            if (-not $probeProcess.HasExited) {
+                Stop-Process -Id $probeProcess.Id -Force
+                $probeProcess.WaitForExit()
+            }
+        }
+        catch {
+            [void]$cleanupErrors.Add("Stop devprobe PID $($probeProcess.Id): $($_.Exception.Message)")
+        }
+    }
+
+    foreach ($temporaryExecutable in @($serverExecutable, $probeExecutable)) {
+        try {
+            if (Test-Path -LiteralPath $temporaryExecutable -PathType Leaf) {
+                Remove-Item -LiteralPath $temporaryExecutable -Force
+            }
+        }
+        catch {
+            [void]$cleanupErrors.Add("Remove temporary executable ${temporaryExecutable}: $($_.Exception.Message)")
+        }
     }
 }
 
@@ -308,7 +355,8 @@ if ($cleanupErrors.Count -ne 0) {
 
 Write-Host "GO_TESTS=PASS"
 Write-Host "UNITY_RESULT=total=$total passed=$passed failed=$failed skipped=$skipped exit_code=$($unityProcess.ExitCode)"
-Write-Host "SERVER_EVIDENCE=login:$loginEvidence archive_data_len_24:$archiveEvidence"
+Write-Host "DEVPROBE_EVIDENCE=typed_archive_round_trip:$probeEvidence"
+Write-Host "SERVER_EVIDENCE=login:$loginEvidence"
 Write-Host "UNITY_XML=$unityResults"
 Write-Host "UNITY_LOG=$unityLog"
 Write-Host "SERVER_LOG=$serverStandardOutput"

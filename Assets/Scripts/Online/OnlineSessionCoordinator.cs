@@ -45,7 +45,11 @@ namespace Game.Online
         public OnlineSessionState State { get; private set; } = OnlineSessionState.Idle;
         public string FailureReason { get; private set; }
         public string Nickname { get; private set; }
-        public PlayerArchive Archive { get; private set; } = new PlayerArchive();
+        private PlayerProgressState _progress = PlayerProgressState.Empty;
+        private PlayerProgressState _pendingSaveProgress;
+
+        public PlayerProgressState Progress => _progress;
+        public PlayerArchive Archive => _progress.ToArchive();
 
         public event Action<OnlineSessionState> StateChanged;
         public event Action ArchiveSaved;
@@ -77,9 +81,12 @@ namespace Game.Online
                 return false;
             }
 
-            var accepted = _archiveService.Save(archive ?? Archive ?? new PlayerArchive());
+            var pendingProgress = PlayerProgressState.FromArchive(archive ?? Archive);
+            _pendingSaveProgress = pendingProgress;
+            var accepted = _archiveService.Save(pendingProgress.ToArchive());
             if (!accepted && State == OnlineSessionState.Ready)
             {
+                _pendingSaveProgress = null;
                 Fail("Archive save could not start.");
             }
 
@@ -168,7 +175,7 @@ namespace Game.Online
             _hasConnected = false;
             FailureReason = null;
             Nickname = null;
-            Archive = new PlayerArchive();
+            _progress = PlayerProgressState.Empty;
             _client.ClearLoginInfo();
             CancelActiveOperations();
             TransitionTo(OnlineSessionState.Connecting);
@@ -246,7 +253,7 @@ namespace Game.Online
 
             if (State == OnlineSessionState.LoadingArchive)
             {
-                Archive = archive ?? new PlayerArchive();
+                _progress = PlayerProgressState.FromArchive(archive);
                 _connection.MarkReady();
                 TransitionTo(OnlineSessionState.Ready);
                 return;
@@ -255,7 +262,7 @@ namespace Game.Online
             if (State == OnlineSessionState.Ready && _reloadActive)
             {
                 _reloadActive = false;
-                Archive = archive ?? new PlayerArchive();
+                _progress = PlayerProgressState.FromArchive(archive);
             }
         }
 
@@ -263,6 +270,11 @@ namespace Game.Online
         {
             if (IsActive && State == OnlineSessionState.Ready)
             {
+                if (_pendingSaveProgress != null)
+                {
+                    _progress = _pendingSaveProgress;
+                    _pendingSaveProgress = null;
+                }
                 ArchiveSaved?.Invoke();
             }
         }
@@ -323,6 +335,7 @@ namespace Game.Online
         private void CancelActiveOperations()
         {
             _reloadActive = false;
+            _pendingSaveProgress = null;
             _loginService.CancelActiveOperation();
             _archiveService.CancelActiveOperation();
         }

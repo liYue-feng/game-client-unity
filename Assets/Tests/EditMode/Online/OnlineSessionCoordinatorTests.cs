@@ -77,6 +77,7 @@ namespace Game.Tests.EditMode.Online
             Assert.That(_connection.MarkReadyCalls, Is.EqualTo(1));
             Assert.That(_coordinator.Nickname, Is.EqualTo("ink-user"));
             Assert.That(_coordinator.Archive, Is.Not.Null);
+            Assert.That(_coordinator.Progress.SchemaVersion, Is.EqualTo(3));
         }
 
         [Test]
@@ -268,6 +269,29 @@ namespace Game.Tests.EditMode.Online
             Assert.That(_coordinator.State, Is.EqualTo(OnlineSessionState.Ready));
             Assert.That(_coordinator.Archive.Gold, Is.EqualTo(2));
             Assert.That(_connection.MarkReadyCalls, Is.EqualTo(1));
+        }
+
+        [Test]
+        public void HydrationPrecedesReadyAndArchivesAreDetachedWhileSavesSynchronizeOnAcknowledgement()
+        {
+            var loaded = new PlayerArchive { Gold = 7, UnlockedStyles = { 1, 3 } };
+            CompleteInitialSession("ink-user", loaded);
+            loaded.Gold = 99;
+            loaded.UnlockedStyles[0] = 99;
+
+            Assert.That(_coordinator.Progress.Gold, Is.EqualTo(7));
+            Assert.That(_coordinator.Progress.UnlockedStyles, Is.EqualTo(new[] { 1, 3 }));
+            var exposedArchive = _coordinator.Archive;
+            exposedArchive.Gold = 55;
+            exposedArchive.UnlockedStyles[0] = 55;
+            Assert.That(_coordinator.Progress.Gold, Is.EqualTo(7));
+            Assert.That(_coordinator.Progress.UnlockedStyles, Is.EqualTo(new[] { 1, 3 }));
+
+            Assert.That(_coordinator.SaveArchive(new PlayerArchive { Gold = 11, UnlockedStyles = { 2, 4 } }), Is.True);
+            Assert.That(_coordinator.Progress.Gold, Is.EqualTo(7), "progress changes only after save success");
+            _client.ReceiveFrame(Codec.Encode(MsgID.SaveArchiveResp, new SaveArchiveResp { Success = true }));
+            Assert.That(_coordinator.Progress.Gold, Is.EqualTo(11));
+            Assert.That(_coordinator.Progress.UnlockedStyles, Is.EqualTo(new[] { 2, 4 }));
         }
 
         [Test]

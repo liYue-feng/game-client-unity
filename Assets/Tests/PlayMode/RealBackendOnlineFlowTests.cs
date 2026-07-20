@@ -14,7 +14,6 @@ namespace Game.Tests.PlayMode
     public sealed class RealBackendOnlineFlowTests
     {
         private const string IntegrationEnvironmentVariable = "GAME_BACKEND_INTEGRATION";
-        private const int ExpectedArchiveGold = 7;
         private const int MaxWaitFrames = 600;
 
         [UnityTest]
@@ -54,7 +53,9 @@ namespace Game.Tests.PlayMode
             long uid = 0;
             string token = null;
             string nickname = null;
-            var archiveGold = -1;
+            var initialArchiveWasDefault = false;
+            var reloadedArchive = (PlayerArchive)null;
+            var expectedArchive = CreateExpectedArchive();
 
             try
             {
@@ -79,6 +80,9 @@ namespace Game.Tests.PlayMode
                 {
                     onlineState = host.State;
                     nickname = host.Nickname;
+                    initialArchiveWasDefault = host.Progress.Gold == 0 &&
+                                               host.Progress.Exp == 0 &&
+                                               host.Progress.UnlockedStyles.Count == 0;
                 }
 
                 var client = NetworkClient.Instance;
@@ -93,13 +97,13 @@ namespace Game.Tests.PlayMode
                 {
                     archiveSavedHandler = () => archiveSaved = true;
                     host.ArchiveSaved += archiveSavedHandler;
-                    saveAccepted = host.SaveArchive(new PlayerArchive { Gold = ExpectedArchiveGold });
+                    saveAccepted = host.SaveArchive(expectedArchive);
                     yield return WaitUntil(() => archiveSaved, "archive save acknowledgement");
                     reloadAccepted = host.ReloadArchive();
                     yield return WaitUntil(
-                        () => host.Archive != null && host.Archive.Gold == ExpectedArchiveGold,
+                        () => host.Archive != null && ArchiveMatches(host.Archive, expectedArchive),
                         "reloaded protobuf archive");
-                    archiveGold = host.Archive.Gold;
+                    reloadedArchive = host.Archive;
                 }
             }
             finally
@@ -128,12 +132,69 @@ namespace Game.Tests.PlayMode
             Assert.That(uid, Is.Positive);
             Assert.That(token, Is.Not.Null.And.Not.Empty);
             Assert.That(nickname, Is.Not.Null.And.Not.Empty);
+            Assert.That(initialArchiveWasDefault, Is.True,
+                "a new development identity must receive LoadArchiveResp(found=false) and default progress");
             Assert.That(saveAccepted, Is.True);
             Assert.That(archiveSaved, Is.True);
             Assert.That(reloadAccepted, Is.True);
-            Assert.That(archiveGold, Is.EqualTo(ExpectedArchiveGold));
+            Assert.That(ArchiveMatches(reloadedArchive, expectedArchive), Is.True);
             Assert.That(SceneManager.GetActiveScene().name, Is.EqualTo("BattleScene"));
             Assert.That(GetApplicationProperty(FindApplication(), "State")?.ToString(), Is.EqualTo("Ready"));
+        }
+
+        private static PlayerArchive CreateExpectedArchive()
+        {
+            var archive = new PlayerArchive
+            {
+                SchemaVersion = 2,
+                Gold = 7,
+                Exp = 11,
+                BestScore = 123,
+                TotalKills = 17,
+                TotalGames = 3,
+                HighestClearedDungeon = 4,
+                TalentPoints = 5,
+                LastStyleId = 3
+            };
+            AddUnlockedStyles(archive, 1, 3);
+            return archive;
+        }
+
+        private static bool ArchiveMatches(PlayerArchive actual, PlayerArchive expected)
+        {
+            return actual != null &&
+                   actual.SchemaVersion == expected.SchemaVersion &&
+                   actual.Gold == expected.Gold &&
+                   actual.Exp == expected.Exp &&
+                   actual.BestScore == expected.BestScore &&
+                   actual.TotalKills == expected.TotalKills &&
+                   actual.TotalGames == expected.TotalGames &&
+                   actual.HighestClearedDungeon == expected.HighestClearedDungeon &&
+                   actual.TalentPoints == expected.TalentPoints &&
+                   actual.LastStyleId == expected.LastStyleId &&
+                   ArchiveUnlockedStylesMatch(actual, expected);
+        }
+
+        private static void AddUnlockedStyles(PlayerArchive archive, params int[] styles)
+        {
+            var values = archive.GetType().GetProperty("UnlockedStyles")?.GetValue(archive) as IList;
+            Assert.That(values, Is.Not.Null, "PlayerArchive.UnlockedStyles must remain a generated repeated field.");
+            foreach (var style in styles)
+            {
+                values.Add(style);
+            }
+        }
+
+        private static bool ArchiveUnlockedStylesMatch(PlayerArchive actual, PlayerArchive expected)
+        {
+            var actualStyles = actual.GetType().GetProperty("UnlockedStyles")?.GetValue(actual) as IList;
+            var expectedStyles = expected.GetType().GetProperty("UnlockedStyles")?.GetValue(expected) as IList;
+            return actualStyles != null &&
+                   expectedStyles != null &&
+                   actualStyles.Count == expectedStyles.Count &&
+                   actualStyles.Count == 2 &&
+                   (int)actualStyles[0] == (int)expectedStyles[0] &&
+                   (int)actualStyles[1] == (int)expectedStyles[1];
         }
 
         private static IEnumerator WaitForApplicationTerminalState()
