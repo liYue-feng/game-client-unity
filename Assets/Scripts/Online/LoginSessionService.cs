@@ -72,6 +72,11 @@ namespace Game.Online
             Failed = null;
         }
 
+        internal void CancelActiveOperation()
+        {
+            _loginActive = false;
+        }
+
         private void HandleLoginResponse(LoginResp response)
         {
             if (!_loginActive)

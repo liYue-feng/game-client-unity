@@ -86,6 +86,11 @@ namespace Game.Online
             Failed = null;
         }
 
+        internal void CancelActiveOperation()
+        {
+            _activeOperation = ArchiveOperation.None;
+        }
+
         private bool TryBegin(ArchiveOperation operation)
         {
             if (_disposed)
