@@ -55,9 +55,8 @@ namespace Game
                 switch (_settings.RuntimeMode)
                 {
                     case RuntimeMode.Offline:
-                        break;
                     case RuntimeMode.Online:
-                        throw new NotSupportedException("Online runtime flow is not implemented in Phase A3");
+                        break;
                     default:
                         throw new InvalidOperationException($"RuntimeMode '{_settings.RuntimeMode}' is not supported.");
                 }
@@ -81,6 +80,40 @@ namespace Game
 
             // Allow other runtime initialization observers to start before replacing the bootstrap scene.
             yield return null;
+
+            if (_settings.RuntimeMode == RuntimeMode.Online)
+            {
+                FailureStage = "OnlineSession.Start";
+                _services.OnlineSession.StartSession();
+                var elapsed = 0f;
+                var decision = new OnlineStartupDecision();
+                while (true)
+                {
+                    var result = decision.Evaluate(
+                        _services.OnlineSession.State,
+                        elapsed,
+                        _settings.OnlineSessionTimeoutSeconds);
+                    if (result == OnlineStartupResult.Ready)
+                    {
+                        break;
+                    }
+
+                    if (result == OnlineStartupResult.Failed)
+                    {
+                        FailInitialization(new InvalidOperationException(_services.OnlineSession.FailureReason));
+                        yield break;
+                    }
+
+                    if (result == OnlineStartupResult.TimedOut)
+                    {
+                        FailInitialization(new TimeoutException("Online session startup timed out."));
+                        yield break;
+                    }
+
+                    elapsed += Time.unscaledDeltaTime;
+                    yield return null;
+                }
+            }
 
             if (!string.Equals(SceneManager.GetActiveScene().name, _settings.StartupSceneName, StringComparison.Ordinal))
             {

@@ -46,7 +46,7 @@ namespace Game.Tests.PlayMode
         }
 
         [UnityTest]
-        public IEnumerator FailedOnlineStartupWithoutHost_KeepsBattleStartDisabled()
+        public IEnumerator FailedOnlineStartupBeforeHostInstallation_KeepsBattleStartDisabled()
         {
             yield return WaitForScene("BattleScene");
             yield return WaitForApplicationState("Ready");
@@ -54,8 +54,10 @@ namespace Game.Tests.PlayMode
             var settings = Resources.Load("GameRuntimeSettings");
             var runtimeModeField = FindField(settings, "_runtimeMode");
             var onlineSceneField = FindField(settings, "_onlineStartupSceneName");
+            var editorIdentityField = FindField(settings, "_editorLoginIdentity");
             var originalRuntimeMode = runtimeModeField.GetValue(settings);
             var originalOnlineScene = onlineSceneField.GetValue(settings);
+            var originalEditorIdentity = editorIdentityField.GetValue(settings);
             var application = FindApplication();
             var applicationAssembly = application.GetType().Assembly;
             var observedState = string.Empty;
@@ -66,15 +68,16 @@ namespace Game.Tests.PlayMode
             {
                 runtimeModeField.SetValue(settings, System.Enum.Parse(runtimeModeField.FieldType, "Online"));
                 onlineSceneField.SetValue(settings, "MenuScene");
+                editorIdentityField.SetValue(settings, " ");
                 ShutdownApplication(application);
                 yield return null;
 
                 LogAssert.Expect(
                     LogType.Error,
-                    new Regex("Initialization failed at Mode\\.Select:.*Online runtime flow is not implemented in Phase A3"));
+                    new Regex("Initialization failed at Settings\\.Validate:.*EditorLoginIdentity"));
                 LogAssert.Expect(
                     LogType.Exception,
-                    new Regex("NotSupportedException: Online runtime flow is not implemented in Phase A3"));
+                    new Regex("InvalidOperationException: EditorLoginIdentity cannot be null or whitespace in Online mode"));
                 InvokeEnsureApplication(applicationAssembly);
                 yield return WaitForApplicationState("Failed");
                 yield return LoadScene("MenuScene");
@@ -88,6 +91,7 @@ namespace Game.Tests.PlayMode
             {
                 runtimeModeField.SetValue(settings, originalRuntimeMode);
                 onlineSceneField.SetValue(settings, originalOnlineScene);
+                editorIdentityField.SetValue(settings, originalEditorIdentity);
                 ShutdownApplication(FindApplication());
                 InvokeEnsureApplication(applicationAssembly);
             }
