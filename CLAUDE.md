@@ -12,9 +12,9 @@ Unity C# 游戏客户端，面向"吸血鬼幸存者"类微信小游戏（代号
 - **引擎**: Unity 2022.3 LTS
 - **语言**: C#
 - **网络**: WebSocketSharp（WebSocket 客户端）
-- **序列化**: JsonUtility（Unity 内置）
+- **序列化**: Google.Protobuf 3.35.1 + protoc 生成消息
 - **输入**: Unity Legacy Input + 自定义手势识别（Input System 延后到平台适配阶段）
-- **协议**: 二进制帧头(4B长度+2B消息ID) + JSON载荷（与服务器完全一致）
+- **协议**: 二进制帧头(4B长度+2B消息ID) + protobuf 载荷（与服务器完全一致）
 
 ## 核心原则
 
@@ -31,12 +31,13 @@ game_client_unity/
 │   ├── Scripts/
 │   │   ├── Protocol/          # 通信协议（与服务器一一对应）
 │   │   │   ├── Protocol.cs    #   消息ID + 错误码
-│   │   │   ├── Messages.cs    #   请求/响应结构体
+│   │   │   ├── Generated/Messages.cs # protoc 生成的请求/响应消息
 │   │   │   └── Codec.cs       #   二进制帧编解码
 │   │   ├── Network/           # 网络层
 │   │   │   └── NetworkClient.cs         # WebSocket 客户端
 │   │   ├── Core/              # 生命周期核心 + 主线程调度
 │   │   ├── Application/       # 自动入口 + 服务组合根
+│   │   ├── Online/            # 在线会话、存档和战斗结算协调器
 │   │   ├── Managers/          # 业务管理器
 │   │   │   ├── LoginManager.cs   # 登录管理
 │   │   │   ├── ArchiveManager.cs # 存档管理
@@ -59,7 +60,7 @@ game_client_unity/
 +-------------------+-------------------+-------------------+
 | Length (4 bytes)  | MsgID  (2 bytes)  | Body   (N bytes)  |
 +-------------------+-------------------+-------------------+
-小端序 uint32        小端序 uint16        JSON 编码的消息体
+小端序 uint32        小端序 uint16        protobuf 消息字节
 ```
 
 **修改协议时必须同步修改服务器端代码！**
@@ -71,13 +72,15 @@ game_client_unity/
 - Phase A2 跨场景服务的 `Instance` 只返回 `GameApplication` 已安装实例，不得自行创建 GameObject；仅 `[GameApplication]` 使用 `DontDestroyOnLoad`
 - WebSocket 回调在工作线程，UI 操作必须通过 MainThreadDispatcher 切回主线程
 - 网络消息通过 On<T>() 注册监听，不直接在 NetworkClient 中写业务逻辑
-- JsonUtility 不支持 camelCase，字段名用 snake_case 与服务器 JSON tag 一致
+- 协议消息只使用 `Generated/Messages.cs` 中的生成类型；不得手改生成文件或添加 JSON 兼容别名
 
 ## 关键依赖
 
 | 包 | 用途 |
 |----|------|
 | WebSocketSharp | WebSocket 客户端（需放入 Assets/Plugins/） |
+| Google.Protobuf 3.35.1 | protobuf 生成消息运行时（随工程提交） |
+| System.Runtime.CompilerServices.Unsafe | Google.Protobuf 在 Unity 2022.3 下的加载依赖 |
 
 当前战斗使用 `UnityEngine.Input` 和自定义 `GestureInput`。未使用的 Input System 包会破坏当前手写 ProjectSettings 下的 PlayMode 初始化，因此 Phase A1 已移除；需要新输入后端时必须连同有效配置和回归测试一起接入。
 
@@ -89,7 +92,7 @@ game_client_unity/
 - `MenuScene` 与 `BattleScene` 已按此顺序加入 Build Settings；主菜单提供开始战斗、场景内空排行榜、设置和安全退出命令，排行榜不会创建 `RankManager`，开始战斗进入 `BattleScene`，返回菜单统一进入 `MenuScene`
 - 终局 UI 同时提供 Restart 和返回菜单；`BattleRunController` 在释放冻结、输入和时间状态前先验证场景跳转服务，服务不可用时 fail closed，成功时至多跳转一次并回到唯一 `MenuCanvas`
 - `InkPanel.Configure` 按最终尺寸重建单一 `RawImage` 纹理；组件只销毁自身创建的纹理，保留外部提供或替换的纹理，关闭排行榜和销毁结果面板时不会越权释放资源
-- 本地开发后端联调命令为 `& .\tools\integration\Invoke-A4BackendIntegration.ps1 -BackendRoot 'E:\Own_project\game-server-go'`；它使用 `configs/config.dev.yaml`、`dev:integration-client` 和 `ws://127.0.0.1:8080/ws` 验证真实登录、存档保存与重新加载，并在退出时清理精确进程、端口和环境变量
+- 本地开发后端联调命令为 `& .\tools\integration\Invoke-A4BackendIntegration.ps1 -BackendRoot 'E:\Own_project\game-server-go\.worktrees\protobuf-battle-completion'`；`BackendRoot` 可指向其他有效后端根目录，省略时解析同级 `game-server-go`。runner 使用 `configs/config.dev.yaml` 启动真实后端和 devprobe，运行存档往返、Victory 持久化、Defeat 结算共 3 个 PlayMode 用例，打印后端/devprobe/Unity 的精确 PID，并在退出时恢复 `GAME_BACKEND_INTEGRATION`、清理自有进程和临时可执行文件、确认端口 `8080/8081` 释放
 - A4 最终规范审查和质量审查均为 APPROVED；修复后全新回归为资源完整性 PASS、Pester `5/5`、EditMode `210/210`、常规 PlayMode `98` passed + `1` 个 opt-in real-backend skip、真实后端 PlayMode `1/1`；交付代码 head 为 `1b9b7d8`，Go 后端 `master` 为 `874e68e`
 - Phase B1 已建立可玩的离线战斗权威：`CombatHit` 是命中/弹反唯一契约，`BattleTimeController` 是唯一 `Time.timeScale` 写入者，场景内 `ObjectPool`/`DamageNumberPool`/`WaveSpawner` 随战局释放；左向攻击会在攻击开始时镜像真实 hitbox，武器 teardown 不会懒创建替代池
 - `BattleRunController` 统一 Victory/Defeat/Restart/返回菜单；终局冻结动作、移动与热键，重开后 Player、Pool、Spawner、UI、EventSystem 和时间状态均为新战局，返回菜单会释放战局状态后进入 `MenuScene`
@@ -99,6 +102,9 @@ game_client_unity/
 - Boss 攻击在进入 Telegraph 前同步停止并冻结 `localToWorldMatrix`，冲锋/砸地结算不再随 Commit 位移偏离预警；`PoisonDot` 在敌人池租约结束和新租约准备时清空层数、计时器与来源，旧租约不会污染复用敌人
 - B2 最终有效验证为 visual `2/2` 连续三次、core `49/49`、enemy `39/39`、combat `37/37`、EditMode `160/160`、PlayMode `92/92` 连续两次、smoke `3/3`、Pester `5/5`；Task 7 规范审查、质量复审和完整分支复审均 PASS
 - 父级最终批准两张 960x540 证据图：`Logs/phase-b2-wave-combat.png`（101674 bytes，dark `8473`、light `506624`、chromatic `73868`、colors `112`、variance `560.11`、Player `29.12px`、Grunt `24.27px`、SHA-256 `2AEABB48FDB548F7F8E3CA072B0ECB2AA5999CCC7B83250A0BC7A07B33B74DF0`）和 `Logs/phase-b2-boss-telegraph.png`（122543 bytes，dark `12998`、light `500312`、chromatic `86814`、colors `139`、variance `809.23`、Boss `48.54px`、Circle `485.39px`、SHA-256 `68B6022A192CE43FBF69EAB5265B7A695A52CE6F19AB84125445FE570DD37350`）
+- Protobuf 战斗交付已覆盖全部 32 个 WebSocket route：六字节小端 envelope 保持不变，body 统一为生成 protobuf 消息；存档使用 typed `PlayerArchive`，战斗结算以 `run_id` 在后端保证 exactly-once，客户端结果 UI 明确区分 Pending/Saved/Failed 并只重试未完成的保存阶段
+- 生产 `BattleScene` 配置已由运行测试证明包含 10 波、181 个敌人和最终 Boss 波；短流程测试通过真实 `WaveSpawner -> 敌人受伤/死亡 -> OnAllWavesComplete` 到达 Victory，Defeat 则通过真实玩家致死路径进入同一结算所有权
+- Task 7 阶段证据为 `Logs/Task7A-final-editmode.xml` 的 EditMode `238/238`、`Logs/Task7B-full-playmode-final.xml` 的 PlayMode `104` passed + `1` opt-in skip，以及 `Logs/A4-real-backend-20260721-035422.xml` 的真实后端 Victory/Defeat/Reload `3/3`；这些是分阶段已验证数据，不替代交付前的全分支 fresh rerun
 - 后续工作为 Phase A5 的真实微信 SDK、`code2session` 凭证与生产部署，以及 Phase C 的 UI、Prefab、动画、资源加载和打包工程化；Phase B1/B2 战斗竖切已经完成
 
 ## 服务器仓库

@@ -38,25 +38,27 @@
 - Produces: generated `game-server/internal/protocolpb` Go package and staged `Game.Protocol` C# source outside Unity's `Assets` compilation boundary.
 - Produces: `MessageId`, `BattleOutcome`, `PlayerArchive`, all 32 routed messages, and nested rank/combat/config messages.
 
-- [ ] **Step 1: Add failing schema/toolchain contract tests**
+- [x] **Step 1: Add failing schema/toolchain contract tests**
 
 Add PowerShell assertions for the exact pinned versions, one canonical schema, generated output paths, all route numbers, no `JsonUtility` annotations in staged generated code, and no duplicate client `.proto`. Add the Go golden assertion for `LoginReq{code:"abc"}` body `0A03616263` and frame `0B000000E9030A03616263`; the compiled C# golden assertion belongs to Task 3 after handwritten classes are removed.
 
-- [ ] **Step 2: Run RED checks**
+- [x] **Step 2: Run RED checks**
 
 Run backend `go test ./internal/protocolpb ./internal/protocol -count=1` and client `Invoke-Pester tools/protobuf/*.Tests.ps1`. Expected: missing schema/generated packages and missing verifier failures.
 
-- [ ] **Step 3: Define the complete schema and generation script**
+- [x] **Step 3: Define the complete schema and generation script**
 
 Define all existing messages, `PayResultNotify`, typed `PlayerArchive`, `ScoreMetadata`, `BattleOutcome`, and the new combat settlement fields exactly as specified in the design. Generate Go with `protoc-gen-go v1.36.11` and stage C# with `protoc 35.0`. Pin and verify the `Google.Protobuf 3.35.1` net45 package source here; Task 3 installs its runtime DLL when generated C# enters Unity's compilation boundary.
 
-- [ ] **Step 4: Run GREEN generation and golden checks**
+- [x] **Step 4: Run GREEN generation and golden checks**
 
 Run generation twice, `Verify-Protocol.ps1`, `go test ./internal/protocolpb ./internal/protocol -count=1`, client PowerShell staged-output verification, and `git diff --check` in both repositories. Expected: deterministic output and exact Go golden bytes.
 
-- [ ] **Step 5: Commit locally**
+- [x] **Step 5: Commit locally**
 
 Commit backend as `feat: define protobuf game protocol` and client as `feat: add generated protobuf protocol` without pushing.
+
+**Completion evidence (2026-07-20):** Canonical schema and pinned generators landed in backend `3cbdc328` and client `92ce0cd`; generation drift and the cross-language login golden frame passed.
 
 ### Task 2: Go Protobuf Codec, Kernel, And Handler Migration
 
@@ -74,29 +76,31 @@ Commit backend as `feat: define protobuf game protocol` and client as `feat: add
 - Consumes: generated `protocolpb` messages.
 - Produces: `protocol.Encode(msgID uint16, payload proto.Message) ([]byte, error)` and protobuf kernel dispatch.
 
-- [ ] **Step 1: Write failing protobuf codec and registration tests**
+- [x] **Step 1: Write failing protobuf codec and registration tests**
 
 Test exact golden frame output, malformed protobuf rejection, wrong handler request/response types, protobuf ErrorResp delivery, repeated fields, empty messages, and route coverage for all production IDs.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Run `go test ./internal/protocol ./internal/kernel ./internal/session ./internal/transport -count=1`. Expected: JSON codec and reflection dispatch violate protobuf assertions.
 
-- [ ] **Step 3: Implement protobuf codec and kernel**
+- [x] **Step 3: Implement protobuf codec and kernel**
 
 Use `proto.Marshal`, `proto.Unmarshal`, `proto.Message`, generated request prototypes, the unchanged frame header, and the 64 KiB application limit. Keep payment callback JSON isolated in `internal/payment`.
 
-- [ ] **Step 4: Migrate every handler signature and constructor**
+- [x] **Step 4: Migrate every handler signature and constructor**
 
 Replace handwritten request/response types with `protocolpb` types. Convert repeated generated pointer slices and enum fields deliberately. `GMCommandReq.ArgsJson` remains bytes and is decoded only inside the GM handler. Adapt archive storage/service signatures to protobuf bytes so the generated `SaveArchiveReq.Archive` and `LoadArchiveResp` compile without a temporary JSON bridge. Adapt the existing combat handler to the new typed duration/outcome fields without claiming idempotency; Task 5 replaces its persistence path.
 
-- [ ] **Step 5: Run GREEN package and full tests**
+- [x] **Step 5: Run GREEN package and full tests**
 
 Run focused packages, `go test ./... -count=1`, `go vet ./...`, `go build ./...`, generation drift verification, and `git diff --check`.
 
-- [ ] **Step 6: Review and commit locally**
+- [x] **Step 6: Review and commit locally**
 
 Complete task spec/quality review, fix all Critical/Important findings, and commit `refactor: use protobuf websocket payloads` without pushing.
+
+**Completion evidence (2026-07-20):** Backend `5685a05f` migrated all routed WebSocket handlers, errors, and archive bytes to generated protobuf; focused and full Go tests, vet, build, route coverage, and drift checks passed.
 
 ### Task 3: Unity Protobuf Codec, Registry, And Consumer Migration
 
@@ -115,29 +119,31 @@ Complete task spec/quality review, fix all Critical/Important findings, and comm
 - Consumes: generated `IMessage` classes and parsers.
 - Produces: `Codec.Encode(ushort, IMessage)`, `Codec.TryDecode(..., out ushort, out byte[])`, and typed `NetworkClient.On<T>` through the registry.
 
-- [ ] **Step 1: Write failing codec, registry, and lifecycle tests**
+- [x] **Step 1: Write failing codec, registry, and lifecycle tests**
 
 Cover the golden frame, malformed protobuf, parser/type mismatch, repeated messages, empty messages, subscription move/dispose, late callbacks, and disconnected sends.
 
-- [ ] **Step 2: Verify RED in focused EditMode**
+- [x] **Step 2: Verify RED in focused EditMode**
 
 Run the protocol and NetworkClient filters. Expected: string/JsonUtility codec and missing registry failures.
 
-- [ ] **Step 3: Implement the protobuf client boundary**
+- [x] **Step 3: Implement the protobuf client boundary**
 
 Use `IMessage.ToByteArray`, generated `MessageParser`, explicit MsgID parser registration, byte-body subscriptions, and safe parse errors. Retain current transport ownership and subscription semantics.
 
-- [ ] **Step 4: Migrate call sites to generated PascalCase properties**
+- [x] **Step 4: Migrate call sites to generated PascalCase properties**
 
 Update Login, Heartbeat, Archive, Rank, Combat, Payment, GM, tests, and fake frame helpers. Adapt archive call sites to pass generated `PlayerArchive` messages, with default empty archives until Task 4 installs hydration ownership. Do not add lowercase compatibility aliases to generated partial classes.
 
-- [ ] **Step 5: Run GREEN client gates**
+- [x] **Step 5: Run GREEN client gates**
 
 Run generation verification, asset integrity, Pester `5/5`, focused EditMode, full EditMode, and `git diff --check`.
 
-- [ ] **Step 6: Review and commit locally**
+- [x] **Step 6: Review and commit locally**
 
 Complete task spec/quality review and commit `refactor: use protobuf network client` without pushing.
+
+**Completion evidence (2026-07-20):** Client `956daea` installed Google.Protobuf 3.35.1, generated `Messages.cs`, the explicit parser registry, and typed `NetworkClient`; focused protocol/network tests and full Unity gates passed.
 
 ### Task 4: Typed Archive Load, Hydration, Save, And Real Login Regression
 
@@ -154,29 +160,31 @@ Complete task spec/quality review and commit `refactor: use protobuf network cli
 - Produces: immutable-copy `PlayerProgressState` hydrated from `PlayerArchive`.
 - Produces: `OnlineSessionHost.Archive` and `SaveArchive(PlayerArchive archive)`.
 
-- [ ] **Step 1: Write failing archive storage and hydration tests**
+- [x] **Step 1: Write failing archive storage and hydration tests**
 
 Backend tests require protobuf bytes, copy isolation, missing `found=false`, malformed archive error, and MySQL binary upsert. Client tests require default archive, field hydration, copy isolation, load-before-menu, and typed save.
 
-- [ ] **Step 2: Verify RED on both repositories**
+- [x] **Step 2: Verify RED on both repositories**
 
 Run backend game/store tests and client Online service/coordinator tests. Expected: string archive APIs fail the typed contracts.
 
-- [ ] **Step 3: Implement typed archive persistence and client state**
+- [x] **Step 3: Implement typed archive persistence and client state**
 
 Store `proto.Marshal(PlayerArchive)` bytes, parse on load, and never convert to JSON. Hydrate the online host before MenuScene. Preserve Offline PlayerPrefs behavior.
 
-- [ ] **Step 4: Update the real login/archive runner**
+- [x] **Step 4: Update the real login/archive runner**
 
 The runner must prove protobuf login, `found=false`, typed save, typed reload, log evidence, exact PIDs, environment restoration, and free ports.
 
-- [ ] **Step 5: Run GREEN and review**
+- [x] **Step 5: Run GREEN and review**
 
 Run backend full gates, client focused/full EditMode, and real backend PlayMode `1/1`. Complete task review and fix all blocking findings.
 
-- [ ] **Step 6: Commit locally**
+- [x] **Step 6: Commit locally**
 
 Commit backend `feat: persist protobuf player archives` and client `feat: hydrate protobuf player progress` without pushing.
+
+**Completion evidence (2026-07-20):** Backend `7670783` and client `e129b3b` proved typed archive copy isolation, missing/malformed behavior, hydration before menu, save/reload, and a real development-backend archive round trip.
 
 ### Task 5: Idempotent Combat Settlement And Development Runtime
 
@@ -192,29 +200,31 @@ Commit backend `feat: persist protobuf player archives` and client `feat: hydrat
 - Produces: `CombatSettlementRepository.Settle(uid int64, req *protocolpb.CombatResultReq) (*protocolpb.CombatResultResp, error)`.
 - Produces: development routes for CombatResult and GetPlayerStats without external stores.
 
-- [ ] **Step 1: Write failing validation and idempotency tests**
+- [x] **Step 1: Write failing validation and idempotency tests**
 
 Require nonempty bounded `run_id`, explicit outcome, bounded counters/duration/style/player level, one reward application, duplicate stored response, Victory clear advancement, Defeat no advancement, transaction rollback, concurrent duplicate convergence, and byte-for-byte response stability.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Run `go test ./internal/combat ./internal/store ./cmd/server -count=1`. Expected: missing service/model/repository and duplicate rewards.
 
-- [ ] **Step 3: Implement memory and MySQL settlement**
+- [x] **Step 3: Implement memory and MySQL settlement**
 
 Use a memory mutex and a MySQL transaction with unique `(player_id, run_id)`. Preserve current per-kill reward configuration. Return a complete `PlayerArchive` snapshot.
 
-- [ ] **Step 4: Register development settlement routes**
+- [x] **Step 4: Register development settlement routes**
 
 Development registers Login, Heartbeat, SaveArchive, LoadArchive, CombatResult, and GetPlayerStats. Update explicit route tests; keep rank/payment/GM/config mutation routes absent.
 
-- [ ] **Step 5: Run GREEN stress and full gates**
+- [x] **Step 5: Run GREEN stress and full gates**
 
 Run settlement concurrency tests repeatedly, full Go tests, vet, build, protobuf drift, and diff checks.
 
-- [ ] **Step 6: Review and commit locally**
+- [x] **Step 6: Review and commit locally**
 
 Complete task review and commit `feat: settle combat runs exactly once` without pushing.
+
+**Completion evidence (2026-07-21):** Backend `6ff457b` implemented memory/MySQL exactly-once settlement with `(player_id, run_id)`, stored response replay, Victory-only clear progress, rollback and duplicate stress coverage; `4503b15` added response correlation through `run_id`.
 
 ### Task 6: Client Battle Settlement Coordinator And Result UI
 
@@ -231,33 +241,35 @@ Complete task review and commit `feat: settle combat runs exactly once` without 
 - Produces: `Settle(BattleRunOutcome outcome, CombatResultData data, Action<BattleSettlementResult> completed)` with one active run.
 - Produces: GameOverUI states `Pending`, `Saved`, and `Failed`, plus one retry command.
 
-- [ ] **Step 1: Write failing coordinator state tests**
+- [x] **Step 1: Write failing coordinator state tests**
 
 Cover one run ID, duplicate terminal suppression, matching response only, response then archive save, save failure retry without new combat request, reconnect resend with same run ID, duplicate response, dispose/late frame, and Offline immediate completion.
 
-- [ ] **Step 2: Verify RED in focused EditMode**
+- [x] **Step 2: Verify RED in focused EditMode**
 
 Run the new settlement filters. Expected: missing service/coordinator/UI state APIs.
 
-- [ ] **Step 3: Implement settlement services and host ownership**
+- [x] **Step 3: Implement settlement services and host ownership**
 
 Use generated protobuf messages, the A3 connection generation, and existing archive service. Do not create another heartbeat, reconnect loop, transport, or persistent manager.
 
-- [ ] **Step 4: Connect the one terminal producer**
+- [x] **Step 4: Connect the one terminal producer**
 
 After `BattleRunStateMachine.TryComplete` wins, capture data once, report talent/achievement once for both outcomes, freeze combat, display pending result, settle, save, then unlock navigation. Remove the dormant duplicate terminal report.
 
-- [ ] **Step 5: Implement result UI state and retry**
+- [x] **Step 5: Implement result UI state and retry**
 
 Pending disables Restart/Menu; Saved shows rewards and enables both; Failed shows the failure and enables only Retry. Repeated clicks cannot create a second transition or settlement.
 
-- [ ] **Step 6: Run GREEN and visual checks**
+- [x] **Step 6: Run GREEN and visual checks**
 
 Run focused EditMode, focused PlayMode, result UI screenshot probe at 960x540, full EditMode, full PlayMode, asset/Pester, and diff checks.
 
-- [ ] **Step 7: Review and commit locally**
+- [x] **Step 7: Review and commit locally**
 
 Complete task review and commit `feat: complete online battle settlement flow` without pushing.
+
+**Completion evidence (2026-07-21):** Client `5ae2c09` delivered Pending/Saved/Failed UI and one terminal producer; follow-up commits `985a467`, `40b2f99`, and `e3e8f3c` isolated archive ownership, made retry state visible, and serialized save ownership. Focused coordinator/UI tests and settlement screenshots passed.
 
 ### Task 7: Real Waves, Victory/Defeat, Persistence, And Full Regression
 
@@ -274,33 +286,35 @@ Complete task review and commit `feat: complete online battle settlement flow` w
 - Consumes: completed protobuf/archive/settlement flows.
 - Produces: authoritative real-process and Unity evidence.
 
-- [ ] **Step 1: Add the real short-wave RED test**
+- [x] **Step 1: Add the real short-wave RED test**
 
 Construct two deterministic waves with real enemies. Start the real spawner, damage each enemy through its health API, observe death/unregister, wait for the next wave, and reach Victory through `OnAllWavesComplete`. Direct event invocation or reflection terminal triggering is forbidden.
 
-- [ ] **Step 2: Add terminal correctness tests**
+- [x] **Step 2: Add terminal correctness tests**
 
 Use real lethal player damage for Defeat. Assert one completion, one local progression report, one settlement request, result UI state ordering, retry behavior, and one scene transition.
 
-- [ ] **Step 3: Add real backend victory persistence flow**
+- [x] **Step 3: Add real backend victory persistence flow**
 
 Run protobuf Online startup, short real waves, Victory, settlement, archive save, return to menu, reload, and assert rewards, total games/kills, highest clear, and the same server identity. Add a focused real Defeat settlement assertion.
 
-- [ ] **Step 4: Verify default battle configuration**
+- [x] **Step 4: Verify default battle configuration**
 
 Load the production BattleScene, assert ten waves, 181 configured enemies, final boss wave, valid player and UI, and no duplicate completion owner. Run a bounded accelerated smoke without replacing the production config asset.
 
-- [ ] **Step 5: Run all authoritative gates**
+- [x] **Step 5: Run all authoritative gates**
 
 Run protobuf generation drift checks, backend full tests/vet/build, client asset/Pester, full EditMode, full PlayMode, focused real backend runner, screenshots, `git diff --check`, and process/port/environment cleanup.
 
-- [ ] **Step 6: Complete final reviews and evidence**
+- [x] **Step 6: Complete final reviews and evidence**
 
 Run whole-branch specification and quality reviews across both repositories, fix every Critical/Important finding, rerun affected and full gates, and record exact totals, paths, SHAs, PIDs, and cleanup state.
 
-- [ ] **Step 7: Commit locally**
+- [x] **Step 7: Commit locally**
 
 Commit documentation/evidence in each affected repository without pushing.
+
+**Completion evidence (2026-07-21):** Client `106dc8d` proved real two-wave completion and production 10-wave/181-enemy/final-Boss configuration; `849ac1e` proved protobuf archive reload, Victory persistence, and Defeat settlement against one real backend process. Recorded task-stage evidence is EditMode `238/238`, PlayMode `104` passed + `1` opt-in skip, and real backend `3/3`, with captured PIDs, environment restoration, and ports `8080/8081` free.
 
 ### Task 8: One-Push Delivery
 
