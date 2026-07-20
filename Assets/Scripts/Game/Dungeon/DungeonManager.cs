@@ -1,4 +1,5 @@
 using UnityEngine;
+using System;
 using System.Collections.Generic;
 
 /// <summary>
@@ -145,11 +146,14 @@ public class DungeonManager : MonoBehaviour
         // 上报服务器
         var combatResult = new Game.Protocol.CombatResultReq
         {
-            dungeon_level = DungeonLevel,
-            score = _totalScore,
-            kills = _totalKills,
-            survival_time = survivalTime,
-            style_id = 0 // TODO: 从 StyleManager 读取
+            RunId = Guid.NewGuid().ToString("N"),
+            DungeonLevel = DungeonLevel,
+            Score = _totalScore,
+            Kills = _totalKills,
+            DurationMs = (long)(survivalTime * 1000f),
+            StyleId = 0,
+            Outcome = Game.Protocol.BattleOutcome.Victory,
+            PlayerLevel = 1 // TODO: 从 StyleManager 读取
         };
         CombatManager.Instance.ReportCombatResult(combatResult);
     }

@@ -1,6 +1,7 @@
 using System;
 using Game.Core;
 using Game.Network;
+using Game.Protocol;
 using UnityEngine;
 
 namespace Game.Online
@@ -14,7 +15,7 @@ namespace Game.Online
         private OnlineSessionState _lastState = OnlineSessionState.Idle;
         private string _lastFailureReason;
         private string _lastNickname;
-        private string _lastArchiveData;
+        private PlayerArchive _lastArchive = new PlayerArchive();
         private bool _initialized;
         private bool _shutdown;
 
@@ -24,7 +25,7 @@ namespace Game.Online
         public OnlineSessionState State => _coordinator?.State ?? _lastState;
         public string FailureReason => _coordinator?.FailureReason ?? _lastFailureReason;
         public string Nickname => _coordinator?.Nickname ?? _lastNickname;
-        public string ArchiveData => _coordinator?.ArchiveData ?? _lastArchiveData;
+        public PlayerArchive Archive => _coordinator?.Archive ?? _lastArchive;
 
         public event Action<OnlineSessionState> StateChanged;
         public event Action ArchiveSaved;
@@ -135,9 +136,9 @@ namespace Game.Online
             }
         }
 
-        public bool SaveArchive(string data)
+        public bool SaveArchive(PlayerArchive archive = null)
         {
-            return !_shutdown && _initialized && (_coordinator?.SaveArchive(data) ?? false);
+            return !_shutdown && _initialized && (_coordinator?.SaveArchive(archive) ?? false);
         }
 
         public bool ReloadArchive()
@@ -220,7 +221,7 @@ namespace Game.Online
             _lastState = _coordinator.State;
             _lastFailureReason = _coordinator.FailureReason;
             _lastNickname = _coordinator.Nickname;
-            _lastArchiveData = _coordinator.ArchiveData;
+            _lastArchive = _coordinator.Archive;
         }
 
         private void HandleStateChanged(OnlineSessionState state)
@@ -228,13 +229,13 @@ namespace Game.Online
             _lastState = state;
             _lastFailureReason = _coordinator?.FailureReason;
             _lastNickname = _coordinator?.Nickname;
-            _lastArchiveData = _coordinator?.ArchiveData;
+            _lastArchive = _coordinator?.Archive;
             StateChanged?.Invoke(state);
         }
 
         private void HandleArchiveSaved()
         {
-            _lastArchiveData = _coordinator?.ArchiveData;
+            _lastArchive = _coordinator?.Archive;
             ArchiveSaved?.Invoke();
         }
 

@@ -45,7 +45,7 @@ namespace Game.Online
         public OnlineSessionState State { get; private set; } = OnlineSessionState.Idle;
         public string FailureReason { get; private set; }
         public string Nickname { get; private set; }
-        public string ArchiveData { get; private set; }
+        public PlayerArchive Archive { get; private set; } = new PlayerArchive();
 
         public event Action<OnlineSessionState> StateChanged;
         public event Action ArchiveSaved;
@@ -70,14 +70,14 @@ namespace Game.Online
             BeginConnection();
         }
 
-        public bool SaveArchive(string data)
+        public bool SaveArchive(PlayerArchive archive = null)
         {
             if (_disposed || _stopped || State != OnlineSessionState.Ready)
             {
                 return false;
             }
 
-            var accepted = _archiveService.Save(data);
+            var accepted = _archiveService.Save(archive ?? Archive ?? new PlayerArchive());
             if (!accepted && State == OnlineSessionState.Ready)
             {
                 Fail("Archive save could not start.");
@@ -168,7 +168,7 @@ namespace Game.Online
             _hasConnected = false;
             FailureReason = null;
             Nickname = null;
-            ArchiveData = null;
+            Archive = new PlayerArchive();
             _client.ClearLoginInfo();
             CancelActiveOperations();
             TransitionTo(OnlineSessionState.Connecting);
@@ -228,7 +228,7 @@ namespace Game.Online
                 return;
             }
 
-            Nickname = response?.nickname;
+            Nickname = response?.Nickname;
             TransitionTo(OnlineSessionState.LoadingArchive);
             var accepted = _archiveService.Load();
             if (!accepted && State == OnlineSessionState.LoadingArchive)
@@ -237,7 +237,7 @@ namespace Game.Online
             }
         }
 
-        private void HandleArchiveLoaded(string data)
+        private void HandleArchiveLoaded(PlayerArchive archive)
         {
             if (!IsActive)
             {
@@ -246,7 +246,7 @@ namespace Game.Online
 
             if (State == OnlineSessionState.LoadingArchive)
             {
-                ArchiveData = data;
+                Archive = archive ?? new PlayerArchive();
                 _connection.MarkReady();
                 TransitionTo(OnlineSessionState.Ready);
                 return;
@@ -255,7 +255,7 @@ namespace Game.Online
             if (State == OnlineSessionState.Ready && _reloadActive)
             {
                 _reloadActive = false;
-                ArchiveData = data;
+                Archive = archive ?? new PlayerArchive();
             }
         }
 

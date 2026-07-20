@@ -3,6 +3,7 @@ using System.Collections;
 using System.Reflection;
 using Game.Network;
 using Game.Online;
+using Game.Protocol;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -13,7 +14,7 @@ namespace Game.Tests.PlayMode
     public sealed class RealBackendOnlineFlowTests
     {
         private const string IntegrationEnvironmentVariable = "GAME_BACKEND_INTEGRATION";
-        private const string ExpectedArchive = "{\"phase\":\"a4\",\"coins\":7}";
+        private const int ExpectedArchiveGold = 7;
         private const int MaxWaitFrames = 600;
 
         [UnityTest]
@@ -53,7 +54,7 @@ namespace Game.Tests.PlayMode
             long uid = 0;
             string token = null;
             string nickname = null;
-            string archiveData = null;
+            var archiveGold = -1;
 
             try
             {
@@ -92,13 +93,13 @@ namespace Game.Tests.PlayMode
                 {
                     archiveSavedHandler = () => archiveSaved = true;
                     host.ArchiveSaved += archiveSavedHandler;
-                    saveAccepted = host.SaveArchive(ExpectedArchive);
+                    saveAccepted = host.SaveArchive(new PlayerArchive { Gold = ExpectedArchiveGold });
                     yield return WaitUntil(() => archiveSaved, "archive save acknowledgement");
                     reloadAccepted = host.ReloadArchive();
                     yield return WaitUntil(
-                        () => string.Equals(host.ArchiveData, ExpectedArchive, StringComparison.Ordinal),
-                        "reloaded archive to match the exact A4 payload");
-                    archiveData = host.ArchiveData;
+                        () => host.Archive != null && host.Archive.Gold == ExpectedArchiveGold,
+                        "reloaded protobuf archive");
+                    archiveGold = host.Archive.Gold;
                 }
             }
             finally
@@ -130,7 +131,7 @@ namespace Game.Tests.PlayMode
             Assert.That(saveAccepted, Is.True);
             Assert.That(archiveSaved, Is.True);
             Assert.That(reloadAccepted, Is.True);
-            Assert.That(archiveData, Is.EqualTo(ExpectedArchive));
+            Assert.That(archiveGold, Is.EqualTo(ExpectedArchiveGold));
             Assert.That(SceneManager.GetActiveScene().name, Is.EqualTo("BattleScene"));
             Assert.That(GetApplicationProperty(FindApplication(), "State")?.ToString(), Is.EqualTo("Ready"));
         }

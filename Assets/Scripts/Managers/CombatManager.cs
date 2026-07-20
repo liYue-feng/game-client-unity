@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using Game.Network;
 using Game.Protocol;
@@ -106,7 +107,7 @@ public class CombatManager : MonoBehaviour
     /// <summary>请求地牢配置</summary>
     public void RequestDungeonConfig(int level)
     {
-        NetworkClient.Instance.Send(MsgID.GetDungeonConfigReq, new GetDungeonConfigReq { level = level });
+        NetworkClient.Instance.Send(MsgID.GetDungeonConfigReq, new GetDungeonConfigReq { Level = level });
     }
 
     /// <summary>请求流派配置</summary>
@@ -118,7 +119,7 @@ public class CombatManager : MonoBehaviour
     /// <summary>请求解锁流派</summary>
     public void RequestUnlockStyle(int styleId)
     {
-        NetworkClient.Instance.Send(MsgID.UnlockStyleReq, new UnlockStyleReq { style_id = styleId });
+        NetworkClient.Instance.Send(MsgID.UnlockStyleReq, new UnlockStyleReq { StyleId = styleId });
     }
 
     /// <summary>请求玩家战斗属性</summary>
@@ -136,7 +137,7 @@ public class CombatManager : MonoBehaviour
 
     private void HandleGetEnemyConfigsResp(GetEnemyConfigsResp resp)
     {
-        EnemyConfigs = resp.configs;
+        EnemyConfigs = resp.Configs.ToArray();
         OnEnemyConfigsLoaded?.Invoke(resp);
     }
 
@@ -147,7 +148,7 @@ public class CombatManager : MonoBehaviour
 
     private void HandleGetStyleConfigsResp(GetStyleConfigsResp resp)
     {
-        StyleConfigs = resp.styles;
+        StyleConfigs = resp.Styles.ToArray();
         OnStyleConfigsLoaded?.Invoke(resp);
     }
 
@@ -164,7 +165,7 @@ public class CombatManager : MonoBehaviour
 
     private void HandleUpdatePlayerStatsResp(UpdatePlayerStatsResp resp)
     {
-        if (!resp.success)
+        if (!resp.Success)
         {
             OnError?.Invoke("更新玩家属性失败");
         }

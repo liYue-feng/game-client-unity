@@ -114,7 +114,7 @@ namespace Game.Managers
             }
 
             Debug.Log($"[LoginManager] 发送登录请求: code={code}");
-            NetworkClient.Instance.Send(MsgID.LoginReq, new LoginReq { code = code });
+            NetworkClient.Instance.Send(MsgID.LoginReq, new LoginReq { Code = code });
         }
 
         /// <summary>
@@ -122,13 +122,13 @@ namespace Game.Managers
         /// </summary>
         private void HandleLoginResp(LoginResp resp)
         {
-            Debug.Log($"[LoginManager] 登录成功: uid={resp.uid} nickname={resp.nickname}");
+            Debug.Log($"[LoginManager] 登录成功: uid={resp.Uid} nickname={resp.Nickname}");
 
             // 保存登录信息到 NetworkClient
-            NetworkClient.Instance.SetLoginInfo(resp.uid, resp.token);
+            NetworkClient.Instance.SetLoginInfo(resp.Uid, resp.Token);
 
             // 保存昵称
-            Nickname = resp.nickname;
+            Nickname = resp.Nickname;
 
             // 触发事件
             OnLoginSuccess?.Invoke(resp);

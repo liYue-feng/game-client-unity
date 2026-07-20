@@ -43,7 +43,7 @@ namespace Game.Online
             }
 
             _loginActive = true;
-            if (_client.Send(MsgID.LoginReq, new LoginReq { code = code }))
+            if (_client.Send(MsgID.LoginReq, new LoginReq { Code = code }))
             {
                 return true;
             }
@@ -85,7 +85,7 @@ namespace Game.Online
             }
 
             _loginActive = false;
-            _client.SetLoginInfo(response.uid, response.token);
+            _client.SetLoginInfo(response.Uid, response.Token);
             Succeeded?.Invoke(response);
         }
 
@@ -97,7 +97,7 @@ namespace Game.Online
             }
 
             _loginActive = false;
-            Failed?.Invoke($"[{response.code}] {response.msg}");
+            Failed?.Invoke($"[{response.Code}] {response.Msg}");
         }
     }
 }

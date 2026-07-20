@@ -19,6 +19,8 @@ namespace Game.Protocol
     /// </summary>
     public static class MsgID
     {
+        public const int CanonicalRouteCount = 32;
+
         // ---- 登录模块 ----
         public const ushort LoginReq      = 1001; // 登录请求
         public const ushort LoginResp     = 1002; // 登录响应

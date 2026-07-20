@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Game.Protocol;
+using Google.Protobuf;
 using UnityEngine;
 
 namespace Game.Network
@@ -97,19 +98,20 @@ namespace Game.Network
             }
         }
 
-        public IDisposable On<T>(ushort msgId, Action<T> handler)
+        public IDisposable On<T>(ushort msgId, Action<T> handler) where T : class, IMessage<T>
         {
-            Action<string> wrapper = body =>
+            if (!ProtocolMessageRegistry.IsRegistered<T>(msgId))
             {
-                T payload;
-                try
+                throw new ArgumentException(
+                    $"Message ID {msgId} is not registered for {typeof(T).Name}.",
+                    nameof(msgId));
+            }
+
+            Action<byte[]> wrapper = body =>
+            {
+                if (!ProtocolMessageRegistry.TryParse(msgId, body, out T payload))
                 {
-                    payload = JsonUtility.FromJson<T>(body);
-                }
-                catch (Exception exception)
-                {
-                    Debug.LogError(
-                        $"[NetworkClient] Failed to deserialize message {msgId} as {typeof(T).Name}: {exception.Message}");
+                    Debug.LogWarning($"[NetworkClient] Dropped malformed protobuf message. msgId={msgId}");
                     return;
                 }
 
@@ -119,13 +121,14 @@ namespace Game.Network
             return AddSubscription(msgId, wrapper);
         }
 
-        public IDisposable On(ushort msgId, Action<string> handler)
+        public bool Send<T>(ushort msgId, T payload) where T : class, IMessage<T>
         {
-            return AddSubscription(msgId, handler);
-        }
+            if (!ProtocolMessageRegistry.IsRegistered<T>(msgId))
+            {
+                Debug.LogWarning($"[NetworkClient] Send dropped because message type does not match msgId={msgId}");
+                return false;
+            }
 
-        public bool Send<T>(ushort msgId, T payload)
-        {
             var transport = _transport;
             if (transport == null || !transport.IsAlive)
             {
@@ -134,19 +137,6 @@ namespace Game.Network
             }
 
             transport.Send(Codec.Encode(msgId, payload));
-            return true;
-        }
-
-        public bool Send(ushort msgId, string jsonBody)
-        {
-            var transport = _transport;
-            if (transport == null || !transport.IsAlive)
-            {
-                LogDisconnectedSend(msgId);
-                return false;
-            }
-
-            transport.Send(Codec.Encode(msgId, jsonBody));
             return true;
         }
 
@@ -254,7 +244,7 @@ namespace Game.Network
             OnError?.Invoke(message);
         }
 
-        private IDisposable AddSubscription(ushort msgId, Action<string> handler)
+        private IDisposable AddSubscription(ushort msgId, Action<byte[]> handler)
         {
             if (_disposed)
             {
@@ -339,7 +329,7 @@ namespace Game.Network
         {
             private NetworkClient _owner;
 
-            internal Subscription(NetworkClient owner, ushort msgId, Action<string> handler)
+            internal Subscription(NetworkClient owner, ushort msgId, Action<byte[]> handler)
             {
                 _owner = owner;
                 MsgId = msgId;
@@ -349,7 +339,7 @@ namespace Game.Network
 
             internal ushort MsgId { get; }
 
-            internal Action<string> Handler { get; }
+            internal Action<byte[]> Handler { get; }
 
             internal bool IsActive { get; private set; }
 

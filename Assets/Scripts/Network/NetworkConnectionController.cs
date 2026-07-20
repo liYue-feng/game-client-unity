@@ -152,7 +152,7 @@ namespace Game.Network
             {
                 _client.Send(MsgID.HeartbeatReq, new HeartbeatReq
                 {
-                    timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+                    Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
                 });
                 _heartbeatRemaining = _settings.HeartbeatIntervalSeconds;
                 return;

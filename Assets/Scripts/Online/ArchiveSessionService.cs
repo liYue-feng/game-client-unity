@@ -21,8 +21,8 @@ namespace Game.Online
             _subscriptions.Add(_client.On<ErrorResp>(MsgID.Error, HandleErrorResponse));
         }
 
-        public string CurrentData { get; private set; }
-        public event Action<string> Loaded;
+        public PlayerArchive CurrentArchive { get; private set; } = new PlayerArchive();
+        public event Action<PlayerArchive> Loaded;
         public event Action Saved;
         public event Action<string> Failed;
 
@@ -43,20 +43,17 @@ namespace Game.Online
             return false;
         }
 
-        public bool Save(string data)
+        public bool Save(PlayerArchive archive)
         {
-            if (string.IsNullOrWhiteSpace(data))
-            {
-                Failed?.Invoke("Archive data is required.");
-                return false;
-            }
-
             if (!TryBegin(ArchiveOperation.Save))
             {
                 return false;
             }
 
-            if (_client.Send(MsgID.SaveArchiveReq, new SaveArchiveReq { data = data }))
+            if (_client.Send(MsgID.SaveArchiveReq, new SaveArchiveReq
+            {
+                Archive = archive ?? new PlayerArchive()
+            }))
             {
                 return true;
             }
@@ -116,8 +113,10 @@ namespace Game.Online
             }
 
             _activeOperation = ArchiveOperation.None;
-            CurrentData = response.data;
-            Loaded?.Invoke(response.data);
+            CurrentArchive = response.Found && response.Archive != null
+                ? response.Archive
+                : new PlayerArchive();
+            Loaded?.Invoke(CurrentArchive);
         }
 
         private void HandleSaveResponse(SaveArchiveResp response)
@@ -128,7 +127,7 @@ namespace Game.Online
             }
 
             _activeOperation = ArchiveOperation.None;
-            if (response.success)
+            if (response.Success)
             {
                 Saved?.Invoke();
                 return;
@@ -145,7 +144,7 @@ namespace Game.Online
             }
 
             _activeOperation = ArchiveOperation.None;
-            Failed?.Invoke($"[{response.code}] {response.msg}");
+            Failed?.Invoke($"[{response.Code}] {response.Msg}");
         }
 
         private enum ArchiveOperation

@@ -52,6 +52,8 @@ logs/
 
 # 允许 Plugins 目录下的 DLL（第三方插件需要入库）
 !/[Aa]ssets/[Pp]lugins/*.dll
+!/[Aa]ssets/[Pp]lugins/Google.Protobuf/Google.Protobuf.dll
+!/[Aa]ssets/[Pp]lugins/Google.Protobuf/System.Runtime.CompilerServices.Unsafe.dll
 .codepilot-uploads/1779773326007-image.png
 .codepilot-uploads/1779773765797-image.png
 .codepilot-uploads/1779774199361-image.png

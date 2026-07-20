@@ -140,11 +140,11 @@ namespace Game.Tests.EditMode.Network
             using (var fixture = ControllerFixture.Create())
             {
                 var messages = 0;
-                fixture.Client.On(MsgID.HeartbeatResp, _ => messages++);
+                fixture.Client.On<HeartbeatResp>(MsgID.HeartbeatResp, _ => messages++);
                 fixture.Controller.Connect(fixture.Settings.ServerUrl);
                 var first = fixture.Factory.LastTransport;
                 first.RaiseOpened();
-                first.RaiseMessage(Codec.Encode(MsgID.HeartbeatResp, "{}"));
+                first.RaiseMessage(Codec.Encode(MsgID.HeartbeatResp, new HeartbeatResp()));
                 fixture.Controller.Disconnect();
                 fixture.Dispatcher.PumpAll();
                 Assert.That(fixture.Controller.State, Is.EqualTo(NetworkConnectionState.Disconnected));
@@ -183,7 +183,7 @@ namespace Game.Tests.EditMode.Network
                 var disconnected = 0;
                 var messages = 0;
                 fixture.Client.OnDisconnected += () => disconnected++;
-                fixture.Client.On(MsgID.HeartbeatResp, _ => messages++);
+                fixture.Client.On<HeartbeatResp>(MsgID.HeartbeatResp, _ => messages++);
                 fixture.Controller.Connect(fixture.Settings.ServerUrl);
                 var first = fixture.Factory.LastTransport;
                 first.RaiseOpened();
@@ -193,7 +193,7 @@ namespace Game.Tests.EditMode.Network
 
                 fixture.Controller.Connect("ws://replacement.example/ws");
                 first.RaiseOpened();
-                first.RaiseMessage(Codec.Encode(MsgID.HeartbeatResp, "{}"));
+                first.RaiseMessage(Codec.Encode(MsgID.HeartbeatResp, new HeartbeatResp()));
                 first.RaiseClosed();
                 first.RaiseError("stale error");
                 fixture.Dispatcher.PumpAll();
@@ -247,7 +247,7 @@ namespace Game.Tests.EditMode.Network
                 nested.RaiseOpened();
                 fixture.Dispatcher.PumpAll();
                 Assert.That(fixture.Controller.State, Is.EqualTo(NetworkConnectionState.Connected));
-                Assert.That(fixture.Client.Send(MsgID.HeartbeatReq, "{}"), Is.True);
+                Assert.That(fixture.Client.Send(MsgID.HeartbeatReq, new HeartbeatReq()), Is.True);
                 Assert.That(outer.SentPayloads, Is.Empty);
                 Assert.That(nested.SentPayloads, Has.Count.EqualTo(1));
             }

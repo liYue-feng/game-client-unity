@@ -63,7 +63,7 @@ namespace Game.Tests.EditMode.Online
             var states = new List<OnlineSessionState>();
             _coordinator.StateChanged += states.Add;
 
-            CompleteInitialSession("ink-user", "{\"chapter\":3}");
+            CompleteInitialSession("ink-user", new PlayerArchive { SchemaVersion = 3 });
 
             Assert.That(states, Is.EqualTo(new[]
             {
@@ -76,13 +76,13 @@ namespace Game.Tests.EditMode.Online
             Assert.That(_connection.BeginAuthenticationCalls, Is.EqualTo(1));
             Assert.That(_connection.MarkReadyCalls, Is.EqualTo(1));
             Assert.That(_coordinator.Nickname, Is.EqualTo("ink-user"));
-            Assert.That(_coordinator.ArchiveData, Is.EqualTo("{\"chapter\":3}"));
+            Assert.That(_coordinator.Archive, Is.Not.Null);
         }
 
         [Test]
         public void TransportReconnectReauthenticatesWithoutCallingConnectAgain()
         {
-            CompleteInitialSession("first", "{\"chapter\":1}");
+            CompleteInitialSession("first", new PlayerArchive { SchemaVersion = 1 });
 
             _connection.RaiseDisconnected();
 
@@ -95,11 +95,11 @@ namespace Game.Tests.EditMode.Online
             Assert.That(_provider.RequestCount, Is.EqualTo(2));
             _provider.Succeed(1);
             ReceiveLogin("second");
-            ReceiveArchive("{\"chapter\":2}");
+            ReceiveArchive(new PlayerArchive { SchemaVersion = 2 });
 
             Assert.That(_coordinator.State, Is.EqualTo(OnlineSessionState.Ready));
             Assert.That(_coordinator.Nickname, Is.EqualTo("second"));
-            Assert.That(_coordinator.ArchiveData, Is.EqualTo("{\"chapter\":2}"));
+            Assert.That(_coordinator.Archive, Is.Not.Null);
             Assert.That(_connection.ConnectCalls, Is.EqualTo(1),
                 "A3 owns reconnect and the coordinator must wait for Connected.");
             Assert.That(_connection.BeginAuthenticationCalls, Is.EqualTo(2));
@@ -121,7 +121,7 @@ namespace Game.Tests.EditMode.Online
             _connection.RaiseConnected();
             _provider.Succeed(1);
             _client.ReceiveFrame(Codec.Encode(MsgID.Error,
-                new ErrorResp { code = 9999, msg = "login denied" }));
+                new ErrorResp { Code = 9999, Msg = "login denied" }));
 
             Assert.That(_coordinator.State, Is.EqualTo(OnlineSessionState.Failed));
             Assert.That(_coordinator.FailureReason, Is.EqualTo("[9999] login denied"));
@@ -172,7 +172,7 @@ namespace Game.Tests.EditMode.Online
             Assert.That(_coordinator.State, Is.EqualTo(OnlineSessionState.LoadingArchive));
 
             _client.ReceiveFrame(Codec.Encode(MsgID.Error,
-                new ErrorResp { code = 9999, msg = "archive unavailable" }));
+                new ErrorResp { Code = 9999, Msg = "archive unavailable" }));
 
             Assert.That(_coordinator.State, Is.EqualTo(OnlineSessionState.Failed));
             Assert.That(_coordinator.FailureReason, Is.EqualTo("[9999] archive unavailable"));
@@ -217,7 +217,7 @@ namespace Game.Tests.EditMode.Online
             var changesAfterStop = stateChanges;
 
             _client.ReceiveFrame(Codec.Encode(MsgID.LoginResp,
-                new LoginResp { uid = 7, nickname = "stale", token = "stale-token" }));
+                new LoginResp { Uid = 7, Nickname = "stale", Token = "stale-token" }));
             _connection.RaiseConnected();
             _connection.RaiseDisconnected();
             _connection.RaiseError("late error");
@@ -246,27 +246,27 @@ namespace Game.Tests.EditMode.Online
         [Test]
         public void SaveAndReloadAreReadyOnlyAndKeepReadyState()
         {
-            Assert.That(_coordinator.SaveArchive("{}"), Is.False);
+            Assert.That(_coordinator.SaveArchive(), Is.False);
             Assert.That(_coordinator.ReloadArchive(), Is.False);
-            CompleteInitialSession("ink-user", "{\"gold\":1}");
+            CompleteInitialSession("ink-user", new PlayerArchive { Gold = 1 });
 
             var saved = 0;
             _coordinator.ArchiveSaved += () => saved++;
-            Assert.That(_coordinator.SaveArchive("{\"gold\":2}"), Is.True);
+            Assert.That(_coordinator.SaveArchive(new PlayerArchive { Gold = 2 }), Is.True);
             Assert.That(_coordinator.State, Is.EqualTo(OnlineSessionState.Ready));
             Assert.That(DecodeLastMessageId(), Is.EqualTo(MsgID.SaveArchiveReq));
             _client.ReceiveFrame(Codec.Encode(MsgID.SaveArchiveResp,
-                new SaveArchiveResp { success = true }));
+                new SaveArchiveResp { Success = true }));
             Assert.That(saved, Is.EqualTo(1));
 
             Assert.That(_coordinator.ReloadArchive(), Is.True);
             Assert.That(_coordinator.State, Is.EqualTo(OnlineSessionState.Ready));
             Assert.That(DecodeLastMessageId(), Is.EqualTo(MsgID.LoadArchiveReq));
             _client.ReceiveFrame(Codec.Encode(MsgID.LoadArchiveResp,
-                new LoadArchiveResp { data = "{\"gold\":2}" }));
+                new LoadArchiveResp { Found = true, Archive = new PlayerArchive { Gold = 2 } }));
 
             Assert.That(_coordinator.State, Is.EqualTo(OnlineSessionState.Ready));
-            Assert.That(_coordinator.ArchiveData, Is.EqualTo("{\"gold\":2}"));
+            Assert.That(_coordinator.Archive.Gold, Is.EqualTo(2));
             Assert.That(_connection.MarkReadyCalls, Is.EqualTo(1));
         }
 
@@ -355,7 +355,7 @@ namespace Game.Tests.EditMode.Online
                 dispatcher.PumpAll();
                 provider.Succeed(0, "dev:first");
                 failedTransport.RaiseMessage(Codec.Encode(MsgID.Error,
-                    new ErrorResp { code = 9999, msg = "login denied" }));
+                    new ErrorResp { Code = 9999, Msg = "login denied" }));
                 dispatcher.PumpAll();
 
                 Assert.That(coordinator.State, Is.EqualTo(OnlineSessionState.Failed));
@@ -378,9 +378,9 @@ namespace Game.Tests.EditMode.Online
                 provider.Succeed(1, "dev:retry");
 
                 failedTransport.RaiseMessage(Codec.Encode(MsgID.LoginResp,
-                    new LoginResp { uid = 1, nickname = "stale", token = "stale-token" }));
+                    new LoginResp { Uid = 1, Nickname = "stale", Token = "stale-token" }));
                 failedTransport.RaiseMessage(Codec.Encode(MsgID.LoadArchiveResp,
-                    new LoadArchiveResp { data = "{\"generation\":1}" }));
+                    new LoadArchiveResp { Found = true, Archive = new PlayerArchive { SchemaVersion = 1 } }));
                 dispatcher.PumpAll();
 
                 Assert.That(coordinator.State, Is.EqualTo(OnlineSessionState.Authenticating));
@@ -389,15 +389,15 @@ namespace Game.Tests.EditMode.Online
                     Is.EqualTo(new[] { MsgID.LoginReq }));
 
                 retryTransport.RaiseMessage(Codec.Encode(MsgID.LoginResp,
-                    new LoginResp { uid = 2, nickname = "retry-user", token = "retry-token" }));
+                    new LoginResp { Uid = 2, Nickname = "retry-user", Token = "retry-token" }));
                 dispatcher.PumpAll();
                 retryTransport.RaiseMessage(Codec.Encode(MsgID.LoadArchiveResp,
-                    new LoadArchiveResp { data = "{\"generation\":2}" }));
+                    new LoadArchiveResp { Found = true, Archive = new PlayerArchive { SchemaVersion = 2 } }));
                 dispatcher.PumpAll();
 
                 Assert.That(coordinator.State, Is.EqualTo(OnlineSessionState.Ready));
                 Assert.That(coordinator.Nickname, Is.EqualTo("retry-user"));
-                Assert.That(coordinator.ArchiveData, Is.EqualTo("{\"generation\":2}"));
+                Assert.That(coordinator.Archive.SchemaVersion, Is.EqualTo(2));
                 Assert.That(DecodeMessageIds(retryTransport.SentPayloads),
                     Is.EqualTo(new[] { MsgID.LoginReq, MsgID.LoadArchiveReq }));
                 Assert.That(states.Count(state => state == OnlineSessionState.Authenticating), Is.EqualTo(2),
@@ -488,7 +488,7 @@ namespace Game.Tests.EditMode.Online
             }
         }
 
-        private void CompleteInitialSession(string nickname, string archiveData)
+        private void CompleteInitialSession(string nickname, PlayerArchive archive)
         {
             _coordinator.Start();
             Assert.That(_coordinator.State, Is.EqualTo(OnlineSessionState.Connecting));
@@ -500,20 +500,20 @@ namespace Game.Tests.EditMode.Online
             ReceiveLogin(nickname);
             Assert.That(_coordinator.State, Is.EqualTo(OnlineSessionState.LoadingArchive));
             Assert.That(DecodeLastMessageId(), Is.EqualTo(MsgID.LoadArchiveReq));
-            ReceiveArchive(archiveData);
+            ReceiveArchive(archive);
             Assert.That(_coordinator.State, Is.EqualTo(OnlineSessionState.Ready));
         }
 
         private void ReceiveLogin(string nickname)
         {
             _client.ReceiveFrame(Codec.Encode(MsgID.LoginResp,
-                new LoginResp { uid = 42, nickname = nickname, token = "session-token" }));
+                new LoginResp { Uid = 42, Nickname = nickname, Token = "session-token" }));
         }
 
-        private void ReceiveArchive(string data)
+        private void ReceiveArchive(PlayerArchive archive)
         {
             _client.ReceiveFrame(Codec.Encode(MsgID.LoadArchiveResp,
-                new LoadArchiveResp { data = data }));
+                new LoadArchiveResp { Found = true, Archive = archive }));
         }
 
         private ushort DecodeLastMessageId()

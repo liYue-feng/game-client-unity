@@ -12,6 +12,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Game.Network;
 using Game.Protocol;
 using UnityEngine;
@@ -97,9 +98,9 @@ namespace Game.Managers
             Debug.Log($"[RankManager] 查询排行榜: type={rankType} start={start} count={count}");
             NetworkClient.Instance.Send(MsgID.GetRankReq, new GetRankReq
             {
-                rank_type = rankType,
-                start = start,
-                count = count
+                RankType = rankType,
+                Start = start,
+                Count = count
             });
         }
 
@@ -108,13 +109,13 @@ namespace Game.Managers
         /// </summary>
         /// <param name="score">本局分数</param>
         /// <param name="metadata">附加数据（击杀数、存活时间等）</param>
-        public void SubmitScore(long score, string metadata = "")
+        public void SubmitScore(long score, ScoreMetadata metadata = null)
         {
             Debug.Log($"[RankManager] 提交分数: score={score}");
             NetworkClient.Instance.Send(MsgID.SubmitScoreReq, new SubmitScoreReq
             {
-                score = score,
-                metadata = metadata
+                Score = score,
+                Metadata = metadata ?? new ScoreMetadata()
             });
         }
 
@@ -127,31 +128,31 @@ namespace Game.Managers
             Debug.Log($"[RankManager] 拉取排行榜: type={rankType} start={start} count={count}");
             NetworkClient.Instance.Send(MsgID.GetRankReq, new GetRankReq
             {
-                rank_type = rankType,
-                start = start,
-                count = count
+                RankType = rankType,
+                Start = start,
+                Count = count
             });
         }
 
         private void HandleGetRankResp(GetRankResp resp)
         {
-            CurrentRanks = resp.ranks;
-            Debug.Log($"[RankManager] 排行榜加载成功: {resp.ranks?.Length ?? 0} 条");
-            OnRankLoaded?.Invoke(resp.ranks);
+            CurrentRanks = resp.Ranks.ToArray();
+            Debug.Log($"[RankManager] 排行榜加载成功: {CurrentRanks.Length} 条");
+            OnRankLoaded?.Invoke(CurrentRanks);
 
             // 转换为 RankEntry[] 并触发 OnRankDataReceived
-            if (resp.ranks != null)
+            if (CurrentRanks != null)
             {
-                var entries = new RankEntry[resp.ranks.Length];
-                for (int i = 0; i < resp.ranks.Length; i++)
+                var entries = new RankEntry[CurrentRanks.Length];
+                for (int i = 0; i < CurrentRanks.Length; i++)
                 {
-                    var item = resp.ranks[i];
+                    var item = CurrentRanks[i];
                     entries[i] = new RankEntry
                     {
-                        playerName = item.nickname,
-                        level = item.level,
-                        score = (int)item.score,
-                        rank = item.rank
+                        playerName = item.Nickname,
+                        level = item.Level,
+                        score = (int)item.Score,
+                        rank = item.Rank
                     };
                 }
                 OnRankDataReceived?.Invoke(entries);
@@ -160,11 +161,11 @@ namespace Game.Managers
 
         private void HandleSubmitScoreResp(SubmitScoreResp resp)
         {
-            if (resp.success)
+            if (resp.Success)
             {
-                BestScore = resp.best_score;
-                Debug.Log($"[RankManager] 分数提交成功: best_score={resp.best_score}");
-                OnScoreSubmitted?.Invoke(resp.best_score);
+                BestScore = resp.BestScore;
+                Debug.Log($"[RankManager] 分数提交成功: best_score={resp.BestScore}");
+                OnScoreSubmitted?.Invoke(resp.BestScore);
             }
             else
             {

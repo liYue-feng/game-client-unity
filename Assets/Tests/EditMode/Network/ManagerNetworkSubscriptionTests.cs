@@ -55,18 +55,18 @@ namespace Game.Tests.EditMode.Network
             Object.DestroyImmediate(rank.gameObject);
             Object.DestroyImmediate(combat.gameObject);
 
-            Dispatch(client, MsgID.LoginResp, new LoginResp { uid = 1, token = "x" });
-            Dispatch(client, MsgID.SaveArchiveResp, new SaveArchiveResp { success = true });
-            Dispatch(client, MsgID.LoadArchiveResp, new LoadArchiveResp { data = "{}" });
-            Dispatch(client, MsgID.GetRankResp, new GetRankResp { ranks = new RankItem[0] });
-            Dispatch(client, MsgID.SubmitScoreResp, new SubmitScoreResp { success = true, best_score = 8 });
-            Dispatch(client, MsgID.CombatResultResp, new CombatResultResp());
-            Dispatch(client, MsgID.GetEnemyConfigsResp, new GetEnemyConfigsResp());
-            Dispatch(client, MsgID.GetDungeonConfigResp, new GetDungeonConfigResp());
-            Dispatch(client, MsgID.GetStyleConfigsResp, new GetStyleConfigsResp());
-            Dispatch(client, MsgID.UnlockStyleResp, new UnlockStyleResp());
-            Dispatch(client, MsgID.GetPlayerStatsResp, new GetPlayerStatsResp());
-            Dispatch(client, MsgID.UpdatePlayerStatsResp, new UpdatePlayerStatsResp { success = false });
+            client.ReceiveFrame(Codec.Encode(MsgID.LoginResp, new LoginResp { Uid = 1, Token = "x" }));
+            client.ReceiveFrame(Codec.Encode(MsgID.SaveArchiveResp, new SaveArchiveResp { Success = true }));
+            client.ReceiveFrame(Codec.Encode(MsgID.LoadArchiveResp, new LoadArchiveResp { Found = true, Archive = new PlayerArchive() }));
+            client.ReceiveFrame(Codec.Encode(MsgID.GetRankResp, new GetRankResp()));
+            client.ReceiveFrame(Codec.Encode(MsgID.SubmitScoreResp, new SubmitScoreResp { Success = true, BestScore = 8 }));
+            client.ReceiveFrame(Codec.Encode(MsgID.CombatResultResp, new CombatResultResp()));
+            client.ReceiveFrame(Codec.Encode(MsgID.GetEnemyConfigsResp, new GetEnemyConfigsResp()));
+            client.ReceiveFrame(Codec.Encode(MsgID.GetDungeonConfigResp, new GetDungeonConfigResp()));
+            client.ReceiveFrame(Codec.Encode(MsgID.GetStyleConfigsResp, new GetStyleConfigsResp()));
+            client.ReceiveFrame(Codec.Encode(MsgID.UnlockStyleResp, new UnlockStyleResp()));
+            client.ReceiveFrame(Codec.Encode(MsgID.GetPlayerStatsResp, new GetPlayerStatsResp()));
+            client.ReceiveFrame(Codec.Encode(MsgID.UpdatePlayerStatsResp, new UpdatePlayerStatsResp { Success = false }));
 
             Assert.That(_callbacks, Is.Zero, "no destroyed manager callback may remain registered");
             AssertSingletonCleared(loginType, "_instance");
@@ -74,9 +74,6 @@ namespace Game.Tests.EditMode.Network
             AssertSingletonCleared(rankType, "_instance");
             AssertSingletonCleared(combatType, "_instance");
         }
-
-        private static void Dispatch<T>(NetworkClient client, ushort id, T payload) =>
-            client.ReceiveFrame(Codec.Encode(id, payload));
 
         private static Type RequireType(string fullName)
         {
