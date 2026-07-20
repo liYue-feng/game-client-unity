@@ -1,0 +1,17 @@
+{
+  "name": "Game.Online",
+  "rootNamespace": "Game.Online",
+  "references": [
+    "Game.Core",
+    "Game.Network"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

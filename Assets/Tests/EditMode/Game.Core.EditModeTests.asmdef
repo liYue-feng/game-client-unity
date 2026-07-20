@@ -4,7 +4,8 @@
   "references": [
     "Game.Core",
     "Game.Network",
-    "Game.Gameplay"
+    "Game.Gameplay",
+    "Game.Online"
   ],
   "includePlatforms": [
     "Editor"
