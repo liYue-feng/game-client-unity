@@ -165,9 +165,9 @@ namespace Game.Tests.PlayMode
             Assert.That(FindDescendant(gameOver.transform, "ResultPanel"), Is.Not.Null);
             Assert.That(FindDescendant(gameOver.transform, "Title"), Is.Not.Null);
             var buttons = gameOver.GetComponentsInChildren<Button>(true);
-            Assert.That(buttons, Has.Length.EqualTo(1));
-            Assert.That(buttons.Single().gameObject.name, Is.EqualTo("BtnRestart"));
-            Assert.That(FindDescendant(gameOver.transform, "BtnMenu"), Is.Null);
+            Assert.That(buttons, Has.Length.EqualTo(2));
+            Assert.That(buttons.Select(button => button.gameObject.name),
+                Is.EquivalentTo(new[] { "BtnRestart", "BtnMainMenu" }));
 
             var camera = Camera.main;
             Assert.That(camera, Is.Not.Null);

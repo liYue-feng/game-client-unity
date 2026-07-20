@@ -74,6 +74,7 @@ public sealed class BattleRunController : MonoBehaviour, IDisposable
         _playerStats.OnDeath += HandlePlayerDeath;
         _waveSpawner.OnAllWavesComplete += HandleAllWavesComplete;
         _gameOverUI.OnRestart += Restart;
+        _gameOverUI.OnBackToMenu += ReturnToMainMenu;
         _configured = true;
     }
 
@@ -173,6 +174,17 @@ public sealed class BattleRunController : MonoBehaviour, IDisposable
         SceneTransitionManager.Instance.LoadScene("BattleScene");
     }
 
+    public void ReturnToMainMenu()
+    {
+        if (_disposed || !_runState.BeginRestart())
+        {
+            return;
+        }
+
+        Dispose();
+        SceneTransitionManager.Instance.GoToMainMenu();
+    }
+
     public void Dispose()
     {
         if (_disposed)
@@ -195,6 +207,7 @@ public sealed class BattleRunController : MonoBehaviour, IDisposable
             _playerStats.OnDeath -= HandlePlayerDeath;
             _waveSpawner.OnAllWavesComplete -= HandleAllWavesComplete;
             _gameOverUI.OnRestart -= Restart;
+            _gameOverUI.OnBackToMenu -= ReturnToMainMenu;
         }
 
         if (_battleResultToken.IsValid)

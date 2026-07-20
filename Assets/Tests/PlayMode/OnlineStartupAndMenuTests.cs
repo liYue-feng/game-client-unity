@@ -46,6 +46,54 @@ namespace Game.Tests.PlayMode
         }
 
         [UnityTest]
+        public IEnumerator MenuCommands_OpenOneSceneLocalEmptyRankPanelAndRemainEditorSafe()
+        {
+            yield return WaitForScene("BattleScene");
+            yield return null;
+            yield return LoadScene("MenuScene");
+            yield return null;
+
+            foreach (var commandName in new[] { "BtnStart", "BtnRank", "BtnSettings", "BtnQuit" })
+            {
+                Assert.That(FindSceneObjects(commandName), Has.Count.EqualTo(1),
+                    $"MenuScene must expose exactly one {commandName} command.");
+            }
+
+            Assert.That(FindSceneObjects("BtnRetry").Single().activeSelf, Is.False,
+                "Retry must remain hidden outside a failed online session.");
+            Assert.That(FindComponents("RankManager"), Is.Empty,
+                "Opening MenuScene must not install the legacy RankManager service.");
+
+            var rankButton = FindSceneObjects("BtnRank").Single().GetComponent<Button>();
+            rankButton.onClick.Invoke();
+            rankButton.onClick.Invoke();
+            yield return null;
+
+            Assert.That(FindComponents("RankPanelUI"), Has.Count.EqualTo(1),
+                "Repeated rank commands must reuse one scene-local panel.");
+            Assert.That(FindSceneObjects("RankPanelUI_Runtime"), Has.Count.EqualTo(1));
+            Assert.That(FindSceneObjects("EmptyState").Single().GetComponent<Text>().text,
+                Is.EqualTo("暂无排行数据"));
+            Assert.That(FindComponents("RankManager"), Is.Empty,
+                "The empty rank presentation must not create RankManager.");
+
+            FindSceneObjects("BtnCloseRank").Single().GetComponent<Button>().onClick.Invoke();
+            yield return null;
+            Assert.That(FindComponents("RankPanelUI"), Is.Empty,
+                "Closing rank must destroy the scene-local panel cleanly.");
+
+#if UNITY_EDITOR
+            LogAssert.Expect(LogType.Log, "[MainMenuUI] Quit requested in Editor.");
+            FindSceneObjects("BtnQuit").Single().GetComponent<Button>().onClick.Invoke();
+            yield return null;
+            Assert.That(SceneManager.GetActiveScene().name, Is.EqualTo("MenuScene"),
+                "Editor quit handling must not terminate the PlayMode Test Runner.");
+#endif
+
+            yield return LoadScene("BattleScene");
+        }
+
+        [UnityTest]
         public IEnumerator FailedOnlineStartupBeforeHostInstallation_KeepsBattleStartDisabled()
         {
             yield return WaitForScene("BattleScene");

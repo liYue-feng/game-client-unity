@@ -13,8 +13,10 @@ public sealed class MainMenuUI : MonoBehaviour
     private Text _statusText;
     private Text _nicknameText;
     private Button _startButton;
+    private Button _rankButton;
     private Button _settingsButton;
     private Button _retryButton;
+    private Button _quitButton;
     private Texture2D _paperTexture;
     private Texture2D _inkWashTexture;
 
@@ -52,9 +54,19 @@ public sealed class MainMenuUI : MonoBehaviour
             _settingsButton.onClick.RemoveListener(OpenSettings);
         }
 
+        if (_rankButton != null)
+        {
+            _rankButton.onClick.RemoveListener(OpenRank);
+        }
+
         if (_retryButton != null)
         {
             _retryButton.onClick.RemoveListener(RetrySession);
+        }
+
+        if (_quitButton != null)
+        {
+            _quitButton.onClick.RemoveListener(QuitGame);
         }
 
         if (_paperTexture != null)
@@ -122,12 +134,18 @@ public sealed class MainMenuUI : MonoBehaviour
         _startButton = CreateButton(canvasObject.transform, "BtnStart", "开始战斗", new Vector2(0.5f, 0.46f));
         _startButton.onClick.AddListener(StartGame);
 
-        _settingsButton = CreateButton(canvasObject.transform, "BtnSettings", "设置", new Vector2(0.5f, 0.37f));
+        _rankButton = CreateButton(canvasObject.transform, "BtnRank", "排行榜", new Vector2(0.5f, 0.37f));
+        _rankButton.onClick.AddListener(OpenRank);
+
+        _settingsButton = CreateButton(canvasObject.transform, "BtnSettings", "设置", new Vector2(0.5f, 0.28f));
         _settingsButton.onClick.AddListener(OpenSettings);
 
-        _retryButton = CreateButton(canvasObject.transform, "BtnRetry", "重试连接", new Vector2(0.5f, 0.28f));
+        _retryButton = CreateButton(canvasObject.transform, "BtnRetry", "重试连接", new Vector2(0.5f, 0.19f));
         _retryButton.onClick.AddListener(RetrySession);
         _retryButton.gameObject.SetActive(false);
+
+        _quitButton = CreateButton(canvasObject.transform, "BtnQuit", "退出游戏", new Vector2(0.5f, 0.10f));
+        _quitButton.onClick.AddListener(QuitGame);
     }
 
     private void BindOnlineSession()
@@ -184,9 +202,23 @@ public sealed class MainMenuUI : MonoBehaviour
         SettingsUI.Show();
     }
 
+    private void OpenRank()
+    {
+        RankPanelUI.Show();
+    }
+
     private void RetrySession()
     {
         _onlineSession?.Retry();
+    }
+
+    private static void QuitGame()
+    {
+#if UNITY_EDITOR
+        Debug.Log("[MainMenuUI] Quit requested in Editor.");
+#else
+        Application.Quit();
+#endif
     }
 
     private Button CreateButton(Transform parent, string name, string label, Vector2 anchor)

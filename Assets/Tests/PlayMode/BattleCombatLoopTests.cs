@@ -513,6 +513,70 @@ namespace Game.Tests.PlayMode
         }
 
         [UnityTest]
+        public IEnumerator MainMenuButtonReturnsFromRealTerminalBattleAndReleasesRunState()
+        {
+            yield return LoadBattleScene();
+
+            DisableActiveEnemyBehaviours();
+            var run = FindActiveSceneComponent("BattleRunController");
+            var setup = FindActiveSceneComponent("BattleSceneSetup");
+            var timeController = FindActiveSceneComponent("BattleTimeController");
+            var player = GameObject.Find("Player");
+            var hurtbox = FindComponent(player, "Hurtbox");
+            var inputBridge = FindComponent(player, "PlayerInputBridge");
+            var playerController = FindComponent(player, "PlayerController");
+            var transition = FindUniqueLoadedComponent("SceneTransitionManager");
+            SetFieldValue(transition, "transitionDuration", 0f);
+
+            var lethalOutcome = ResolveCombatHit(
+                hurtbox,
+                new CombatHit(100000, 1f, 3f, false, new RecordingParryResponder()),
+                null,
+                "EnemyMelee",
+                "Heavy",
+                1);
+            Assert.That(lethalOutcome.Result, Is.EqualTo(CombatHitResult.Damaged));
+            Assert.That(GetPropertyValue(run, "Outcome").ToString(), Is.EqualTo("Defeat"));
+            Assert.That(Time.timeScale, Is.EqualTo(0f).Within(0.0001f));
+
+            var gameOver = FindActiveSceneComponent("GameOverUI");
+            var menuObject = FindDescendant(gameOver.transform, "BtnMainMenu");
+            Assert.That(menuObject, Is.Not.Null,
+                "A terminal battle result must expose a main-menu command beside Restart.");
+            var menuButton = menuObject.GetComponent<Button>();
+            Assert.That(menuButton, Is.Not.Null);
+            Assert.That(
+                GetEventHandlers(gameOver, "OnBackToMenu")
+                    .Count(handler => IsDeclaredWithin(run.GetType(), handler)),
+                Is.EqualTo(1),
+                "BattleRunController must own exactly one result-to-menu subscription.");
+
+            menuButton.onClick.Invoke();
+            menuButton.onClick.Invoke();
+
+            Assert.That(GetBoolProperty(run, "IsDisposed"), Is.True);
+            Assert.That(Time.timeScale, Is.EqualTo(1f).Within(0.0001f));
+            Assert.That((float)GetPropertyValue(timeController, "EffectiveScale"), Is.EqualTo(1f));
+            Assert.That((int)GetPropertyValue(timeController, "ActiveRequestCount"), Is.Zero);
+            Assert.That(GetBoolProperty(inputBridge, "InputEnabled"), Is.True);
+            Assert.That(((Behaviour)playerController).enabled, Is.True);
+            Assert.That((bool)GetPropertyValue(setup, "BattleHotkeysEnabled"), Is.True);
+            Assert.That(GetEventHandlers(gameOver, "OnBackToMenu"), Is.Empty,
+                "Result navigation must unsubscribe before a second click can navigate again.");
+
+            yield return WaitForScene("MenuScene");
+            yield return WaitForSceneTransitionComplete();
+            yield return null;
+
+            Assert.That(
+                Resources.FindObjectsOfTypeAll<GameObject>()
+                    .Count(item => item != null
+                                   && item.scene == SceneManager.GetActiveScene()
+                                   && item.name == "MenuCanvas"),
+                Is.EqualTo(1));
+        }
+
+        [UnityTest]
         public IEnumerator StaticGameOverShowNeverCreatesOrDuplicatesSceneUi()
         {
             yield return LoadBattleScene();
@@ -1758,6 +1822,22 @@ namespace Game.Tests.PlayMode
             }
 
             Assert.Fail("SceneTransitionManager did not finish the restart transition within 10 realtime seconds.");
+        }
+
+        private static IEnumerator WaitForScene(string sceneName)
+        {
+            var deadline = Time.realtimeSinceStartup + 10f;
+            while (Time.realtimeSinceStartup < deadline)
+            {
+                if (SceneManager.GetActiveScene().name == sceneName)
+                {
+                    yield break;
+                }
+
+                yield return null;
+            }
+
+            Assert.Fail($"Timed out waiting for {sceneName}; active scene is {SceneManager.GetActiveScene().name}.");
         }
 
         private static void InvokeRunWaveCompletion(Component spawner, Component run)

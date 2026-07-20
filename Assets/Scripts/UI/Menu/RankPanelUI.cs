@@ -14,10 +14,17 @@ public class RankPanelUI : MonoBehaviour
     private Font _font;
     private GameObject _root;
     private Text _loadingText;
+    private Texture2D _maskTexture;
 
     /// <summary> 显示排行榜（模态） </summary>
     public static RankPanelUI Show(RankManager manager = null)
     {
+        var existing = FindObjectOfType<RankPanelUI>();
+        if (existing != null)
+        {
+            return existing;
+        }
+
         var go = new GameObject("RankPanelUI_Runtime");
         var ui = go.AddComponent<RankPanelUI>();
         ui.rankManager = manager;
@@ -47,7 +54,8 @@ public class RankPanelUI : MonoBehaviour
         var maskGo = new GameObject("Mask");
         maskGo.transform.SetParent(canvasGo.transform, false);
         var mask = maskGo.AddComponent<RawImage>();
-        mask.texture = MakeTex(4, 4);
+        _maskTexture = MakeTex(4, 4);
+        mask.texture = _maskTexture;
         mask.color = new Color(0, 0, 0, 0.5f);
         var mr = maskGo.GetComponent<RectTransform>();
         mr.anchorMin = Vector2.zero; mr.anchorMax = Vector2.one; mr.sizeDelta = Vector2.zero;
@@ -69,13 +77,13 @@ public class RankPanelUI : MonoBehaviour
         rankText.rectTransform.sizeDelta = new Vector2(300, 40);
 
         // 加载状态
-        _loadingText = CreateText(_root.transform, "Loading", "加载中...", 24, TextAnchor.MiddleCenter);
+        _loadingText = CreateText(_root.transform, "EmptyState", "暂无排行数据", 24, TextAnchor.MiddleCenter);
         _loadingText.color = new Color(0.5f, 0.45f, 0.4f);
         _loadingText.rectTransform.anchoredPosition = new Vector2(0, 0);
         _loadingText.rectTransform.sizeDelta = new Vector2(200, 40);
 
         // 关闭按钮
-        CreateBtn(_root.transform, "Close", "关闭", Close, new Vector2(0, -330));
+        CreateBtn(_root.transform, "BtnCloseRank", "关闭", Close, new Vector2(0, -330));
 
         // 请求排行榜数据
         if (rankManager != null)
@@ -158,6 +166,12 @@ public class RankPanelUI : MonoBehaviour
     {
         if (rankManager != null)
             rankManager.OnRankDataReceived -= OnRankData;
+
+        if (_maskTexture != null)
+        {
+            Destroy(_maskTexture);
+            _maskTexture = null;
+        }
     }
 }
 

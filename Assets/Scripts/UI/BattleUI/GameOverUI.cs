@@ -7,6 +7,7 @@ public class GameOverUI : MonoBehaviour
     public static GameOverUI Instance { get; private set; }
 
     public event Action OnRestart;
+    public event Action OnBackToMenu;
 
     private GameObject _overlay;
     private Text _resultText;
@@ -98,7 +99,13 @@ public class GameOverUI : MonoBehaviour
             "BtnRestart",
             "\u518d\u6765\u4e00\u5c40",
             () => OnRestart?.Invoke(),
-            new Vector2(0, -160));
+            new Vector2(0, -125));
+        CreateInkButton(
+            panel.transform,
+            "BtnMainMenu",
+            "\u8fd4\u56de\u4e3b\u83dc\u5355",
+            () => OnBackToMenu?.Invoke(),
+            new Vector2(0, -205));
     }
 
     private Texture2D MakeOverlayTexture(int width, int height)
@@ -200,6 +207,7 @@ public class GameOverUI : MonoBehaviour
     private void OnDestroy()
     {
         OnRestart = null;
+        OnBackToMenu = null;
         if (_overlayTexture != null)
         {
             Destroy(_overlayTexture);
