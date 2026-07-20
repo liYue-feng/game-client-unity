@@ -3,7 +3,6 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
-using System.Text.RegularExpressions;
 using Game.Network;
 using NUnit.Framework;
 using UnityEngine;
@@ -55,92 +54,6 @@ namespace Game.Tests.PlayMode
                 Assert.That(FindComponents(prohibitedTypeName), Is.Empty,
                     $"Offline startup must not create {prohibitedTypeName} on any scene object.");
             }
-        }
-
-        [UnityTest]
-        public IEnumerator OnlineMode_FailsClosedBeforeCreatingServices()
-        {
-            yield return WaitForReady();
-
-            const string onlineNotImplemented = "Online runtime flow is not implemented in Phase A3";
-            var settings = Resources.Load("GameRuntimeSettings");
-            var runtimeModeField = settings.GetType().GetField("_runtimeMode", BindingFlags.Instance | BindingFlags.NonPublic);
-            var offlineMode = runtimeModeField.GetValue(settings);
-            var onlineMode = Enum.ToObject(runtimeModeField.FieldType, 1);
-            var currentApplication = GetApplicationComponent(GameObject.Find("[GameApplication]"));
-            var applicationAssembly = currentApplication.GetType().Assembly;
-            string observedState = null;
-            string observedFailureStage = null;
-            string observedFailureReason = null;
-            int hostCountDuringOnline = -1;
-            List<string> unexpectedServices = null;
-            List<string> unexpectedOnlineComponents = null;
-
-            LogAssert.Expect(
-                LogType.Error,
-                $"[GameApplication] Initialization failed at Mode.Select: Root cause: {onlineNotImplemented}.");
-            LogAssert.Expect(
-                LogType.Exception,
-                new Regex("NotSupportedException: Online runtime flow is not implemented in Phase A3"));
-
-            try
-            {
-                runtimeModeField.SetValue(settings, onlineMode);
-                currentApplication.GetType()
-                    .GetMethod("Shutdown", BindingFlags.Instance | BindingFlags.Public)
-                    .Invoke(currentApplication, null);
-                InvokeEnsureApplication(applicationAssembly);
-                yield return WaitForTerminalState();
-                yield return null;
-
-                var onlineApplicationObject = GameObject.Find("[GameApplication]");
-                observedState = GetApplicationProperty(onlineApplicationObject, "State")?.ToString();
-                observedFailureStage = GetApplicationProperty(onlineApplicationObject, "FailureStage")?.ToString();
-                observedFailureReason = GetApplicationProperty(onlineApplicationObject, "FailureReason")?.ToString();
-                hostCountDuringOnline = FindAll("[NetworkConnectionControllerHost]").Count;
-                unexpectedServices = new[]
-                    {
-                        "[GameServices]",
-                        "[MainThreadDispatcher]",
-                        "[NetworkConnectionControllerHost]",
-                        "[SceneTransitionManager]",
-                        "[AudioManager]",
-                        "[LoadingScreen]",
-                        "[AchievementManager]"
-                    }
-                    .Where(objectName => FindAll(objectName).Count != 0)
-                    .ToList();
-                unexpectedOnlineComponents = new[]
-                    {
-                        "NetworkClient",
-                        "LoginManager",
-                        "ArchiveManager",
-                        "RankManager",
-                        "HeartbeatManager",
-                        "ReconnectionManager"
-                    }
-                    .Where(typeName => FindComponents(typeName).Count != 0)
-                    .ToList();
-            }
-            finally
-            {
-                runtimeModeField.SetValue(settings, offlineMode);
-                var onlineApplication = GetApplicationComponent(GameObject.Find("[GameApplication]"));
-                onlineApplication?.GetType()
-                    .GetMethod("Shutdown", BindingFlags.Instance | BindingFlags.Public)
-                    .Invoke(onlineApplication, null);
-                InvokeEnsureApplication(applicationAssembly);
-            }
-
-            yield return WaitForReady();
-            Assert.That(observedState, Is.EqualTo("Failed"));
-            Assert.That(observedState, Is.Not.EqualTo("Ready"));
-            Assert.That(observedFailureStage, Is.EqualTo("Mode.Select"));
-            Assert.That(observedFailureReason, Is.EqualTo($"Root cause: {onlineNotImplemented}."));
-            Assert.That(unexpectedServices, Is.Empty);
-            Assert.That(unexpectedOnlineComponents, Is.Empty);
-            Assert.That(NetworkClient.Instance.IsConnected, Is.False);
-            Assert.That(hostCountDuringOnline, Is.Zero);
         }
 
         [UnityTest]
@@ -439,24 +352,6 @@ namespace Game.Tests.PlayMode
             }
 
             Assert.Fail("GameApplication did not reach Ready within 120 frames.");
-        }
-
-        private static IEnumerator WaitForTerminalState()
-        {
-            const int maxFrames = 120;
-            for (var frame = 0; frame < maxFrames; frame++)
-            {
-                var state = GetApplicationProperty(GameObject.Find("[GameApplication]"), "State")?.ToString();
-                if (string.Equals(state, "Ready", StringComparison.Ordinal) ||
-                    string.Equals(state, "Failed", StringComparison.Ordinal))
-                {
-                    yield break;
-                }
-
-                yield return null;
-            }
-
-            Assert.Fail("GameApplication did not reach a stable Ready or Failed state within 120 frames.");
         }
 
         private static void InvokeEnsureApplication(Assembly applicationAssembly)

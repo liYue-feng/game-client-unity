@@ -93,7 +93,11 @@ namespace Game.Tests.EditMode
             _settings = ScriptableObject.CreateInstance<GameRuntimeSettings>();
 
             Assert.That(_settings.RuntimeMode, Is.EqualTo(RuntimeMode.Offline));
+            Assert.That(_settings.OfflineStartupSceneName, Is.EqualTo("BattleScene"));
+            Assert.That(_settings.OnlineStartupSceneName, Is.EqualTo("MenuScene"));
             Assert.That(_settings.StartupSceneName, Is.EqualTo("BattleScene"));
+            Assert.That(_settings.EditorLoginIdentity, Is.EqualTo("editor-001"));
+            Assert.That(_settings.OnlineSessionTimeoutSeconds, Is.EqualTo(20f));
             Assert.That(_settings.ServerUrl, Is.EqualTo("ws://localhost:8080/ws"));
             Assert.That(_settings.HeartbeatIntervalSeconds, Is.EqualTo(30f));
             Assert.That(_settings.ConnectionTimeoutSeconds, Is.EqualTo(10f));
@@ -103,6 +107,55 @@ namespace Game.Tests.EditMode
             Assert.That(_settings.MainThreadMaxTasksPerFrame, Is.EqualTo(64));
             Assert.That(_settings.TryValidate(_ => true, out var error), Is.True, error);
             Assert.That(error, Is.Null);
+        }
+
+        [Test]
+        public void ModeSpecificSettingsSelectTheConfiguredStartupScene()
+        {
+            var settings = CreateSettings(RuntimeMode.Offline, "BattleScene", "ws://localhost:8080/ws", 64);
+            SetString(settings, "_onlineStartupSceneName", "MenuScene");
+            SetString(settings, "_editorLoginIdentity", "editor-001");
+            SetFloat(settings, "_onlineSessionTimeoutSeconds", 20f);
+
+            Assert.That(settings.OfflineStartupSceneName, Is.EqualTo("BattleScene"));
+            Assert.That(settings.OnlineStartupSceneName, Is.EqualTo("MenuScene"));
+            Assert.That(settings.StartupSceneName, Is.EqualTo("BattleScene"));
+            Assert.That(settings.EditorLoginIdentity, Is.EqualTo("editor-001"));
+            Assert.That(settings.EditorLoginIdentity, Does.Not.StartWith("dev:"));
+            Assert.That(settings.OnlineSessionTimeoutSeconds, Is.EqualTo(20f));
+            Assert.That(settings.TryValidate(scene => scene == "BattleScene", out var offlineError), Is.True, offlineError);
+
+            SetInteger(settings, "_runtimeMode", (int)RuntimeMode.Online);
+
+            Assert.That(settings.StartupSceneName, Is.EqualTo("MenuScene"));
+            Assert.That(settings.TryValidate(scene => scene == "MenuScene", out var onlineError), Is.True, onlineError);
+            AssertValidationFailure(settings, scene => scene == "BattleScene", "MenuScene");
+        }
+
+        [Test]
+        public void BlankEditorIdentityIsRejectedOnlyForOnlineMode()
+        {
+            var settings = CreateSettings(RuntimeMode.Offline, "BattleScene", "ws://localhost:8080/ws", 64);
+            SetString(settings, "_editorLoginIdentity", " ");
+
+            Assert.That(settings.TryValidate(_ => true, out var offlineError), Is.True, offlineError);
+
+            SetInteger(settings, "_runtimeMode", (int)RuntimeMode.Online);
+            SetString(settings, "_onlineStartupSceneName", "MenuScene");
+            AssertValidationFailure(settings, _ => true, "EditorLoginIdentity");
+        }
+
+        [TestCase(0f)]
+        [TestCase(-1f)]
+        [TestCase(float.NaN)]
+        [TestCase(float.PositiveInfinity)]
+        public void OnlineSessionTimeoutMustBeFiniteAndGreaterThanZero(float timeout)
+        {
+            var settings = CreateSettings(RuntimeMode.Online, "BattleScene", "ws://localhost:8080/ws", 64);
+            SetString(settings, "_onlineStartupSceneName", "MenuScene");
+            SetFloat(settings, "_onlineSessionTimeoutSeconds", timeout);
+
+            AssertValidationFailure(settings, _ => true, "OnlineSessionTimeoutSeconds");
         }
 
         [Test]
@@ -216,7 +269,7 @@ namespace Game.Tests.EditMode
             _settings = ScriptableObject.CreateInstance<GameRuntimeSettings>();
             var serializedSettings = new SerializedObject(_settings);
             serializedSettings.FindProperty("_runtimeMode").intValue = (int)mode;
-            serializedSettings.FindProperty("_startupSceneName").stringValue = sceneName;
+            serializedSettings.FindProperty("_offlineStartupSceneName").stringValue = sceneName;
             serializedSettings.FindProperty("_serverUrl").stringValue = serverUrl;
             serializedSettings.FindProperty("_mainThreadMaxTasksPerFrame").intValue = budget;
             serializedSettings.ApplyModifiedPropertiesWithoutUndo();
@@ -234,6 +287,13 @@ namespace Game.Tests.EditMode
         {
             var serializedSettings = new SerializedObject(settings);
             serializedSettings.FindProperty(fieldName).intValue = value;
+            serializedSettings.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        private static void SetString(GameRuntimeSettings settings, string fieldName, string value)
+        {
+            var serializedSettings = new SerializedObject(settings);
+            serializedSettings.FindProperty(fieldName).stringValue = value;
             serializedSettings.ApplyModifiedPropertiesWithoutUndo();
         }
 

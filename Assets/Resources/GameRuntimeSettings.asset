@@ -13,7 +13,10 @@ MonoBehaviour:
   m_Name: GameRuntimeSettings
   m_EditorClassIdentifier:
   _runtimeMode: 0
-  _startupSceneName: BattleScene
+  _offlineStartupSceneName: BattleScene
+  _onlineStartupSceneName: MenuScene
+  _editorLoginIdentity: editor-001
+  _onlineSessionTimeoutSeconds: 20
   _serverUrl: ws://localhost:8080/ws
   _heartbeatIntervalSeconds: 30
   _connectionTimeoutSeconds: 10

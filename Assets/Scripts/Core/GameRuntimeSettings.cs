@@ -1,12 +1,17 @@
 using System;
 using UnityEngine;
+using UnityEngine.Serialization;
 
 namespace Game.Core
 {
     public sealed class GameRuntimeSettings : ScriptableObject
     {
         [SerializeField] private RuntimeMode _runtimeMode = RuntimeMode.Offline;
-        [SerializeField] private string _startupSceneName = "BattleScene";
+        [FormerlySerializedAs("_startupSceneName")]
+        [SerializeField] private string _offlineStartupSceneName = "BattleScene";
+        [SerializeField] private string _onlineStartupSceneName = "MenuScene";
+        [SerializeField] private string _editorLoginIdentity = "editor-001";
+        [SerializeField] private float _onlineSessionTimeoutSeconds = 20f;
         [SerializeField] private string _serverUrl = "ws://localhost:8080/ws";
         [SerializeField] private float _heartbeatIntervalSeconds = 30f;
         [SerializeField] private float _connectionTimeoutSeconds = 10f;
@@ -16,7 +21,13 @@ namespace Game.Core
         [SerializeField] private int _mainThreadMaxTasksPerFrame = 64;
 
         public RuntimeMode RuntimeMode => _runtimeMode;
-        public string StartupSceneName => _startupSceneName;
+        public string OfflineStartupSceneName => _offlineStartupSceneName;
+        public string OnlineStartupSceneName => _onlineStartupSceneName;
+        public string StartupSceneName => _runtimeMode == RuntimeMode.Online
+            ? _onlineStartupSceneName
+            : _offlineStartupSceneName;
+        public string EditorLoginIdentity => _editorLoginIdentity;
+        public float OnlineSessionTimeoutSeconds => _onlineSessionTimeoutSeconds;
         public string ServerUrl => _serverUrl;
         public float HeartbeatIntervalSeconds => _heartbeatIntervalSeconds;
         public float ConnectionTimeoutSeconds => _connectionTimeoutSeconds;
@@ -33,7 +44,7 @@ namespace Game.Core
                 return false;
             }
 
-            if (string.IsNullOrWhiteSpace(_startupSceneName))
+            if (string.IsNullOrWhiteSpace(StartupSceneName))
             {
                 error = "StartupSceneName cannot be null or whitespace.";
                 return false;
@@ -45,9 +56,9 @@ namespace Game.Core
                 return false;
             }
 
-            if (!canLoadScene(_startupSceneName))
+            if (!canLoadScene(StartupSceneName))
             {
-                error = $"StartupSceneName '{_startupSceneName}' is not available in the build.";
+                error = $"StartupSceneName '{StartupSceneName}' is not available in the build.";
                 return false;
             }
 
@@ -56,6 +67,19 @@ namespace Game.Core
                  !string.Equals(serverUri.Scheme, "wss", StringComparison.OrdinalIgnoreCase)))
             {
                 error = "ServerUrl must be an absolute ws:// or wss:// URI.";
+                return false;
+            }
+
+            if (_runtimeMode == RuntimeMode.Online && string.IsNullOrWhiteSpace(_editorLoginIdentity))
+            {
+                error = "EditorLoginIdentity cannot be null or whitespace in Online mode.";
+                return false;
+            }
+
+            if (!(_onlineSessionTimeoutSeconds > 0f) || float.IsNaN(_onlineSessionTimeoutSeconds) ||
+                float.IsInfinity(_onlineSessionTimeoutSeconds))
+            {
+                error = "OnlineSessionTimeoutSeconds must be finite and greater than zero.";
                 return false;
             }
 

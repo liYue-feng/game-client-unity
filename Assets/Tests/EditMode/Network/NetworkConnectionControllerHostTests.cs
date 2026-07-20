@@ -56,6 +56,42 @@ namespace Game.Tests.EditMode.Network
             }
         }
 
+        [Test]
+        public void AuthenticationCommandsAdvanceAnOpenedConnectionToReady()
+        {
+            var root = new GameObject("host-authentication-test-root");
+            var client = new NetworkClient();
+            var factory = new FakeWebSocketTransportFactory();
+            var dispatcher = new FakeNetworkDispatcher();
+            var settings = NetworkTestSettings.Create();
+            var host = NetworkConnectionControllerHost.Install(
+                root.transform,
+                client,
+                factory,
+                settings,
+                dispatcher);
+            try
+            {
+                host.Initialize();
+                client.Connect(settings.ServerUrl);
+                factory.LastTransport.RaiseOpened();
+                dispatcher.PumpAll();
+
+                Assert.That(host.State, Is.EqualTo(NetworkConnectionState.Connected));
+                host.BeginAuthentication();
+                Assert.That(host.State, Is.EqualTo(NetworkConnectionState.Authenticating));
+                host.MarkReady();
+                Assert.That(host.State, Is.EqualTo(NetworkConnectionState.Ready));
+            }
+            finally
+            {
+                host.Shutdown();
+                client.Dispose();
+                Object.DestroyImmediate(root);
+                Object.DestroyImmediate(settings);
+            }
+        }
+
         private static void InvokeUpdate(NetworkConnectionControllerHost host)
         {
             typeof(NetworkConnectionControllerHost)

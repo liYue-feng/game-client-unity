@@ -115,6 +115,26 @@ namespace Game.Network
             _controller?.Disconnect();
         }
 
+        public void BeginAuthentication()
+        {
+            if (_shutdown)
+            {
+                return;
+            }
+
+            _controller?.BeginAuthentication();
+        }
+
+        public void MarkReady()
+        {
+            if (_shutdown)
+            {
+                return;
+            }
+
+            _controller?.MarkReady();
+        }
+
         private static float DefaultDeltaProvider()
         {
             return Time.deltaTime;
