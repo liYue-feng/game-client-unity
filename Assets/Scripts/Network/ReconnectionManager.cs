@@ -16,11 +16,14 @@ public class ReconnectionManager : MonoBehaviour
     public float maxDelaySeconds = 30f;
 
     /// <summary> 重连状态变化 </summary>
+    // Public legacy events are retained for source compatibility but intentionally inert under A3 ownership.
+#pragma warning disable CS0067
     public event Action<ReconnectState> OnReconnectStateChanged;
     /// <summary> 重连成功 </summary>
     public event Action OnReconnected;
     /// <summary> 重连失败（超过最大次数） </summary>
     public event Action OnReconnectFailed;
+#pragma warning restore CS0067
 
     public ReconnectState State => NetworkStatusAdapter.ToReconnectState(NetworkClient.Instance.ConnectionState);
     public int AttemptCount => 0;

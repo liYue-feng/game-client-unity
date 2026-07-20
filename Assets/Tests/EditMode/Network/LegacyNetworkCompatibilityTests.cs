@@ -21,12 +21,15 @@ namespace Game.Tests.EditMode.Network
         [Test]
         public void LegacyTypesAreObsoleteAndOwnNoTimersOrCoroutines()
         {
+            // This test verifies the intentional obsolete compatibility surface.
+#pragma warning disable CS0618
             Assert.That(Attribute.IsDefined(typeof(HeartbeatManager), typeof(ObsoleteAttribute)), Is.True);
             Assert.That(Attribute.IsDefined(typeof(ReconnectionManager), typeof(ObsoleteAttribute)), Is.True);
             Assert.That(typeof(ReconnectionManager).GetFields(BindingFlags.Instance | BindingFlags.NonPublic)
                 .Any(field => field.FieldType == typeof(Coroutine)), Is.False);
             Assert.That(typeof(ReconnectionManager).GetMethods(BindingFlags.Instance | BindingFlags.NonPublic)
                 .Any(method => typeof(IEnumerator).IsAssignableFrom(method.ReturnType)), Is.False);
+#pragma warning restore CS0618
         }
 
         [Test]
@@ -36,9 +39,12 @@ namespace Game.Tests.EditMode.Network
             var client = new NetworkClient();
             client.BindConnectionGateway(gateway);
             var go = new GameObject("heartbeat-legacy-test");
+            // This test invokes the intentional obsolete no-op API.
+#pragma warning disable CS0618
             var manager = go.AddComponent<HeartbeatManager>();
             manager.StartHeartbeat(client);
             manager.StopHeartbeat();
+#pragma warning restore CS0618
             Assert.That(gateway.ConnectCalls, Is.Zero);
             Assert.That(gateway.DisconnectCalls, Is.Zero);
             Object.DestroyImmediate(go);

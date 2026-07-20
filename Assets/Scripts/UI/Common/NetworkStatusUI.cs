@@ -15,11 +15,14 @@ public class NetworkStatusUI : MonoBehaviour
         _font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         BuildUI();
 
+        // Transitional legacy status subscription is retained for standalone scenes.
+#pragma warning disable CS0618
         if (HeartbeatManager.Instance != null)
         {
             HeartbeatManager.Instance.OnStatusChanged += OnStatusChanged;
             OnStatusChanged(HeartbeatManager.Instance.Status);
         }
+#pragma warning restore CS0618
     }
 
     void BuildUI()
@@ -101,9 +104,12 @@ public class NetworkStatusUI : MonoBehaviour
 
     void OnDestroy()
     {
+        // Match the standalone-scene compatibility subscription above.
+#pragma warning disable CS0618
         if (HeartbeatManager.Instance != null)
         {
             HeartbeatManager.Instance.OnStatusChanged -= OnStatusChanged;
         }
+#pragma warning restore CS0618
     }
 }

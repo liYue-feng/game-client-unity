@@ -24,6 +24,8 @@ public class MenuSceneSetup : MonoBehaviour
         }
 
         // 确保网络基础设施存在
+        // Transitional legacy setup remains available only when GameApplication is absent.
+#pragma warning disable CS0618
         if (HeartbeatManager.Instance == null)
         {
             var go = new GameObject("HeartbeatManager");
@@ -37,6 +39,8 @@ public class MenuSceneSetup : MonoBehaviour
         }
 
         // 初始化 LoginManager（如果不存在）
+#pragma warning restore CS0618
+
         if (LoginManager.Instance == null)
         {
             var go = new GameObject("LoginManager");
