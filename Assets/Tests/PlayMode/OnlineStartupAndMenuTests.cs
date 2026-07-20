@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Linq;
 using System.Reflection;
+using System.Text.RegularExpressions;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -44,6 +45,61 @@ namespace Game.Tests.PlayMode
             Assert.That(FindSceneObjects("MenuCanvas"), Has.Count.EqualTo(1));
         }
 
+        [UnityTest]
+        public IEnumerator FailedOnlineStartupWithoutHost_KeepsBattleStartDisabled()
+        {
+            yield return WaitForScene("BattleScene");
+            yield return WaitForApplicationState("Ready");
+
+            var settings = Resources.Load("GameRuntimeSettings");
+            var runtimeModeField = FindField(settings, "_runtimeMode");
+            var onlineSceneField = FindField(settings, "_onlineStartupSceneName");
+            var originalRuntimeMode = runtimeModeField.GetValue(settings);
+            var originalOnlineScene = onlineSceneField.GetValue(settings);
+            var application = FindApplication();
+            var applicationAssembly = application.GetType().Assembly;
+            var observedState = string.Empty;
+            var hostWasMissing = false;
+            var startWasInteractable = true;
+
+            try
+            {
+                runtimeModeField.SetValue(settings, System.Enum.Parse(runtimeModeField.FieldType, "Online"));
+                onlineSceneField.SetValue(settings, "MenuScene");
+                ShutdownApplication(application);
+                yield return null;
+
+                LogAssert.Expect(
+                    LogType.Error,
+                    new Regex("Initialization failed at Mode\\.Select:.*Online runtime flow is not implemented in Phase A3"));
+                LogAssert.Expect(
+                    LogType.Exception,
+                    new Regex("NotSupportedException: Online runtime flow is not implemented in Phase A3"));
+                InvokeEnsureApplication(applicationAssembly);
+                yield return WaitForApplicationState("Failed");
+                yield return LoadScene("MenuScene");
+                yield return null;
+
+                observedState = GetApplicationState();
+                hostWasMissing = GameObject.Find("[OnlineSessionHost]") == null;
+                startWasInteractable = FindSceneObjects("BtnStart").Single().GetComponent<Button>().interactable;
+            }
+            finally
+            {
+                runtimeModeField.SetValue(settings, originalRuntimeMode);
+                onlineSceneField.SetValue(settings, originalOnlineScene);
+                ShutdownApplication(FindApplication());
+                InvokeEnsureApplication(applicationAssembly);
+            }
+
+            yield return WaitForScene("BattleScene");
+            yield return WaitForApplicationState("Ready");
+            Assert.That(observedState, Is.EqualTo("Failed"));
+            Assert.That(hostWasMissing, Is.True);
+            Assert.That(startWasInteractable, Is.False,
+                "A failed Online startup without an installed host must not fall back to Offline battle access.");
+        }
+
         private static IEnumerator LoadScene(string sceneName)
         {
             var operation = SceneManager.LoadSceneAsync(sceneName, LoadSceneMode.Single);
@@ -67,6 +123,59 @@ namespace Game.Tests.PlayMode
             }
 
             Assert.Fail($"Timed out waiting for {sceneName}; active scene is {SceneManager.GetActiveScene().name}.");
+        }
+
+        private static IEnumerator WaitForApplicationState(string expectedState)
+        {
+            const int maxFrames = 240;
+            for (var frame = 0; frame < maxFrames; frame++)
+            {
+                if (GetApplicationState() == expectedState)
+                {
+                    yield break;
+                }
+
+                yield return null;
+            }
+
+            Assert.Fail($"Timed out waiting for GameApplication state {expectedState}; current state is {GetApplicationState()}.");
+        }
+
+        private static Component FindApplication()
+        {
+            return GameObject.Find("[GameApplication]")?
+                .GetComponents<Component>()
+                .Single(component => component != null && component.GetType().Name == "GameApplication");
+        }
+
+        private static string GetApplicationState()
+        {
+            var application = FindApplication();
+            return application?.GetType()
+                .GetProperty("State", BindingFlags.Instance | BindingFlags.Public)
+                ?.GetValue(application)
+                ?.ToString();
+        }
+
+        private static void ShutdownApplication(Component application)
+        {
+            application?.GetType()
+                .GetMethod("Shutdown", BindingFlags.Instance | BindingFlags.Public)
+                ?.Invoke(application, null);
+        }
+
+        private static void InvokeEnsureApplication(Assembly applicationAssembly)
+        {
+            applicationAssembly.GetType("Game.RuntimeBootstrap")
+                ?.GetMethod("EnsureApplication", BindingFlags.Static | BindingFlags.NonPublic)
+                ?.Invoke(null, null);
+        }
+
+        private static FieldInfo FindField(Object target, string fieldName)
+        {
+            var field = target?.GetType().GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic);
+            Assert.That(field, Is.Not.Null, $"Expected serialized field {fieldName}.");
+            return field;
         }
 
         private static System.Collections.Generic.List<GameObject> FindSceneObjects(string name)

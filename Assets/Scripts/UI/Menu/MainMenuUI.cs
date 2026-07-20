@@ -158,7 +158,7 @@ public sealed class MainMenuUI : MonoBehaviour
 
         if (_statusText != null)
         {
-            _statusText.text = _onlineSession == null ? "离线游玩" : GetStatusLabel(state);
+            _statusText.text = _onlineSession == null ? GetApplicationStatusLabel() : GetStatusLabel(state);
         }
 
         if (_retryButton != null)
@@ -168,7 +168,9 @@ public sealed class MainMenuUI : MonoBehaviour
 
         if (_startButton != null)
         {
-            _startButton.interactable = _onlineSession == null || state == OnlineSessionState.Ready;
+            _startButton.interactable = _onlineSession == null
+                ? CanStartWithoutOnlineSession()
+                : state == OnlineSessionState.Ready;
         }
     }
 
@@ -311,6 +313,30 @@ public sealed class MainMenuUI : MonoBehaviour
             default:
                 return "等待连接";
         }
+    }
+
+    private static bool CanStartWithoutOnlineSession()
+    {
+        var application = Game.GameApplication.Instance;
+        return application == null || application.State == Game.Core.GameApplicationState.Ready;
+    }
+
+    private static string GetApplicationStatusLabel()
+    {
+        var application = Game.GameApplication.Instance;
+        if (application == null || application.State == Game.Core.GameApplicationState.Ready)
+        {
+            return "离线游玩";
+        }
+
+        if (application.State == Game.Core.GameApplicationState.Failed)
+        {
+            return string.IsNullOrWhiteSpace(application.FailureReason)
+                ? "启动失败"
+                : $"启动失败：{application.FailureReason}";
+        }
+
+        return "启动中";
     }
 
     private static void EnsureEventSystem()
