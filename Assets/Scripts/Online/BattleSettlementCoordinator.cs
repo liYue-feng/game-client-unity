@@ -12,6 +12,7 @@ namespace Game.Online
         private readonly ArchiveSessionService _archiveService;
         private readonly BattleSettlementService _service;
         private readonly Action<PlayerArchive> _applyArchive;
+        private readonly Func<bool> _recoverSession;
         private readonly List<IDisposable> _subscriptions = new List<IDisposable>();
         private OnlineSessionState _sessionState;
         private int _generation;
@@ -21,12 +22,14 @@ namespace Game.Online
         private Action<BattleSettlementResult> _completed;
         private bool _awaitingCombat;
         private bool _awaitingSave;
+        private bool _saveOnReady;
         private bool _disposed;
 
         public BattleSettlementCoordinator(
             NetworkClient client,
             ArchiveSessionService archiveService,
-            Action<PlayerArchive> applyArchive = null)
+            Action<PlayerArchive> applyArchive = null,
+            Func<bool> recoverSession = null)
         {
             if (client == null)
             {
@@ -36,6 +39,7 @@ namespace Game.Online
             _archiveService = archiveService ?? throw new ArgumentNullException(nameof(archiveService));
             _service = new BattleSettlementService(client);
             _applyArchive = applyArchive ?? (_ => { });
+            _recoverSession = recoverSession;
             _subscriptions.Add(client.On<CombatResultResp>(MsgID.CombatResultResp, HandleCombatResponse));
             _subscriptions.Add(client.On<ErrorResp>(MsgID.Error, HandleErrorResponse));
             _archiveService.Saved += HandleArchiveSaved;
@@ -62,7 +66,7 @@ namespace Game.Online
                 return;
             }
 
-            if ((_awaitingCombat || _awaitingSave) &&
+            if ((_awaitingCombat || _awaitingSave || _saveOnReady) &&
                 (state == OnlineSessionState.Failed || state == OnlineSessionState.Stopped))
             {
                 if (_awaitingSave)
@@ -70,6 +74,13 @@ namespace Game.Online
                     _archiveService.CancelActiveOperation();
                 }
                 Fail();
+                return;
+            }
+
+            if (state == OnlineSessionState.Ready && _saveOnReady && _response != null)
+            {
+                _saveOnReady = false;
+                SaveAcceptedArchive();
                 return;
             }
 
@@ -96,6 +107,13 @@ namespace Game.Online
             _completed = completed;
             State = BattleSettlementState.Pending;
             _awaitingCombat = true;
+            if (_sessionState == OnlineSessionState.Failed || _sessionState == OnlineSessionState.Stopped)
+            {
+                _awaitingCombat = false;
+                Fail();
+                return;
+            }
+
             if (_sessionState == OnlineSessionState.Ready && !SendActiveRequest())
             {
                 _awaitingCombat = false;
@@ -110,10 +128,30 @@ namespace Game.Online
                 return false;
             }
 
+            if (_sessionState == OnlineSessionState.Stopped)
+            {
+                return false;
+            }
+
+            if (_sessionState == OnlineSessionState.Failed)
+            {
+                if (_recoverSession == null || !_recoverSession() ||
+                    _sessionState == OnlineSessionState.Failed || _sessionState == OnlineSessionState.Stopped)
+                {
+                    return false;
+                }
+            }
+
             State = BattleSettlementState.Pending;
             if (_response != null)
             {
-                return SaveAcceptedArchive();
+                if (_sessionState == OnlineSessionState.Ready)
+                {
+                    return SaveAcceptedArchive();
+                }
+
+                _saveOnReady = true;
+                return true;
             }
 
             _awaitingCombat = true;
@@ -142,6 +180,7 @@ namespace Game.Online
             _disposed = true;
             _awaitingCombat = false;
             _awaitingSave = false;
+            _saveOnReady = false;
             foreach (var subscription in _subscriptions)
             {
                 subscription.Dispose();
@@ -265,6 +304,7 @@ namespace Game.Online
         {
             _awaitingCombat = false;
             _awaitingSave = false;
+            _saveOnReady = false;
             State = BattleSettlementState.Failed;
             Notify(new BattleSettlementResult
             {
@@ -288,6 +328,7 @@ namespace Game.Online
             _completed = null;
             _awaitingCombat = false;
             _awaitingSave = false;
+            _saveOnReady = false;
             _lastSentGeneration = int.MinValue;
         }
     }

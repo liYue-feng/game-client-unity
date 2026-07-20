@@ -201,6 +201,101 @@ namespace Game.Tests.EditMode.Online
         }
 
         [Test]
+        public void TerminalAfterSessionFailureFailsImmediatelyWithoutLosingRunId()
+        {
+            var results = new List<BattleSettlementResult>();
+            _coordinator.SetSessionState(OnlineSessionState.Failed, 2);
+
+            _coordinator.Settle(BattleRunOutcome.Victory, ResultData(), results.Add);
+
+            Assert.That(_coordinator.State, Is.EqualTo(BattleSettlementState.Failed));
+            Assert.That(_coordinator.ActiveRunId, Is.Not.Empty);
+            Assert.That(CombatRequestCount(), Is.Zero);
+            Assert.That(results, Has.Count.EqualTo(1));
+            Assert.That(results[0].State, Is.EqualTo(BattleSettlementState.Failed));
+            Assert.That(results[0].RewardGold, Is.Zero);
+            Assert.That(results[0].RewardExp, Is.Zero);
+        }
+
+        [Test]
+        public void RetryAfterSessionFailureRecoversThenSendsSameRunWhenReady()
+        {
+            var recoverCalls = 0;
+            RecreateCoordinator(() =>
+            {
+                recoverCalls++;
+                _coordinator.SetSessionState(OnlineSessionState.Connecting, 3);
+                return true;
+            });
+            _coordinator.SetSessionState(OnlineSessionState.Failed, 2);
+            _coordinator.Settle(BattleRunOutcome.Defeat, ResultData(), _ => { });
+            var runId = _coordinator.ActiveRunId;
+
+            Assert.That(_coordinator.Retry(), Is.True);
+
+            Assert.That(recoverCalls, Is.EqualTo(1));
+            Assert.That(_coordinator.State, Is.EqualTo(BattleSettlementState.Pending));
+            Assert.That(CombatRequestCount(), Is.Zero);
+            _coordinator.SetSessionState(OnlineSessionState.Ready, 3);
+            Assert.That(CombatRequestCount(), Is.EqualTo(1));
+            Assert.That(DecodeLastCombatRequest().RunId, Is.EqualTo(runId));
+        }
+
+        [Test]
+        public void RetryPreservesFailureWhenRecoveryIsRejectedOrSessionIsStopped()
+        {
+            var recoverCalls = 0;
+            RecreateCoordinator(() =>
+            {
+                recoverCalls++;
+                return false;
+            });
+            _coordinator.SetSessionState(OnlineSessionState.Failed, 2);
+            _coordinator.Settle(BattleRunOutcome.Victory, ResultData(), _ => { });
+
+            Assert.That(_coordinator.Retry(), Is.False);
+            Assert.That(recoverCalls, Is.EqualTo(1));
+            Assert.That(_coordinator.State, Is.EqualTo(BattleSettlementState.Failed));
+
+            _coordinator.SetSessionState(OnlineSessionState.Stopped, 3);
+            Assert.That(_coordinator.Retry(), Is.False);
+            Assert.That(recoverCalls, Is.EqualTo(1));
+            Assert.That(_coordinator.State, Is.EqualTo(BattleSettlementState.Failed));
+        }
+
+        [Test]
+        public void RetryAfterSaveStageSessionFailureWaitsForReadyThenResendsOnlyArchive()
+        {
+            RecreateCoordinator(() =>
+            {
+                _coordinator.SetSessionState(OnlineSessionState.Connecting, 3);
+                return true;
+            });
+            _coordinator.SetSessionState(OnlineSessionState.Ready, 1);
+            _coordinator.Settle(BattleRunOutcome.Victory, ResultData(), _ => { });
+            var request = DecodeLastCombatRequest();
+            _client.ReceiveFrame(Codec.Encode(MsgID.CombatResultResp, new CombatResultResp
+            {
+                Success = true,
+                RunId = request.RunId,
+                Archive = new PlayerArchive { Gold = 17 }
+            }));
+            Assert.That(SaveRequestCount(), Is.EqualTo(1));
+
+            _coordinator.SetSessionState(OnlineSessionState.Failed, 2);
+            Assert.That(_coordinator.State, Is.EqualTo(BattleSettlementState.Failed));
+            Assert.That(_coordinator.Retry(), Is.True);
+            Assert.That(CombatRequestCount(), Is.EqualTo(1));
+            Assert.That(SaveRequestCount(), Is.EqualTo(1));
+
+            _coordinator.SetSessionState(OnlineSessionState.Ready, 3);
+
+            Assert.That(CombatRequestCount(), Is.EqualTo(1));
+            Assert.That(SaveRequestCount(), Is.EqualTo(2));
+            Assert.That(_coordinator.ActiveRunId, Is.EqualTo(request.RunId));
+        }
+
+        [Test]
         public void CombatFailureRetryResendsTheSameRunInsteadOfCreatingAnother()
         {
             _coordinator.Settle(BattleRunOutcome.Defeat, ResultData(), _ => { });
@@ -320,6 +415,16 @@ namespace Game.Tests.EditMode.Online
                 Archive = new PlayerArchive()
             }));
             _client.ReceiveFrame(Codec.Encode(MsgID.SaveArchiveResp, new SaveArchiveResp { Success = true }));
+        }
+
+        private void RecreateCoordinator(Func<bool> recoverSession)
+        {
+            _coordinator.Dispose();
+            _coordinator = new BattleSettlementCoordinator(
+                _client,
+                _archive,
+                archive => _appliedArchive = archive?.Clone(),
+                recoverSession);
         }
 
         private static CombatResultData ResultData()

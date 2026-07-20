@@ -212,7 +212,8 @@ namespace Game.Online
                 host._battleSettlement = new BattleSettlementCoordinator(
                     client,
                     host._archiveService,
-                    host.ApplyBattleArchive);
+                    host.ApplyBattleArchive,
+                    host.RecoverBattleSession);
                 host._battleSettlement.SetSessionState(host._coordinator.State, host._coordinator.Generation);
                 Instance = host;
                 return host;
@@ -273,6 +274,18 @@ namespace Game.Online
         {
             _coordinator?.ApplyPersistedArchive(archive);
             HandleArchiveSaved();
+        }
+
+        private bool RecoverBattleSession()
+        {
+            if (_shutdown || _coordinator == null || _coordinator.State != OnlineSessionState.Failed)
+            {
+                return false;
+            }
+
+            _coordinator.Retry();
+            return _coordinator.State != OnlineSessionState.Failed &&
+                   _coordinator.State != OnlineSessionState.Stopped;
         }
 
         private void PublishArchiveSaved()

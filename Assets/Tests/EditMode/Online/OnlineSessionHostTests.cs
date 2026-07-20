@@ -180,6 +180,40 @@ namespace Game.Tests.EditMode.Online
         }
 
         [Test]
+        public void BattleRetryRecoversFailedSessionAndSendsSameRunAfterRelogin()
+        {
+            CompleteOnlineSession(new PlayerArchive { Gold = 7 });
+            _connection.RaiseError("socket failed");
+            Assert.That(_host.State, Is.EqualTo(OnlineSessionState.Failed));
+            BattleSettlementResult result = null;
+
+            _host.BattleSettlement.Settle(
+                BattleRunOutcome.Victory,
+                new CombatResultData { killCount = 2, playerLevel = 1 },
+                value => result = value);
+            var coordinator = (BattleSettlementCoordinator)_host.BattleSettlement;
+            var runId = coordinator.ActiveRunId;
+
+            Assert.That(result?.State, Is.EqualTo(BattleSettlementState.Failed));
+            Assert.That(runId, Is.Not.Empty);
+            Assert.That(CombatRequestCount(), Is.Zero);
+            Assert.That(_host.BattleSettlement.Retry(), Is.True);
+            Assert.That(_host.State, Is.EqualTo(OnlineSessionState.Connecting));
+            Assert.That(_connection.ConnectCalls, Is.EqualTo(2));
+
+            _connection.RaiseConnected();
+            _provider.Succeed(1);
+            _client.ReceiveFrame(Codec.Encode(MsgID.LoginResp,
+                new LoginResp { Uid = 42, Nickname = "ink-user", Token = "new-session-token" }));
+            _client.ReceiveFrame(Codec.Encode(MsgID.LoadArchiveResp,
+                new LoadArchiveResp { Found = true, Archive = new PlayerArchive { Gold = 7 } }));
+
+            Assert.That(_host.State, Is.EqualTo(OnlineSessionState.Ready));
+            Assert.That(CombatRequestCount(), Is.EqualTo(1));
+            Assert.That(DecodeLastCombatRequest().RunId, Is.EqualTo(runId));
+        }
+
+        [Test]
         public void BattleArchiveFailureRemainsRetryableWithoutFailingTheOnlineSession()
         {
             _host.Initialize();
