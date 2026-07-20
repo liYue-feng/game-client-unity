@@ -1,6 +1,7 @@
 using System;
 using Game.Core;
 using Game.Network;
+using Game.Online;
 using UnityEngine;
 
 namespace Game
@@ -12,12 +13,18 @@ namespace Game
         private NetworkClient _networkClient;
         private bool _shutdown;
 
+        internal OnlineSessionHost OnlineSession { get; private set; }
+
         private GameServices(GameObject rootObject)
         {
             _rootObject = rootObject;
         }
 
-        internal static GameServices Create(Transform applicationRoot, GameRuntimeSettings settings)
+        internal static GameServices Create(
+            Transform applicationRoot,
+            GameRuntimeSettings settings,
+            IWebSocketTransportFactory transportFactory = null,
+            ILoginCodeProvider loginCodeProvider = null)
         {
             if (applicationRoot == null)
             {
@@ -45,23 +52,42 @@ namespace Game
                 var networkHost = NetworkConnectionControllerHost.Install(
                     root,
                     client,
-                    new WebSocketTransportFactory(),
+                    transportFactory ?? new WebSocketTransportFactory(),
                     settings);
+                if (settings.RuntimeMode == RuntimeMode.Online)
+                {
+                    services.OnlineSession = OnlineSessionHost.Install(
+                        root,
+                        client,
+                        networkHost,
+                        settings,
+                        loginCodeProvider);
+                }
+
                 var sceneTransition = SceneTransitionManager.Install(root);
                 var audio = AudioManager.Install(root);
                 var loading = LoadingScreen.Install(root);
                 var achievements = AchievementManager.Install(root);
                 services._networkClient = client;
 
-                services._lifecycle = new GameServiceCollection(new IGameService[]
+                var lifecycle = new System.Collections.Generic.List<IGameService>
                 {
                     dispatcher,
-                    networkHost,
+                    networkHost
+                };
+                if (services.OnlineSession != null)
+                {
+                    lifecycle.Add(services.OnlineSession);
+                }
+
+                lifecycle.AddRange(new IGameService[]
+                {
                     sceneTransition,
                     audio,
                     loading,
                     achievements
                 });
+                services._lifecycle = new GameServiceCollection(lifecycle);
                 services._lifecycle.InitializeAll();
                 return services;
             }
@@ -96,6 +122,8 @@ namespace Game
             }
 
             NetworkClient.ResetStaticState();
+            OnlineSessionHost.ResetStaticState();
+            OnlineSession = null;
             MainThreadDispatcher.ResetStaticState();
             SceneTransitionManager.ResetStaticState();
             AudioManager.ResetStaticState();
@@ -104,7 +132,14 @@ namespace Game
 
             if (_rootObject != null)
             {
-                UnityEngine.Object.Destroy(_rootObject);
+                if (Application.isPlaying)
+                {
+                    UnityEngine.Object.Destroy(_rootObject);
+                }
+                else
+                {
+                    UnityEngine.Object.DestroyImmediate(_rootObject);
+                }
             }
         }
     }

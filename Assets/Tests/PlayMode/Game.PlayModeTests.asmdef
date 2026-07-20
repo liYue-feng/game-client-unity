@@ -3,7 +3,8 @@
   "rootNamespace": "Game.Tests.PlayMode",
   "references": [
     "Game.Network",
-    "Game.Gameplay"
+    "Game.Gameplay",
+    "Game.Online"
   ],
   "includePlatforms": [],
   "excludePlatforms": [],

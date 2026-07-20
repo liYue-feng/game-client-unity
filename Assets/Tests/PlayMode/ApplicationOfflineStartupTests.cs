@@ -34,6 +34,8 @@ namespace Game.Tests.PlayMode
             Assert.That(GameObject.Find("[MainThreadDispatcher]"), Is.Not.Null);
             Assert.That(GameObject.Find("[SceneTransitionManager]"), Is.Not.Null);
             Assert.That(GameObject.Find("[NetworkConnectionControllerHost]"), Is.Not.Null);
+            Assert.That(GameObject.Find("[OnlineSessionHost]"), Is.Null,
+                "Offline startup must install the network host without creating Online session services.");
             Assert.That(GameObject.Find("[AudioManager]"), Is.Not.Null);
             Assert.That(GameObject.Find("[LoadingScreen]"), Is.Not.Null);
             Assert.That(GameObject.Find("[AchievementManager]"), Is.Not.Null);
@@ -43,6 +45,7 @@ namespace Game.Tests.PlayMode
             foreach (var prohibitedTypeName in new[]
                      {
                          "NetworkClient",
+                         "OnlineSessionHost",
                          "LoginManager",
                          "GameBootstrap",
                          "ArchiveManager",

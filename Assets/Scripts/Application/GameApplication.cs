@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using Game.Core;
 using Game.Network;
+using Game.Online;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -128,6 +129,7 @@ namespace Game
         {
             _instance = null;
             NetworkClient.ResetStaticState();
+            OnlineSessionHost.ResetStaticState();
             MainThreadDispatcher.ResetStaticState();
             SceneTransitionManager.ResetStaticState();
             AudioManager.ResetStaticState();

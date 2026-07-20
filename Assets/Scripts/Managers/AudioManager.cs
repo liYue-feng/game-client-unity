@@ -144,7 +144,14 @@ public class AudioManager : MonoBehaviour, IGameService
         {
             if (clip != null)
             {
-                Destroy(clip);
+                if (Application.isPlaying)
+                {
+                    Destroy(clip);
+                }
+                else
+                {
+                    DestroyImmediate(clip);
+                }
             }
         }
 
