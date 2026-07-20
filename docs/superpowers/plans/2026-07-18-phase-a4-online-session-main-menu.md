@@ -356,7 +356,7 @@ Run asset integrity and focused PlayMode. Expected: MenuScene missing from disk/
 `MenuSceneAssetBuilder.Build` creates an empty scene, adds one `[MenuScene]` GameObject with MenuSceneSetup, saves `Assets/Scenes/MenuScene.unity`, and writes EditorBuildSettings scenes in order MenuScene then BattleScene without duplicates. Run it:
 
 ~~~powershell
-& 'D:\Unity_Soft\2022\Editor\Unity.exe' -batchmode -nographics -quit -projectPath (Get-Location).Path -executeMethod MenuSceneAssetBuilder.Build -logFile 'Logs\A4-menu-scene-build.log'
+& 'D:\Unity_Soft\2022\Editor\Unity.exe' -batchmode -quit -projectPath (Get-Location).Path -executeMethod MenuSceneAssetBuilder.Build -logFile 'Logs\A4-menu-scene-build.log'
 ~~~
 
 - [x] **Step 4: Verify GREEN and commit**
@@ -451,19 +451,20 @@ Record exact test totals, XML/log paths, backend commit SHA, client commit SHA, 
 
 - [x] **Step 4: Commit documentation**
 
-Commit as `docs: record phase a4 verification evidence`. Push after final whole-branch review approves both spec compliance and code quality.
+The initial evidence was committed as `docs: record phase a4 verification evidence`. After final review remediation, refresh it as `docs: refresh phase a4 final evidence`; push only after the parent delivery gate confirms the reviewed branch.
 
-### Task 8 Delivery Evidence (2026-07-20)
+### Task 8 Final Delivery Evidence (2026-07-20 16:29-16:32 +08:00)
 
-- Delivery code head before this evidence-only documentation commit: client `4d0351fd1b92a92599892ca791d3fffee3b77d23`; backend `88cae827262c4648e35dd74496e5a368eb9c1030`. At verification time these matched `origin/feature/phase-a4-online-session-main-menu` and backend `origin/master`, respectively.
+- Reviewed delivery code head before this evidence-only refresh: client `a69bff46ae96e40f9913d8c446c951124da9b7b8`; backend local and `origin/master` `88cae827262c4648e35dd74496e5a368eb9c1030`. This documentation commit intentionally does not predict its own SHA, and the parent still owns the final client push.
+- Final remediation delivered scene-local Rank/Quit menu commands, one-shot terminal return to `MenuScene`, fail-closed scene navigation, configured-size `InkPanel` rebuilds, and component-owned texture cleanup that preserves external textures. Whole-branch specification and quality reviews were both APPROVED at client head `a69bff4`.
 - Asset integrity wrapper: `tools/validation/Test-UnityAssetIntegrity.ps1` passed.
 - Pester asset contract: `tools/validation/UnityAssetIntegrity.Tests.ps1` passed `5/5`, failed `0`, skipped `0`.
-- Full EditMode: `Logs/A4-task8-final-editmode-20260720-143550.xml`, total `208`, passed `208`, failed `0`, skipped `0`, duration `0.7149162` seconds; Unity exit code `0`; `Logs/A4-task8-final-editmode-20260720-143550.log` error markers `0`.
-- Normal full PlayMode with `GAME_BACKEND_INTEGRATION` absent: `Logs/A4-task8-final-playmode-20260720-143631.xml`, total `94`, passed `93`, failed `0`, skipped `1`, duration `93.5061516` seconds; Unity exit code `0`; `Logs/A4-task8-final-playmode-20260720-143631.log` error markers `0`. The only skipped test was `Game.Tests.PlayMode.RealBackendOnlineFlowTests.OnlineApplication_LoginSaveAndReloadArchiveAgainstRealBackend`.
-- Real integration command: `& .\tools\integration\Invoke-A4BackendIntegration.ps1 -BackendRoot 'E:\Own_project\game-server-go'`. Go `go test ./...` passed; `Logs/A4-real-backend-20260720-143900.xml` reported total `1`, passed `1`, failed `0`, skipped `0`, duration `2.4436048` seconds, with Unity exit code `0`; `Logs/A4-real-backend-20260720-143900.log` error markers `0`.
-- Real server evidence: `E:/Own_project/game-server-go/logs/a4-integration-server-20260720-143900.stdout.log` recorded one `dev:integration-client` login, initial archive load `dataLen=0`, save `dataLen=24`, and reload `dataLen=24`; the Unity assertion used exact archive JSON `{"phase":"a4","coins":7}`.
-- Cleanup evidence: captured backend PID `36236` and Unity PID `3092` exited; remaining relevant processes `0`; listeners on ports `8080` and `8081` were both `0`; `GAME_BACKEND_INTEGRATION` was empty after the runner.
-- Hygiene: `git diff --check master...HEAD` passed before the documentation update and is re-run before committing this task.
+- Full EditMode: `Logs/A4-task8-refresh-editmode-20260720-162901.xml`, total `208`, passed `208`, failed `0`, skipped `0`, duration `0.6846785` seconds; Unity exit code `0`; `Logs/A4-task8-refresh-editmode-20260720-162901.log` error markers `0`.
+- Normal full PlayMode with `GAME_BACKEND_INTEGRATION` absent: `Logs/A4-task8-refresh-playmode-20260720-162940.xml`, total `99`, passed `98`, failed `0`, skipped `1`, duration `77.8821759` seconds; Unity exit code `0`; `Logs/A4-task8-refresh-playmode-20260720-162940.log` error markers `0`. The only skipped test was `Game.Tests.PlayMode.RealBackendOnlineFlowTests.OnlineApplication_LoginSaveAndReloadArchiveAgainstRealBackend`.
+- Real integration command: `& .\tools\integration\Invoke-A4BackendIntegration.ps1 -BackendRoot 'E:\Own_project\game-server-go'`. Go `go test ./...` passed; `Logs/A4-real-backend-20260720-163134.xml` reported total `1`, passed `1`, failed `0`, skipped `0`, duration `2.4192503` seconds, with Unity exit code `0`; `Logs/A4-real-backend-20260720-163134.log` error markers `0`.
+- Real server evidence: `E:/Own_project/game-server-go/logs/a4-integration-server-20260720-163134.stdout.log` recorded one `dev:integration-client` login, initial archive load `dataLen=0`, save `dataLen=24`, and reload `dataLen=24`; the Unity assertion used exact archive JSON `{"phase":"a4","coins":7}`.
+- Cleanup evidence: captured backend PID `27420` and Unity PID `6180` exited; remaining relevant processes `0`; listeners on ports `8080` and `8081` were both `0`; `GAME_BACKEND_INTEGRATION` was empty after the runner.
+- Hygiene: `git diff --check master...HEAD` passed at reviewed code head `a69bff4`; both the working documentation diff and final committed range are checked again before handoff.
 
 ## Final Acceptance Checklist
 
