@@ -453,17 +453,17 @@ Record exact test totals, XML/log paths, backend commit SHA, client commit SHA, 
 
 The initial evidence was committed as `docs: record phase a4 verification evidence`. After final review remediation, refresh it as `docs: refresh phase a4 final evidence`; push only after the parent delivery gate confirms the reviewed branch.
 
-### Task 8 Final Delivery Evidence (2026-07-20 17:00-17:05 +08:00)
+### Task 8 Final Delivery Evidence (2026-07-20 17:00-20:35 +08:00)
 
-- Reviewed delivery code head before the final evidence update: client `1b9b7d8897db95146ecf9d990dc3bee661b4c096`; backend local and `origin/master` `88cae827262c4648e35dd74496e5a368eb9c1030`. This documentation commit intentionally does not predict its own SHA, and the parent still owns the final client push.
+- Reviewed delivery code head before the final evidence update: client `1b9b7d8897db95146ecf9d990dc3bee661b4c096`; backend local and `origin/master` `874e68e06e2f2e238ecdc605c3976cd1b5c541ac`. This documentation commit intentionally does not predict its own SHA, and the parent still owns the final client push.
 - Final remediation delivered scene-local Rank/Quit menu commands, one-shot terminal return to `MenuScene`, fail-closed scene navigation, configured-size `InkPanel` rebuilds, component-owned texture cleanup that preserves external textures, and recoverable Online Retry through a fresh A3 transport generation. Whole-branch specification and quality reviews were both APPROVED at client head `1b9b7d8`.
 - Asset integrity wrapper: `tools/validation/Test-UnityAssetIntegrity.ps1` passed.
 - Pester asset contract: `tools/validation/UnityAssetIntegrity.Tests.ps1` passed `5/5`, failed `0`, skipped `0`.
 - Full EditMode: `Logs/A4-retry-recovery-full-editmode.xml`, total `210`, passed `210`, failed `0`, skipped `0`, duration `0.5025737` seconds; Unity exit code `0`; `Logs/A4-retry-recovery-full-editmode.log` error markers `0`.
 - Normal full PlayMode with `GAME_BACKEND_INTEGRATION` absent: `Logs/A4-retry-recovery-full-playmode.xml`, total `99`, passed `98`, failed `0`, skipped `1`, duration `68.4876785` seconds; Unity exit code `0`; `Logs/A4-retry-recovery-full-playmode.log` error markers `0`. The only skipped test was `Game.Tests.PlayMode.RealBackendOnlineFlowTests.OnlineApplication_LoginSaveAndReloadArchiveAgainstRealBackend`.
-- Real integration command: `& .\tools\integration\Invoke-A4BackendIntegration.ps1 -BackendRoot 'E:\Own_project\game-server-go'`. Go `go test ./...` passed; `Logs/A4-real-backend-20260720-170438.xml` reported total `1`, passed `1`, failed `0`, skipped `0`, duration `1.6402187` seconds, with Unity exit code `0`; `Logs/A4-real-backend-20260720-170438.log` error markers `0`.
-- Real server evidence: `E:/Own_project/game-server-go/logs/a4-integration-server-20260720-170438.stdout.log` recorded one `dev:integration-client` login, initial archive load `dataLen=0`, save `dataLen=24`, and reload `dataLen=24`; stderr was empty and the Unity assertion used exact archive JSON `{"phase":"a4","coins":7}`.
-- Cleanup evidence: captured backend PID `40268` and Unity PID `41320` exited; remaining relevant processes `0`; listeners on ports `8080` and `8081` were both `0`; `GAME_BACKEND_INTEGRATION` was empty after the runner.
+- Real integration command: `& .\tools\integration\Invoke-A4BackendIntegration.ps1 -BackendRoot 'E:\Own_project\game-server-go'`. Go `go test ./...` passed; `Logs/A4-real-backend-20260720-203437.xml` reported total `1`, passed `1`, failed `0`, skipped `0`, duration `1.8734367` seconds, with Unity exit code `0`.
+- Real server evidence: `E:/Own_project/game-server-go/logs/a4-integration-server-20260720-203437.stdout.log` recorded one `dev:integration-client` login, initial archive load `dataLen=0`, save `dataLen=24`, and reload `dataLen=24`; stderr was empty and the Unity assertion used exact archive JSON `{"phase":"a4","coins":7}`.
+- Cleanup evidence: captured backend PID `46800` and Unity PID `44560` exited; remaining relevant processes `0`; listeners on ports `8080` and `8081` were both `0`; `GAME_BACKEND_INTEGRATION` was empty after the runner.
 - Hygiene: `git diff --check master...HEAD` passed at reviewed code head `1b9b7d8`; both the working documentation diff and final committed range are checked again before handoff.
 
 ## Final Acceptance Checklist
