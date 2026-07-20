@@ -54,6 +54,7 @@ namespace Game.Online
 
         public event Action<OnlineSessionState> StateChanged;
         public event Action ArchiveSaved;
+        public event Action ArchiveReloaded;
 
         public void Start()
         {
@@ -145,6 +146,7 @@ namespace Game.Online
             _disposed = true;
             StateChanged = null;
             ArchiveSaved = null;
+            ArchiveReloaded = null;
         }
 
         private void Subscribe()
@@ -271,6 +273,7 @@ namespace Game.Online
             {
                 _reloadActive = false;
                 _progress = PlayerProgressState.FromArchive(archive);
+                ArchiveReloaded?.Invoke();
             }
         }
 

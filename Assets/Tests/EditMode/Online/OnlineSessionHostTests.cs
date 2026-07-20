@@ -89,6 +89,53 @@ namespace Game.Tests.EditMode.Online
         }
 
         [Test]
+        public void ReloadArchiveForwardsCompletionOnceAfterProgressHydrationAndIsolatesObservers()
+        {
+            var laterObservers = 0;
+            var observedGold = 0;
+            _host.ArchiveReloaded += () => throw new InvalidOperationException("reload observer failed");
+            _host.ArchiveReloaded += () =>
+            {
+                laterObservers++;
+                observedGold = _host.Progress.Gold;
+            };
+            CompleteOnlineSession(new PlayerArchive { Gold = 7 });
+
+            Assert.That(laterObservers, Is.Zero, "initial login hydration is not forwarded as a reload");
+            Assert.That(_host.ReloadArchive(), Is.True);
+            Assert.That(laterObservers, Is.Zero);
+            LogAssert.Expect(LogType.Exception, new Regex("reload observer failed"));
+
+            var response = Codec.Encode(MsgID.LoadArchiveResp,
+                new LoadArchiveResp { Found = true, Archive = new PlayerArchive { Gold = 44 } });
+            _client.ReceiveFrame(response);
+
+            Assert.That(laterObservers, Is.EqualTo(1));
+            Assert.That(observedGold, Is.EqualTo(44));
+            Assert.That(_host.Progress.Gold, Is.EqualTo(44));
+
+            _client.ReceiveFrame(response);
+            Assert.That(laterObservers, Is.EqualTo(1));
+        }
+
+        [Test]
+        public void ShutdownClearsReloadObserversAndMakesLateResponseInert()
+        {
+            CompleteOnlineSession(new PlayerArchive { Gold = 7 });
+            var reloads = 0;
+            _host.ArchiveReloaded += () => reloads++;
+            Assert.That(_host.ReloadArchive(), Is.True);
+
+            _host.Shutdown();
+            _client.ReceiveFrame(Codec.Encode(MsgID.LoadArchiveResp,
+                new LoadArchiveResp { Found = true, Archive = new PlayerArchive { Gold = 44 } }));
+
+            Assert.That(reloads, Is.Zero);
+            Assert.That(_host.State, Is.EqualTo(OnlineSessionState.Stopped));
+            Assert.That(_host.Progress.Gold, Is.EqualTo(7));
+        }
+
+        [Test]
         public void BattleSettlementAppliesServerArchiveOnlyAfterSaveAcknowledgement()
         {
             _host.Initialize();

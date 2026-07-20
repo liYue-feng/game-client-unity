@@ -272,6 +272,68 @@ namespace Game.Tests.EditMode.Online
         }
 
         [Test]
+        public void AcceptedReloadPublishesAfterProgressHydrationAndIgnoresDuplicateResponse()
+        {
+            var reloads = 0;
+            var observedGold = 0;
+            _coordinator.ArchiveReloaded += () =>
+            {
+                reloads++;
+                observedGold = _coordinator.Progress.Gold;
+            };
+            CompleteInitialSession("ink-user", new PlayerArchive { Gold = 1 });
+
+            Assert.That(reloads, Is.Zero, "initial login hydration is not an explicit reload");
+            Assert.That(_coordinator.ReloadArchive(), Is.True);
+            Assert.That(reloads, Is.Zero, "reload completion waits for the matching response");
+
+            var response = Codec.Encode(MsgID.LoadArchiveResp,
+                new LoadArchiveResp { Found = true, Archive = new PlayerArchive { Gold = 9 } });
+            _client.ReceiveFrame(response);
+
+            Assert.That(reloads, Is.EqualTo(1));
+            Assert.That(observedGold, Is.EqualTo(9));
+            Assert.That(_coordinator.Progress.Gold, Is.EqualTo(9));
+
+            _client.ReceiveFrame(response);
+            Assert.That(reloads, Is.EqualTo(1), "a duplicate response has no active reload to complete");
+        }
+
+        [Test]
+        public void BusyRejectedReloadDoesNotPublishCompletionForLateLoadResponse()
+        {
+            CompleteInitialSession("ink-user", new PlayerArchive { Gold = 1 });
+            var reloads = 0;
+            _coordinator.ArchiveReloaded += () => reloads++;
+
+            Assert.That(_coordinator.SaveArchive(new PlayerArchive { Gold = 2 }), Is.True);
+            Assert.That(_coordinator.ReloadArchive(), Is.False, "the archive service is busy saving");
+            _client.ReceiveFrame(Codec.Encode(MsgID.LoadArchiveResp,
+                new LoadArchiveResp { Found = true, Archive = new PlayerArchive { Gold = 99 } }));
+            _client.ReceiveFrame(Codec.Encode(MsgID.SaveArchiveResp,
+                new SaveArchiveResp { Success = true }));
+
+            Assert.That(reloads, Is.Zero);
+            Assert.That(_coordinator.Progress.Gold, Is.EqualTo(2));
+        }
+
+        [Test]
+        public void StoppedCoordinatorIgnoresLateAcceptedReloadResponse()
+        {
+            CompleteInitialSession("ink-user", new PlayerArchive { Gold = 1 });
+            var reloads = 0;
+            _coordinator.ArchiveReloaded += () => reloads++;
+            Assert.That(_coordinator.ReloadArchive(), Is.True);
+
+            _coordinator.Stop();
+            _client.ReceiveFrame(Codec.Encode(MsgID.LoadArchiveResp,
+                new LoadArchiveResp { Found = true, Archive = new PlayerArchive { Gold = 9 } }));
+
+            Assert.That(reloads, Is.Zero);
+            Assert.That(_coordinator.Progress.Gold, Is.EqualTo(1));
+        }
+
+        [Test]
         public void HydrationPrecedesReadyAndArchivesAreDetachedWhileSavesSynchronizeOnAcknowledgement()
         {
             var loaded = new PlayerArchive { Gold = 7, UnlockedStyles = { 1, 3 } };

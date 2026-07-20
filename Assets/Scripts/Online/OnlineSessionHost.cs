@@ -33,6 +33,7 @@ namespace Game.Online
 
         public event Action<OnlineSessionState> StateChanged;
         public event Action ArchiveSaved;
+        public event Action ArchiveReloaded;
 
         public static OnlineSessionHost Install(
             Transform parent,
@@ -103,6 +104,7 @@ namespace Game.Online
             {
                 _coordinator.StateChanged -= HandleStateChanged;
                 _coordinator.ArchiveSaved -= HandleArchiveSaved;
+                _coordinator.ArchiveReloaded -= HandleArchiveReloaded;
                 _coordinator.Dispose();
                 _lastState = OnlineSessionState.Stopped;
                 _coordinator = null;
@@ -119,6 +121,7 @@ namespace Game.Online
             _initialized = false;
             StateChanged = null;
             ArchiveSaved = null;
+            ArchiveReloaded = null;
 
             if (ReferenceEquals(Instance, this))
             {
@@ -205,6 +208,7 @@ namespace Game.Online
                     serverUrl);
                 host._coordinator.StateChanged += host.HandleStateChanged;
                 host._coordinator.ArchiveSaved += host.HandleArchiveSaved;
+                host._coordinator.ArchiveReloaded += host.HandleArchiveReloaded;
                 host._battleSettlement = new BattleSettlementCoordinator(
                     client,
                     host._archiveService,
@@ -220,6 +224,7 @@ namespace Game.Online
                 {
                     host._coordinator.StateChanged -= host.HandleStateChanged;
                     host._coordinator.ArchiveSaved -= host.HandleArchiveSaved;
+                    host._coordinator.ArchiveReloaded -= host.HandleArchiveReloaded;
                     host._coordinator.Dispose();
                 }
                 host._archiveService?.Dispose();
@@ -258,6 +263,12 @@ namespace Game.Online
             PublishArchiveSaved();
         }
 
+        private void HandleArchiveReloaded()
+        {
+            _lastProgress = _coordinator?.Progress ?? _lastProgress;
+            PublishArchiveReloaded();
+        }
+
         private void ApplyBattleArchive(PlayerArchive archive)
         {
             _coordinator?.ApplyPersistedArchive(archive);
@@ -267,6 +278,27 @@ namespace Game.Online
         private void PublishArchiveSaved()
         {
             var observers = ArchiveSaved;
+            if (observers == null)
+            {
+                return;
+            }
+
+            foreach (Action observer in observers.GetInvocationList())
+            {
+                try
+                {
+                    observer();
+                }
+                catch (Exception exception)
+                {
+                    Debug.LogException(exception);
+                }
+            }
+        }
+
+        private void PublishArchiveReloaded()
+        {
+            var observers = ArchiveReloaded;
             if (observers == null)
             {
                 return;
