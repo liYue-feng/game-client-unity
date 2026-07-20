@@ -1,152 +1,217 @@
+using Game.Online;
 using UnityEngine;
-using UnityEngine.UI;
+using UnityEngine.EventSystems;
 using UnityEngine.SceneManagement;
+using UnityEngine.UI;
 
-/// <summary>
-/// 水墨风格主菜单 — 开始游戏 / 排行榜 / 设置
-/// </summary>
-public class MainMenuUI : MonoBehaviour
+public sealed class MainMenuUI : MonoBehaviour
 {
-    private Font _font;
+    private const string MenuCanvasName = "MenuCanvas";
 
-    void Start()
+    private Font _font;
+    private OnlineSessionHost _onlineSession;
+    private Text _statusText;
+    private Text _nicknameText;
+    private Button _startButton;
+    private Button _settingsButton;
+    private Button _retryButton;
+
+    private void Awake()
+    {
+        var menuUis = GetComponents<MainMenuUI>();
+        if (menuUis.Length > 0 && menuUis[0] != this)
+        {
+            Destroy(this);
+        }
+    }
+
+    private void Start()
     {
         _font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        BuildUI();
+        BuildUi();
+        BindOnlineSession();
     }
 
-    void BuildUI()
+    private void OnDestroy()
     {
-        // Canvas
-        var canvasGo = new GameObject("MenuCanvas");
-        canvasGo.transform.SetParent(transform);
-        var canvas = canvasGo.AddComponent<Canvas>();
-        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-        canvasGo.AddComponent<CanvasScaler>().referenceResolution = new Vector2(1080, 1920);
-        canvasGo.AddComponent<GraphicRaycaster>();
-
-        // 宣纸背景
-        var bgGo = new GameObject("Background");
-        bgGo.transform.SetParent(canvasGo.transform, false);
-        var bg = bgGo.AddComponent<RawImage>();
-        bg.texture = CreatePaperTexture(1080, 1920);
-        var bgRect = bgGo.GetComponent<RectTransform>();
-        bgRect.anchorMin = Vector2.zero;
-        bgRect.anchorMax = Vector2.one;
-        bgRect.sizeDelta = Vector2.zero;
-
-        // 标题面板
-        var titlePanel = CreatePanel(canvasGo.transform, "TitlePanel", 600, 250);
-        titlePanel.transform.localPosition = new Vector3(0, 500, 0);
-
-        // 游戏标题
-        var titleText = CreateText(titlePanel.transform, "Title", "剑", 120, TextAnchor.MiddleCenter);
-        titleText.color = new Color(0.08f, 0.08f, 0.08f);
-        titleText.rectTransform.anchoredPosition = new Vector2(0, 50);
-        titleText.rectTransform.sizeDelta = new Vector2(500, 140);
-
-        var subTitle = CreateText(titlePanel.transform, "Subtitle", "— 水墨武侠 Roguelite —", 28, TextAnchor.MiddleCenter);
-        subTitle.color = new Color(0.35f, 0.3f, 0.25f);
-        subTitle.rectTransform.anchoredPosition = new Vector2(0, -40);
-        subTitle.rectTransform.sizeDelta = new Vector2(500, 50);
-
-        // 按钮面板
-        var btnPanel = CreatePanel(canvasGo.transform, "BtnPanel", 500, 500);
-        btnPanel.transform.localPosition = new Vector3(0, -200, 0);
-
-        // 按钮
-        CreateMenuButton(btnPanel.transform, "BtnStart", "开始游戏", 48, () =>
+        if (_onlineSession != null)
         {
-            Debug.Log("[MainMenu] 开始游戏");
-            SceneTransitionManager.Instance?.LoadScene("LobbyScene");
-        }, new Vector2(0, 160));
-
-        CreateMenuButton(btnPanel.transform, "BtnRank", "排行榜", 48, () =>
-        {
-            Debug.Log("[MainMenu] 排行榜");
-            // TODO: 打开排行榜界面
-        }, new Vector2(0, 40));
-
-        CreateMenuButton(btnPanel.transform, "BtnSettings", "设置", 48, () =>
-        {
-            Debug.Log("[MainMenu] 设置");
-            SettingsUI.Show();
-        }, new Vector2(0, -80));
-
-        CreateMenuButton(btnPanel.transform, "BtnQuit", "退出", 36, () =>
-        {
-            Debug.Log("[MainMenu] 退出");
-            Application.Quit();
-        }, new Vector2(0, -200));
-
-        // 版本号
-        var versionText = CreateText(canvasGo.transform, "Version", "v0.1.0 alpha", 20, TextAnchor.MiddleCenter);
-        versionText.color = new Color(0.5f, 0.45f, 0.4f);
-        versionText.rectTransform.anchoredPosition = new Vector2(0, -860);
-        versionText.rectTransform.sizeDelta = new Vector2(300, 40);
-    }
-
-    Texture2D CreatePaperTexture(int w, int h)
-    {
-        var tex = new Texture2D(w, h);
-        var colors = new Color32[w * h];
-        var paper = new Color32(245, 240, 232, 255);
-
-        for (int y = 0; y < h; y++)
-        {
-            for (int x = 0; x < w; x++)
-            {
-                var idx = y * w + x;
-                var noise = Mathf.PerlinNoise(x * 0.05f, y * 0.05f);
-                var grain = (byte)(noise * 25);
-                colors[idx] = new Color32((byte)(paper.r - grain), (byte)(paper.g - grain), (byte)(paper.b - grain), 255);
-            }
+            _onlineSession.StateChanged -= HandleSessionStateChanged;
+            _onlineSession = null;
         }
-        tex.SetPixels32(colors);
-        tex.filterMode = FilterMode.Bilinear;
-        tex.Apply();
-        return tex;
+
+        if (_startButton != null)
+        {
+            _startButton.onClick.RemoveListener(StartGame);
+        }
+
+        if (_settingsButton != null)
+        {
+            _settingsButton.onClick.RemoveListener(OpenSettings);
+        }
+
+        if (_retryButton != null)
+        {
+            _retryButton.onClick.RemoveListener(RetrySession);
+        }
     }
 
-    #region UI工具方法
-
-    GameObject CreatePanel(Transform parent, string name, int w, int h)
+    private void BuildUi()
     {
-        var go = new GameObject(name);
-        go.transform.SetParent(parent, false);
-        var rt = go.AddComponent<RectTransform>();
-        rt.sizeDelta = new Vector2(w, h);
-        go.AddComponent<InkPanel>();
-        return go;
+        if (transform.Find(MenuCanvasName) != null)
+        {
+            return;
+        }
+
+        EnsureEventSystem();
+
+        var canvasObject = new GameObject(MenuCanvasName);
+        canvasObject.transform.SetParent(transform, false);
+        var canvas = canvasObject.AddComponent<Canvas>();
+        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        var scaler = canvasObject.AddComponent<CanvasScaler>();
+        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+        scaler.referenceResolution = new Vector2(1080, 1920);
+        scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
+        scaler.matchWidthOrHeight = 0.5f;
+        canvasObject.AddComponent<GraphicRaycaster>();
+
+        var background = CreateImage(canvasObject.transform, "Background", new Color(0.94f, 0.92f, 0.87f));
+        Stretch(background.rectTransform);
+
+        var title = CreateText(canvasObject.transform, "Title", "Main Menu", 64, TextAnchor.MiddleCenter);
+        Place(title.rectTransform, new Vector2(0.5f, 0.76f), new Vector2(680, 100));
+
+        _nicknameText = CreateText(canvasObject.transform, "Nickname", "Guest", 30, TextAnchor.MiddleCenter);
+        Place(_nicknameText.rectTransform, new Vector2(0.5f, 0.67f), new Vector2(600, 52));
+
+        _statusText = CreateText(canvasObject.transform, "Status", "Offline", 24, TextAnchor.MiddleCenter);
+        _statusText.color = new Color(0.25f, 0.25f, 0.25f);
+        Place(_statusText.rectTransform, new Vector2(0.5f, 0.63f), new Vector2(600, 44));
+
+        _startButton = CreateButton(canvasObject.transform, "BtnStart", "Start", new Vector2(0.5f, 0.49f));
+        _startButton.onClick.AddListener(StartGame);
+
+        _settingsButton = CreateButton(canvasObject.transform, "BtnSettings", "Settings", new Vector2(0.5f, 0.40f));
+        _settingsButton.onClick.AddListener(OpenSettings);
+
+        _retryButton = CreateButton(canvasObject.transform, "BtnRetry", "Retry", new Vector2(0.5f, 0.31f));
+        _retryButton.onClick.AddListener(RetrySession);
+        _retryButton.gameObject.SetActive(false);
     }
 
-    Text CreateText(Transform parent, string name, string content, int size, TextAnchor align)
+    private void BindOnlineSession()
     {
-        var go = new GameObject(name);
-        go.transform.SetParent(parent, false);
-        go.AddComponent<RectTransform>();
-        var txt = go.AddComponent<Text>();
-        txt.text = content;
-        txt.fontSize = size;
-        txt.alignment = align;
-        txt.font = _font;
-        return txt;
+        _onlineSession = OnlineSessionHost.Instance;
+        if (_onlineSession == null)
+        {
+            RefreshSessionDisplay(OnlineSessionState.Idle);
+            return;
+        }
+
+        _onlineSession.StateChanged += HandleSessionStateChanged;
+        RefreshSessionDisplay(_onlineSession.State);
     }
 
-    void CreateMenuButton(Transform parent, string name, string text, int fontSize, UnityEngine.Events.UnityAction onClick, Vector2 pos)
+    private void HandleSessionStateChanged(OnlineSessionState state)
     {
-        var go = new GameObject(name);
-        go.transform.SetParent(parent, false);
-        var rt = go.AddComponent<RectTransform>();
-        rt.anchoredPosition = pos;
-        rt.sizeDelta = new Vector2(360, 80);
-
-        var inkBtn = go.AddComponent<InkButton>();
-        inkBtn.buttonText = text;
-        inkBtn.fontSize = fontSize;
-
-        go.GetComponent<Button>().onClick.AddListener(onClick);
+        RefreshSessionDisplay(state);
     }
 
-    #endregion
+    private void RefreshSessionDisplay(OnlineSessionState state)
+    {
+        if (_nicknameText != null)
+        {
+            var nickname = _onlineSession?.Nickname;
+            _nicknameText.text = string.IsNullOrWhiteSpace(nickname) ? "Guest" : nickname;
+        }
+
+        if (_statusText != null)
+        {
+            _statusText.text = _onlineSession == null ? "Offline" : state.ToString();
+        }
+
+        if (_retryButton != null)
+        {
+            _retryButton.gameObject.SetActive(_onlineSession != null && state == OnlineSessionState.Failed);
+        }
+    }
+
+    private void StartGame()
+    {
+        SceneManager.LoadScene("BattleScene", LoadSceneMode.Single);
+    }
+
+    private void OpenSettings()
+    {
+        SettingsUI.Show();
+    }
+
+    private void RetrySession()
+    {
+        _onlineSession?.Retry();
+    }
+
+    private Button CreateButton(Transform parent, string name, string label, Vector2 anchor)
+    {
+        var buttonObject = new GameObject(name);
+        buttonObject.transform.SetParent(parent, false);
+        var rectTransform = buttonObject.AddComponent<RectTransform>();
+        Place(rectTransform, anchor, new Vector2(360, 76));
+        var inkButton = buttonObject.AddComponent<InkButton>();
+        inkButton.buttonText = label;
+        inkButton.fontSize = 32;
+        return buttonObject.GetComponent<Button>();
+    }
+
+    private Text CreateText(Transform parent, string name, string content, int fontSize, TextAnchor alignment)
+    {
+        var textObject = new GameObject(name);
+        textObject.transform.SetParent(parent, false);
+        var text = textObject.AddComponent<Text>();
+        text.font = _font;
+        text.fontSize = fontSize;
+        text.alignment = alignment;
+        text.color = new Color(0.1f, 0.1f, 0.1f);
+        text.text = content;
+        return text;
+    }
+
+    private static Image CreateImage(Transform parent, string name, Color color)
+    {
+        var imageObject = new GameObject(name);
+        imageObject.transform.SetParent(parent, false);
+        var image = imageObject.AddComponent<Image>();
+        image.color = color;
+        return image;
+    }
+
+    private static void Place(RectTransform rectTransform, Vector2 anchor, Vector2 size)
+    {
+        rectTransform.anchorMin = anchor;
+        rectTransform.anchorMax = anchor;
+        rectTransform.pivot = new Vector2(0.5f, 0.5f);
+        rectTransform.anchoredPosition = Vector2.zero;
+        rectTransform.sizeDelta = size;
+    }
+
+    private static void Stretch(RectTransform rectTransform)
+    {
+        rectTransform.anchorMin = Vector2.zero;
+        rectTransform.anchorMax = Vector2.one;
+        rectTransform.offsetMin = Vector2.zero;
+        rectTransform.offsetMax = Vector2.zero;
+    }
+
+    private static void EnsureEventSystem()
+    {
+        if (FindObjectOfType<EventSystem>() != null)
+        {
+            return;
+        }
+
+        var eventSystemObject = new GameObject("EventSystem");
+        eventSystemObject.AddComponent<EventSystem>();
+        eventSystemObject.AddComponent<StandaloneInputModule>();
+    }
 }

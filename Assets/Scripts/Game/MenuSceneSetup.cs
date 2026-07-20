@@ -1,61 +1,61 @@
 using UnityEngine;
-using Game.Managers;
-using Game;
 
-/// <summary>
-/// 主菜单场景启动器 — 初始化场景管理器 + 显示登录/菜单
-/// </summary>
-public class MenuSceneSetup : MonoBehaviour
+public sealed class MenuSceneSetup : MonoBehaviour
 {
-    void Awake()
+    private const string PresentationRootName = "[MenuScene]";
+
+    private void Awake()
     {
-        if (GameApplication.HasInstance)
+        var presentationRoot = FindPresentationRoot();
+        if (presentationRoot == null)
         {
-            Debug.LogWarning($"[{nameof(MenuSceneSetup)}] Disabled because GameApplication owns startup.");
-            enabled = false;
+            gameObject.name = PresentationRootName;
             return;
         }
 
-        // 确保场景管理器存在
-        if (SceneTransitionManager.Instance == null)
+        if (presentationRoot != gameObject)
         {
-            var go = new GameObject("SceneTransitionManager");
-            go.AddComponent<SceneTransitionManager>();
-        }
-
-        // 确保网络基础设施存在
-        // Transitional legacy setup remains available only when GameApplication is absent.
-#pragma warning disable CS0618
-        if (HeartbeatManager.Instance == null)
-        {
-            var go = new GameObject("HeartbeatManager");
-            go.AddComponent<HeartbeatManager>();
-        }
-
-        if (ReconnectionManager.Instance == null)
-        {
-            var go = new GameObject("ReconnectionManager");
-            go.AddComponent<ReconnectionManager>();
-        }
-
-        // 初始化 LoginManager（如果不存在）
-#pragma warning restore CS0618
-
-        if (LoginManager.Instance == null)
-        {
-            var go = new GameObject("LoginManager");
-            go.AddComponent<LoginManager>();
+            Destroy(gameObject);
         }
     }
 
-    void Start()
+    private void Start()
     {
-        // 显示登录界面
-        // LoginManager 登录成功后，由 MainMenuUI 接管显示
-        var loginGo = new GameObject("LoginUI");
-        loginGo.AddComponent<LoginUI>().loginManager = LoginManager.Instance;
+        var presentationRoot = FindPresentationRoot();
+        if (presentationRoot == null)
+        {
+            gameObject.name = PresentationRootName;
+            presentationRoot = gameObject;
+        }
 
-        // 登录成功后的事件（在LoginManager中触发）
-        // 这里暂且同时准备好 MainMenuUI（在登录成功后切换）
+        if (presentationRoot != gameObject)
+        {
+            return;
+        }
+
+        var menuUis = GetComponents<MainMenuUI>();
+        if (menuUis.Length == 0)
+        {
+            gameObject.AddComponent<MainMenuUI>();
+            return;
+        }
+
+        for (var index = 1; index < menuUis.Length; index++)
+        {
+            Destroy(menuUis[index]);
+        }
+    }
+
+    private static GameObject FindPresentationRoot()
+    {
+        foreach (var root in UnityEngine.SceneManagement.SceneManager.GetActiveScene().GetRootGameObjects())
+        {
+            if (root.name == PresentationRootName)
+            {
+                return root;
+            }
+        }
+
+        return null;
     }
 }

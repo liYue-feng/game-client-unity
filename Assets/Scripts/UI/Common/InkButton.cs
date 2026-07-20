@@ -63,7 +63,9 @@ public class InkButton : MonoBehaviour
         _label.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         _label.raycastTarget = false;
 
-        var lrt = labelObj.AddComponent<RectTransform>();
+        var lrt = labelObj.GetComponent<RectTransform>();
+        if (lrt == null)
+            lrt = labelObj.AddComponent<RectTransform>();
         lrt.anchorMin = Vector2.zero;
         lrt.anchorMax = Vector2.one;
         lrt.offsetMin = Vector2.zero;
