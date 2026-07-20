@@ -10,7 +10,7 @@ public class GameOverUI : MonoBehaviour
 
     public event Action OnRestart;
     public event Action OnBackToMenu;
-    public event Action OnRetry;
+    public event Func<bool> OnRetry;
 
     private GameObject _overlay;
     private Text _resultText;
@@ -131,7 +131,7 @@ public class GameOverUI : MonoBehaviour
             "\u8fd4\u56de\u4e3b\u83dc\u5355",
             () => OnBackToMenu?.Invoke(),
             new Vector2(130, -205));
-        _retryButton = CreateInkButton(panel.transform, "BtnRetry", "\u91cd\u8bd5", () => OnRetry?.Invoke(), new Vector2(0, -205));
+        _retryButton = CreateInkButton(panel.transform, "BtnRetry", "\u91cd\u8bd5", RetrySettlement, new Vector2(0, -205));
     }
 
     private Texture2D MakeOverlayTexture(int width, int height)
@@ -248,6 +248,14 @@ public class GameOverUI : MonoBehaviour
         _retryButton.interactable = failed;
         _statusText.text = saved ? "\u7ed3\u7b97\u5b8c\u6210" : failed ? "\u7ed3\u7b97\u5931\u8d25" : "\u7ed3\u7b97\u4e2d";
         _rewardText.text = saved ? $"\u91d1\u5e01 {result.RewardGold}  \u7ecf\u9a8c {result.RewardExp}" : string.Empty;
+    }
+
+    private void RetrySettlement()
+    {
+        if (SettlementState == BattleSettlementState.Failed && OnRetry?.Invoke() == true)
+        {
+            SetSettlementState(BattleSettlementState.Pending, null);
+        }
     }
 
     private void OnDestroy()

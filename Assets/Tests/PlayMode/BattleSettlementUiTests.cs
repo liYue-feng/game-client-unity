@@ -18,6 +18,8 @@ namespace Game.Tests.PlayMode
     public sealed class BattleSettlementUiTests
     {
         private static int _kill100ProgressUpdates;
+        private static bool _retryAccepted;
+        private static int _retryAttempts;
         private const BindingFlags InstanceFlags =
             BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
 
@@ -100,6 +102,66 @@ namespace Game.Tests.PlayMode
             AssertText(gameOver, "BtnRetry/Label", "\u91cd\u8bd5");
             AssertActiveButtonsDoNotOverlap(gameOver);
             yield return Capture(canvas, camera, "task-6-ui-failed.png");
+        }
+
+        [UnityTest]
+        public IEnumerator RetryButtonReturnsToPendingOnlyWhenRetryIsAccepted()
+        {
+            yield return SceneManager.LoadSceneAsync("BattleScene", LoadSceneMode.Single);
+            yield return WaitForGameOverUi();
+
+            var gameOver = FindGameOverUi();
+            Invoke(gameOver, "DisplayGameOver", false, new CombatResultData());
+            Invoke(gameOver, "SetSettlementResult", CreateResult(BattleSettlementState.Failed, 0, 0));
+            var retryEvent = gameOver.GetType().GetEvent("OnRetry", InstanceFlags);
+            Assert.That(retryEvent, Is.Not.Null);
+            _retryAccepted = true;
+            _retryAttempts = 0;
+            var retryHandler = CreateRetryHandler(retryEvent.EventHandlerType);
+            retryEvent.AddEventHandler(gameOver, retryHandler);
+            try
+            {
+                FindButton(gameOver, "BtnRetry").onClick.Invoke();
+                yield return null;
+
+                Assert.That(_retryAttempts, Is.EqualTo(1));
+                AssertState(gameOver, BattleSettlementState.Pending, false, false, false);
+                AssertText(gameOver, "SettlementStatus", "\u7ed3\u7b97\u4e2d");
+            }
+            finally
+            {
+                retryEvent.RemoveEventHandler(gameOver, retryHandler);
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator RetryButtonKeepsFailedStateWhenRetryIsRejected()
+        {
+            yield return SceneManager.LoadSceneAsync("BattleScene", LoadSceneMode.Single);
+            yield return WaitForGameOverUi();
+
+            var gameOver = FindGameOverUi();
+            Invoke(gameOver, "DisplayGameOver", false, new CombatResultData());
+            Invoke(gameOver, "SetSettlementResult", CreateResult(BattleSettlementState.Failed, 0, 0));
+            var retryEvent = gameOver.GetType().GetEvent("OnRetry", InstanceFlags);
+            Assert.That(retryEvent, Is.Not.Null);
+            _retryAccepted = false;
+            _retryAttempts = 0;
+            var retryHandler = CreateRetryHandler(retryEvent.EventHandlerType);
+            retryEvent.AddEventHandler(gameOver, retryHandler);
+            try
+            {
+                FindButton(gameOver, "BtnRetry").onClick.Invoke();
+                yield return null;
+
+                Assert.That(_retryAttempts, Is.EqualTo(1));
+                AssertState(gameOver, BattleSettlementState.Failed, false, false, true);
+                AssertText(gameOver, "SettlementStatus", "\u7ed3\u7b97\u5931\u8d25");
+            }
+            finally
+            {
+                retryEvent.RemoveEventHandler(gameOver, retryHandler);
+            }
         }
 
         [UnityTest]
@@ -319,6 +381,26 @@ namespace Game.Tests.PlayMode
                 nameof(CountKill100Progress), BindingFlags.Static | BindingFlags.NonPublic);
             return Expression.Lambda(handlerType,
                 Expression.Call(method, Expression.Convert(parameter, typeof(object))), parameter).Compile();
+        }
+
+        private static Delegate CreateRetryHandler(Type handlerType)
+        {
+            var invoke = handlerType.GetMethod("Invoke");
+            Assert.That(invoke, Is.Not.Null);
+            Assert.That(invoke.GetParameters(), Is.Empty);
+            var method = typeof(BattleSettlementUiTests).GetMethod(
+                nameof(HandleRetryRequest), BindingFlags.Static | BindingFlags.NonPublic);
+            var call = Expression.Call(method);
+            var body = invoke.ReturnType == typeof(bool)
+                ? (Expression)call
+                : Expression.Block(call, Expression.Empty());
+            return Expression.Lambda(handlerType, body).Compile();
+        }
+
+        private static bool HandleRetryRequest()
+        {
+            _retryAttempts++;
+            return _retryAccepted;
         }
 
         private static void CountKill100Progress(object achievement)

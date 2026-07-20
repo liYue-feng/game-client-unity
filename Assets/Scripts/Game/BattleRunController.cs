@@ -269,12 +269,9 @@ public sealed class BattleRunController : MonoBehaviour, IDisposable
         }
     }
 
-    private void RetrySettlement()
+    private bool RetrySettlement()
     {
-        if (!_disposed)
-        {
-            _settlementGateway.Retry();
-        }
+        return !_disposed && _settlementGateway.Retry();
     }
 
     private void OnDestroy()
