@@ -162,12 +162,26 @@ namespace Game.Tests.PlayMode
             var gameOver = FindUniqueActiveSceneComponent("GameOverUI");
             var canvas = gameOver.GetComponentsInChildren<Canvas>(true).SingleOrDefault();
             Assert.That(canvas, Is.Not.Null);
-            Assert.That(FindDescendant(gameOver.transform, "ResultPanel"), Is.Not.Null);
+            var resultPanel = FindDescendant(gameOver.transform, "ResultPanel");
+            Assert.That(resultPanel, Is.Not.Null);
             Assert.That(FindDescendant(gameOver.transform, "Title"), Is.Not.Null);
             var buttons = gameOver.GetComponentsInChildren<Button>(true);
             Assert.That(buttons, Has.Length.EqualTo(2));
             Assert.That(buttons.Select(button => button.gameObject.name),
                 Is.EquivalentTo(new[] { "BtnRestart", "BtnMainMenu" }));
+            var panelRect = resultPanel.GetComponent<RectTransform>();
+            var restartRect = FindDescendant(gameOver.transform, "BtnRestart").GetComponent<RectTransform>();
+            var menuRect = FindDescendant(gameOver.transform, "BtnMainMenu").GetComponent<RectTransform>();
+            var restartBounds = GetBoundsInParent(restartRect, panelRect);
+            var menuBounds = GetBoundsInParent(menuRect, panelRect);
+            Assert.That(panelRect.rect.Contains(restartBounds.min), Is.True);
+            Assert.That(panelRect.rect.Contains(restartBounds.max), Is.True);
+            Assert.That(panelRect.rect.Contains(menuBounds.min), Is.True);
+            Assert.That(panelRect.rect.Contains(menuBounds.max), Is.True);
+            Assert.That(restartBounds.Overlaps(menuBounds), Is.False);
+            var upperBounds = restartBounds.center.y > menuBounds.center.y ? restartBounds : menuBounds;
+            var lowerBounds = restartBounds.center.y > menuBounds.center.y ? menuBounds : restartBounds;
+            Assert.That(upperBounds.yMin - lowerBounds.yMax, Is.GreaterThan(0f));
 
             var camera = Camera.main;
             Assert.That(camera, Is.Not.Null);
@@ -457,6 +471,23 @@ namespace Game.Tests.PlayMode
             return root.GetComponentsInChildren<Transform>(true)
                 .FirstOrDefault(item => item.name == objectName)
                 ?.gameObject;
+        }
+
+        private static Rect GetBoundsInParent(RectTransform child, RectTransform parent)
+        {
+            var corners = new Vector3[4];
+            child.GetWorldCorners(corners);
+            var first = parent.InverseTransformPoint(corners[0]);
+            var min = new Vector2(first.x, first.y);
+            var max = min;
+            for (var index = 1; index < corners.Length; index++)
+            {
+                var local = parent.InverseTransformPoint(corners[index]);
+                min = Vector2.Min(min, local);
+                max = Vector2.Max(max, local);
+            }
+
+            return Rect.MinMaxRect(min.x, min.y, max.x, max.y);
         }
 
         private static object GetFieldValue(Component component, string fieldName)

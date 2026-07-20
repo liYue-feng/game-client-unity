@@ -165,24 +165,36 @@ public sealed class BattleRunController : MonoBehaviour, IDisposable
 
     public void Restart()
     {
-        if (_disposed || !_runState.BeginRestart())
+        if (_disposed)
+        {
+            return;
+        }
+
+        var transition = SceneTransitionManager.Instance;
+        if (transition == null || !_runState.BeginRestart())
         {
             return;
         }
 
         Dispose();
-        SceneTransitionManager.Instance.LoadScene("BattleScene");
+        transition.LoadScene("BattleScene");
     }
 
     public void ReturnToMainMenu()
     {
-        if (_disposed || !_runState.BeginRestart())
+        if (_disposed)
+        {
+            return;
+        }
+
+        var transition = SceneTransitionManager.Instance;
+        if (transition == null || !_runState.BeginRestart())
         {
             return;
         }
 
         Dispose();
-        SceneTransitionManager.Instance.GoToMainMenu();
+        transition.GoToMainMenu();
     }
 
     public void Dispose()

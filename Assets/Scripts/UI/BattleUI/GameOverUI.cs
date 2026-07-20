@@ -147,8 +147,11 @@ public class GameOverUI : MonoBehaviour
     {
         var panel = new GameObject(objectName);
         panel.transform.SetParent(parent, false);
-        panel.AddComponent<RectTransform>().sizeDelta = new Vector2(width, height);
-        panel.AddComponent<InkPanel>();
+        var rect = panel.AddComponent<RectTransform>();
+        var inkPanel = panel.AddComponent<InkPanel>();
+        inkPanel.panelWidth = width;
+        inkPanel.panelHeight = height;
+        rect.sizeDelta = new Vector2(width, height);
         return panel;
     }
 
@@ -180,6 +183,9 @@ public class GameOverUI : MonoBehaviour
         var buttonObject = new GameObject(objectName);
         buttonObject.transform.SetParent(parent, false);
         var rect = buttonObject.AddComponent<RectTransform>();
+        rect.anchorMin = new Vector2(0.5f, 0.5f);
+        rect.anchorMax = new Vector2(0.5f, 0.5f);
+        rect.pivot = new Vector2(0.5f, 0.5f);
         rect.anchoredPosition = position;
         rect.sizeDelta = new Vector2(240, 60);
         var background = buttonObject.AddComponent<Image>();

@@ -574,6 +574,64 @@ namespace Game.Tests.PlayMode
                                    && item.scene == SceneManager.GetActiveScene()
                                    && item.name == "MenuCanvas"),
                 Is.EqualTo(1));
+
+            yield return LoadBattleScene();
+        }
+
+        [UnityTest]
+        public IEnumerator TerminalNavigationButtonsFailClosedWithoutSceneTransitionManager()
+        {
+            yield return LoadBattleScene();
+
+            DisableActiveEnemyBehaviours();
+            var run = FindActiveSceneComponent("BattleRunController");
+            var player = GameObject.Find("Player");
+            var hurtbox = FindComponent(player, "Hurtbox");
+            var transition = FindUniqueLoadedComponent("SceneTransitionManager");
+            var transitionInstanceField = transition.GetType().GetField(
+                "_instance",
+                BindingFlags.Static | BindingFlags.NonPublic);
+            Assert.That(transitionInstanceField, Is.Not.Null);
+
+            var lethalOutcome = ResolveCombatHit(
+                hurtbox,
+                new CombatHit(100000, 1f, 3f, false, new RecordingParryResponder()),
+                null,
+                "EnemyMelee",
+                "Heavy",
+                1);
+            Assert.That(lethalOutcome.Result, Is.EqualTo(CombatHitResult.Damaged));
+            Assert.That(GetPropertyValue(run, "Outcome").ToString(), Is.EqualTo("Defeat"));
+            Assert.That(Time.timeScale, Is.EqualTo(0f).Within(0.0001f));
+
+            var gameOver = FindActiveSceneComponent("GameOverUI");
+            var menuButton = FindDescendant(gameOver.transform, "BtnMainMenu")?.GetComponent<Button>();
+            var restartButton = FindDescendant(gameOver.transform, "BtnRestart")?.GetComponent<Button>();
+            Assert.That(menuButton, Is.Not.Null);
+            Assert.That(restartButton, Is.Not.Null);
+
+            try
+            {
+                transitionInstanceField.SetValue(null, null);
+                LogAssert.Expect(LogType.Error, "[SceneTransitionManager] Service is not installed by GameApplication.");
+                LogAssert.Expect(LogType.Error, "[SceneTransitionManager] Service is not installed by GameApplication.");
+
+                menuButton.onClick.Invoke();
+                Assert.That(GetBoolProperty(run, "IsDisposed"), Is.False);
+                Assert.That(Time.timeScale, Is.EqualTo(0f).Within(0.0001f));
+                Assert.That(SceneManager.GetActiveScene().name, Is.EqualTo("BattleScene"));
+
+                restartButton.onClick.Invoke();
+                Assert.That(GetBoolProperty(run, "IsDisposed"), Is.False);
+                Assert.That(Time.timeScale, Is.EqualTo(0f).Within(0.0001f));
+                Assert.That(SceneManager.GetActiveScene().name, Is.EqualTo("BattleScene"));
+            }
+            finally
+            {
+                transitionInstanceField.SetValue(null, transition);
+            }
+
+            yield return LoadBattleScene();
         }
 
         [UnityTest]
