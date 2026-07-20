@@ -36,6 +36,11 @@ namespace Game
                 throw new ArgumentNullException(nameof(settings));
             }
 
+            if (settings.RuntimeMode == RuntimeMode.Online && OnlineSessionHost.Instance != null)
+            {
+                throw new InvalidOperationException("Online GameServices are already installed.");
+            }
+
             var rootObject = new GameObject("[GameServices]");
             rootObject.transform.SetParent(applicationRoot, false);
             var services = new GameServices(rootObject);

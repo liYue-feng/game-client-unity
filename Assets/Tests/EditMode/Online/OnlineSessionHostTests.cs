@@ -131,9 +131,7 @@ namespace Game.Tests.EditMode.Online
         [Test]
         public void OnlineGameServicesCreateInstallsHostUnderServiceRootAndShutdownRemovesIt()
         {
-            _host.Shutdown();
-            Object.DestroyImmediate(_host.gameObject);
-            _host = null;
+            RemoveFixtureHost();
 
             var applicationRoot = new GameObject("online-game-services-root");
             var settings = CreateOnlineSettings();
@@ -171,11 +169,67 @@ namespace Game.Tests.EditMode.Online
             }
         }
 
+        [Test]
+        public void DuplicateOnlineGameServicesPreflightPreservesTheLiveServiceGraph()
+        {
+            RemoveFixtureHost();
+            var firstRoot = new GameObject("first-online-game-services-root");
+            var secondRoot = new GameObject("second-online-game-services-root");
+            var firstSettings = CreateOnlineSettings();
+            var secondSettings = CreateOnlineSettings();
+            object firstServices = null;
+            try
+            {
+                firstServices = InvokeGameServicesCreate(
+                    firstRoot.transform,
+                    firstSettings,
+                    new FakeWebSocketTransportFactory(),
+                    new FakeLoginCodeProvider());
+                var dispatcher = MainThreadDispatcher.Instance;
+                var networkHost = NetworkConnectionControllerHost.Instance;
+                var client = NetworkClient.Instance;
+                var onlineHost = OnlineSessionHost.Instance;
+
+                var invocation = Assert.Throws<TargetInvocationException>(() =>
+                    InvokeGameServicesCreate(
+                        secondRoot.transform,
+                        secondSettings,
+                        new FakeWebSocketTransportFactory(),
+                        new FakeLoginCodeProvider()));
+
+                Assert.That(invocation.InnerException, Is.TypeOf<InvalidOperationException>());
+                Assert.That(MainThreadDispatcher.Instance, Is.SameAs(dispatcher));
+                Assert.That(NetworkConnectionControllerHost.Instance, Is.SameAs(networkHost));
+                Assert.That(NetworkClient.Instance, Is.SameAs(client));
+                Assert.That(OnlineSessionHost.Instance, Is.SameAs(onlineHost));
+                Assert.That(FindObjectsNamed("[GameServices]"), Has.Count.EqualTo(1));
+            }
+            finally
+            {
+                if (firstServices != null)
+                {
+                    InvokeShutdown(firstServices);
+                }
+
+                Object.DestroyImmediate(firstRoot);
+                Object.DestroyImmediate(secondRoot);
+                Object.DestroyImmediate(firstSettings);
+                Object.DestroyImmediate(secondSettings);
+            }
+        }
+
         private static OnlineSessionCoordinator GetCoordinator(OnlineSessionHost host)
         {
             return typeof(OnlineSessionHost)
                 .GetField("_coordinator", BindingFlags.Instance | BindingFlags.NonPublic)
                 .GetValue(host) as OnlineSessionCoordinator;
+        }
+
+        private void RemoveFixtureHost()
+        {
+            _host.Shutdown();
+            Object.DestroyImmediate(_host.gameObject);
+            _host = null;
         }
 
         private static OnlineSessionHost InvokeInjectedHostInstall(
