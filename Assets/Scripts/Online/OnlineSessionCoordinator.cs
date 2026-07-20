@@ -172,6 +172,11 @@ namespace Game.Online
             _client.ClearLoginInfo();
             CancelActiveOperations();
             TransitionTo(OnlineSessionState.Connecting);
+            if (!IsActive || State != OnlineSessionState.Connecting)
+            {
+                return;
+            }
+
             _connection.Connect(_serverUrl);
         }
 

@@ -49,6 +49,7 @@ namespace Game
                     serverUrl = settings.ServerUrl
                 };
                 NetworkClient.RegisterInstance(client);
+                services._networkClient = client;
                 var networkHost = NetworkConnectionControllerHost.Install(
                     root,
                     client,
@@ -68,7 +69,6 @@ namespace Game
                 var audio = AudioManager.Install(root);
                 var loading = LoadingScreen.Install(root);
                 var achievements = AchievementManager.Install(root);
-                services._networkClient = client;
 
                 var lifecycle = new System.Collections.Generic.List<IGameService>
                 {
@@ -114,6 +114,9 @@ namespace Game
                 }
             }
 
+            OnlineSession?.Shutdown();
+            OnlineSession = null;
+
             if (_networkClient != null)
             {
                 NetworkClient.UnregisterInstance(_networkClient);
@@ -122,8 +125,6 @@ namespace Game
             }
 
             NetworkClient.ResetStaticState();
-            OnlineSessionHost.ResetStaticState();
-            OnlineSession = null;
             MainThreadDispatcher.ResetStaticState();
             SceneTransitionManager.ResetStaticState();
             AudioManager.ResetStaticState();

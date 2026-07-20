@@ -85,6 +85,50 @@ namespace Game.Tests.EditMode.Online
         }
 
         [Test]
+        public void ShutdownFromConnectingListenerPreventsTheConnectionCommand()
+        {
+            _host.Initialize();
+            _host.StateChanged += state =>
+            {
+                if (state == OnlineSessionState.Connecting)
+                {
+                    _host.Shutdown();
+                }
+            };
+
+            _host.StartSession();
+
+            Assert.That(_connection.ConnectCalls, Is.Zero);
+            Assert.That(_connection.DisconnectCalls, Is.EqualTo(1));
+            Assert.That(_host.State, Is.EqualTo(OnlineSessionState.Stopped));
+            Assert.That(OnlineSessionHost.Instance, Is.Null);
+        }
+
+        [Test]
+        public void FailedDuplicateGameServicesCompositionDoesNotClearExistingHostOwnership()
+        {
+            var applicationRoot = new GameObject("duplicate-online-game-services-root");
+            var settings = CreateOnlineSettings();
+            var transportFactory = new FakeWebSocketTransportFactory();
+            var provider = new FakeLoginCodeProvider();
+            try
+            {
+                var invocation = Assert.Throws<TargetInvocationException>(() =>
+                    InvokeGameServicesCreate(applicationRoot.transform, settings, transportFactory, provider));
+
+                Assert.That(invocation.InnerException, Is.TypeOf<InvalidOperationException>());
+                Assert.That(OnlineSessionHost.Instance, Is.SameAs(_host));
+                Assert.That(_host.State, Is.EqualTo(OnlineSessionState.Idle));
+                Assert.That(FindObjectsNamed("[OnlineSessionHost]"), Has.Count.EqualTo(1));
+            }
+            finally
+            {
+                Object.DestroyImmediate(applicationRoot);
+                Object.DestroyImmediate(settings);
+            }
+        }
+
+        [Test]
         public void OnlineGameServicesCreateInstallsHostUnderServiceRootAndShutdownRemovesIt()
         {
             _host.Shutdown();
