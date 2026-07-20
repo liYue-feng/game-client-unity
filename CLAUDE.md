@@ -85,12 +85,12 @@ game_client_unity/
 
 - Phase A2 已建立自动 Offline 生命周期：`RuntimeBootstrap -> [GameApplication] -> [GameServices]`，仅应用根跨场景持久化；`Assets/Resources/GameRuntimeSettings.asset` 仍以 Offline 为默认模式，启动后直接进入 `BattleScene`，且不创建 `OnlineSessionHost` 或旧 `LoginManager`/`ArchiveManager`
 - Phase A3 已完成 service-owned 网络边界：`NetworkClient`、WebSocket transport、主线程 dispatcher、连接 host 及唯一心跳/重连策略均有自动测试；A3 收口验证为 EditMode `88/88`、PlayMode `11/11`
-- Phase A4 已交付 Online 启动闭环：`GameApplication -> OnlineSessionHost -> OnlineSessionCoordinator -> Connect -> Login -> LoadArchive -> MenuScene`；重连后由同一个 generation-safe coordinator 重新认证和加载存档，失败或超时不会加载半初始化菜单
+- Phase A4 已交付 Online 启动闭环：`GameApplication -> OnlineSessionHost -> OnlineSessionCoordinator -> Connect -> Login -> LoadArchive -> MenuScene`；重连后由同一个 generation-safe coordinator 重新认证和加载存档，业务失败会先清理旧 transport，Retry 使用新连接代际，失败或超时不会加载半初始化菜单
 - `MenuScene` 与 `BattleScene` 已按此顺序加入 Build Settings；主菜单提供开始战斗、场景内空排行榜、设置和安全退出命令，排行榜不会创建 `RankManager`，开始战斗进入 `BattleScene`，返回菜单统一进入 `MenuScene`
 - 终局 UI 同时提供 Restart 和返回菜单；`BattleRunController` 在释放冻结、输入和时间状态前先验证场景跳转服务，服务不可用时 fail closed，成功时至多跳转一次并回到唯一 `MenuCanvas`
 - `InkPanel.Configure` 按最终尺寸重建单一 `RawImage` 纹理；组件只销毁自身创建的纹理，保留外部提供或替换的纹理，关闭排行榜和销毁结果面板时不会越权释放资源
 - 本地开发后端联调命令为 `& .\tools\integration\Invoke-A4BackendIntegration.ps1 -BackendRoot 'E:\Own_project\game-server-go'`；它使用 `configs/config.dev.yaml`、`dev:integration-client` 和 `ws://127.0.0.1:8080/ws` 验证真实登录、存档保存与重新加载，并在退出时清理精确进程、端口和环境变量
-- A4 最终规范审查和质量审查均为 APPROVED；修复后全新回归为资源完整性 PASS、Pester `5/5`、EditMode `208/208`、常规 PlayMode `98` passed + `1` 个 opt-in real-backend skip、真实后端 PlayMode `1/1`；交付代码 head 为 `a69bff4`，Go 后端为 `88cae82`
+- A4 最终规范审查和质量审查均为 APPROVED；修复后全新回归为资源完整性 PASS、Pester `5/5`、EditMode `210/210`、常规 PlayMode `98` passed + `1` 个 opt-in real-backend skip、真实后端 PlayMode `1/1`；交付代码 head 为 `1b9b7d8`，Go 后端为 `88cae82`
 - Phase B1 已建立可玩的离线战斗权威：`CombatHit` 是命中/弹反唯一契约，`BattleTimeController` 是唯一 `Time.timeScale` 写入者，场景内 `ObjectPool`/`DamageNumberPool`/`WaveSpawner` 随战局释放；左向攻击会在攻击开始时镜像真实 hitbox，武器 teardown 不会懒创建替代池
 - `BattleRunController` 统一 Victory/Defeat/Restart/返回菜单；终局冻结动作、移动与热键，重开后 Player、Pool、Spawner、UI、EventSystem 和时间状态均为新战局，返回菜单会释放战局状态后进入 `MenuScene`
 - B1 自动截图探针已生成并由父级最终批准 `Logs/phase-b1-combat.png` 与 `Logs/phase-b1-result.png`，两图均为 960x540；combat 为 dark `2639`、chromatic `117796`、variance `304.99`、Player `57.60px`、Grunt `48.00px`、SHA-256 `59E202689676AE66397A1315A4B014C0BF777FB890314AEDF61BD457F1941E93`，result 为 dark `297973`、light `217068`、variance `6281.16`、SHA-256 `9FA4EC1CCE2B36D3B935DC2D133A6B36445038446843AFCF6E3D52AC9932F966`
