@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using System.Reflection;
+using System.Text.RegularExpressions;
 using Game.Core;
 using Game.Gameplay;
 using Game.Network;
@@ -11,6 +12,7 @@ using Game.Tests.EditMode.Online.TestDoubles;
 using NUnit.Framework;
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.TestTools;
 using Object = UnityEngine.Object;
 
 namespace Game.Tests.EditMode.Online
@@ -179,6 +181,97 @@ namespace Game.Tests.EditMode.Online
         }
 
         [Test]
+        public void MainArchiveSaveOwnsItsAcknowledgementWhileBattleWaitsForArchiveRetry()
+        {
+            CompleteOnlineSession(new PlayerArchive { Gold = 7 });
+            BattleSettlementResult battleResult = null;
+
+            Assert.That(_host.SaveArchive(new PlayerArchive { Gold = 21 }), Is.True);
+            _host.BattleSettlement.Settle(BattleRunOutcome.Victory,
+                new CombatResultData { killCount = 2, playerLevel = 1 }, value => battleResult = value);
+            var request = DecodeLastCombatRequest();
+            _client.ReceiveFrame(Codec.Encode(MsgID.CombatResultResp, new CombatResultResp
+            {
+                Success = true,
+                RunId = request.RunId,
+                Archive = new PlayerArchive { Gold = 44 }
+            }));
+
+            Assert.That(battleResult?.State, Is.EqualTo(BattleSettlementState.Failed));
+            Assert.That(_host.State, Is.EqualTo(OnlineSessionState.Ready));
+            Assert.That(SaveRequestCount(), Is.EqualTo(1));
+            _client.ReceiveFrame(Codec.Encode(MsgID.SaveArchiveResp, new SaveArchiveResp { Success = true }));
+            Assert.That(_host.Progress.Gold, Is.EqualTo(21));
+
+            var combatRequestsBeforeRetry = CombatRequestCount();
+            Assert.That(_host.BattleSettlement.Retry(), Is.True);
+            Assert.That(CombatRequestCount(), Is.EqualTo(combatRequestsBeforeRetry));
+            Assert.That(SaveRequestCount(), Is.EqualTo(2));
+            _client.ReceiveFrame(Codec.Encode(MsgID.SaveArchiveResp, new SaveArchiveResp { Success = true }));
+
+            Assert.That(battleResult?.State, Is.EqualTo(BattleSettlementState.Saved));
+            Assert.That(_host.Progress.Gold, Is.EqualTo(44));
+            Assert.That(_host.State, Is.EqualTo(OnlineSessionState.Ready));
+        }
+
+        [Test]
+        public void BattleArchiveSaveOwnsItsAcknowledgementWhileMainSaveIsRejectedWithoutPoisoningSession()
+        {
+            CompleteOnlineSession(new PlayerArchive { Gold = 7 });
+            BattleSettlementResult battleResult = null;
+            _host.BattleSettlement.Settle(BattleRunOutcome.Victory,
+                new CombatResultData { killCount = 2, playerLevel = 1 }, value => battleResult = value);
+            var request = DecodeLastCombatRequest();
+            _client.ReceiveFrame(Codec.Encode(MsgID.CombatResultResp, new CombatResultResp
+            {
+                Success = true,
+                RunId = request.RunId,
+                Archive = new PlayerArchive { Gold = 44 }
+            }));
+
+            Assert.That(_host.SaveArchive(new PlayerArchive { Gold = 21 }), Is.False);
+            Assert.That(_host.State, Is.EqualTo(OnlineSessionState.Ready));
+            Assert.That(_host.Progress.Gold, Is.EqualTo(7));
+            Assert.That(SaveRequestCount(), Is.EqualTo(1));
+            _client.ReceiveFrame(Codec.Encode(MsgID.SaveArchiveResp, new SaveArchiveResp { Success = true }));
+
+            Assert.That(battleResult?.State, Is.EqualTo(BattleSettlementState.Saved));
+            Assert.That(_host.Progress.Gold, Is.EqualTo(44));
+            Assert.That(_host.State, Is.EqualTo(OnlineSessionState.Ready));
+            Assert.That(_connection.DisconnectCalls, Is.Zero);
+        }
+
+        [Test]
+        public void ThrowingArchiveSavedObserverDoesNotBlockOtherObserversCompletionOrNextBattle()
+        {
+            CompleteOnlineSession(new PlayerArchive { Gold = 7 });
+            BattleSettlementResult firstResult = null;
+            var laterObservers = 0;
+            _host.ArchiveSaved += () => throw new InvalidOperationException("observer failed");
+            _host.ArchiveSaved += () => laterObservers++;
+            LogAssert.Expect(LogType.Exception, new Regex("observer failed"));
+
+            _host.BattleSettlement.Settle(BattleRunOutcome.Victory,
+                new CombatResultData { killCount = 2, playerLevel = 1 }, value => firstResult = value);
+            var first = DecodeLastCombatRequest();
+            _client.ReceiveFrame(Codec.Encode(MsgID.CombatResultResp, new CombatResultResp
+            {
+                Success = true,
+                RunId = first.RunId,
+                Archive = new PlayerArchive { Gold = 44 }
+            }));
+            _client.ReceiveFrame(Codec.Encode(MsgID.SaveArchiveResp, new SaveArchiveResp { Success = true }));
+
+            Assert.That(laterObservers, Is.EqualTo(1));
+            Assert.That(firstResult?.State, Is.EqualTo(BattleSettlementState.Saved));
+            _host.BattleSettlement.Settle(BattleRunOutcome.Defeat,
+                new CombatResultData { killCount = 1, playerLevel = 1 }, _ => { });
+            var second = DecodeLastCombatRequest();
+            Assert.That(second.RunId, Is.Not.EqualTo(first.RunId));
+            Assert.That(CombatRequestCount(), Is.EqualTo(2));
+        }
+
+        [Test]
         public void ShutdownIsIdempotentClearsInstanceDisconnectsAndMakesCallbacksInert()
         {
             var stateChanges = 0;
@@ -338,6 +431,44 @@ namespace Game.Tests.EditMode.Online
             return typeof(OnlineSessionHost)
                 .GetField("_coordinator", BindingFlags.Instance | BindingFlags.NonPublic)
                 .GetValue(host) as OnlineSessionCoordinator;
+        }
+
+        private void CompleteOnlineSession(PlayerArchive archive)
+        {
+            _host.Initialize();
+            _host.StartSession();
+            _connection.RaiseConnected();
+            _provider.Succeed(0);
+            _client.ReceiveFrame(Codec.Encode(MsgID.LoginResp,
+                new LoginResp { Uid = 42, Nickname = "ink-user", Token = "session-token" }));
+            _client.ReceiveFrame(Codec.Encode(MsgID.LoadArchiveResp,
+                new LoadArchiveResp { Found = true, Archive = archive }));
+            Assert.That(_host.State, Is.EqualTo(OnlineSessionState.Ready));
+        }
+
+        private CombatResultReq DecodeLastCombatRequest()
+        {
+            Assert.That(Codec.TryDecode(_transport.SentPayloads.Last(), out var messageId, out var body), Is.True);
+            Assert.That(messageId, Is.EqualTo(MsgID.CombatResultReq));
+            return CombatResultReq.Parser.ParseFrom(body);
+        }
+
+        private int CombatRequestCount()
+        {
+            return _transport.SentPayloads.Count(frame =>
+            {
+                Codec.TryDecode(frame, out var messageId, out _);
+                return messageId == MsgID.CombatResultReq;
+            });
+        }
+
+        private int SaveRequestCount()
+        {
+            return _transport.SentPayloads.Count(frame =>
+            {
+                Codec.TryDecode(frame, out var messageId, out _);
+                return messageId == MsgID.SaveArchiveReq;
+            });
         }
 
         private void RemoveFixtureHost()

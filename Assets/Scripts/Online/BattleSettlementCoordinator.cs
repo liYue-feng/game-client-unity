@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Game.Gameplay;
 using Game.Network;
 using Game.Protocol;
+using UnityEngine;
 
 namespace Game.Online
 {
@@ -228,9 +229,16 @@ namespace Game.Online
                 Duplicate = _response.Duplicate,
                 Archive = _response.Archive.Clone()
             };
-            _applyArchive(result.Archive.Clone());
             var completed = _completed;
             ResetActiveRun();
+            try
+            {
+                _applyArchive(result.Archive.Clone());
+            }
+            catch (Exception exception)
+            {
+                Debug.LogException(exception);
+            }
             completed?.Invoke(result);
         }
 

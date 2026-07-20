@@ -12,7 +12,6 @@ namespace Game.Online
         private OnlineConnectionAdapter _adapter;
         private LoginSessionService _loginService;
         private ArchiveSessionService _archiveService;
-        private ArchiveSessionService _battleArchiveService;
         private BattleSettlementCoordinator _battleSettlement;
         private OnlineSessionState _lastState = OnlineSessionState.Idle;
         private string _lastFailureReason;
@@ -113,8 +112,6 @@ namespace Game.Online
             _adapter = null;
             _battleSettlement?.Dispose();
             _battleSettlement = null;
-            _battleArchiveService?.Dispose();
-            _battleArchiveService = null;
             _loginService?.Dispose();
             _loginService = null;
             _archiveService?.Dispose();
@@ -208,10 +205,9 @@ namespace Game.Online
                     serverUrl);
                 host._coordinator.StateChanged += host.HandleStateChanged;
                 host._coordinator.ArchiveSaved += host.HandleArchiveSaved;
-                host._battleArchiveService = new ArchiveSessionService(client);
                 host._battleSettlement = new BattleSettlementCoordinator(
                     client,
-                    host._battleArchiveService,
+                    host._archiveService,
                     host.ApplyBattleArchive);
                 host._battleSettlement.SetSessionState(host._coordinator.State, host._coordinator.Generation);
                 Instance = host;
@@ -220,7 +216,6 @@ namespace Game.Online
             catch
             {
                 host._battleSettlement?.Dispose();
-                host._battleArchiveService?.Dispose();
                 if (host._coordinator != null)
                 {
                     host._coordinator.StateChanged -= host.HandleStateChanged;
@@ -260,13 +255,34 @@ namespace Game.Online
         private void HandleArchiveSaved()
         {
             _lastProgress = _coordinator?.Progress ?? _lastProgress;
-            ArchiveSaved?.Invoke();
+            PublishArchiveSaved();
         }
 
         private void ApplyBattleArchive(PlayerArchive archive)
         {
             _coordinator?.ApplyPersistedArchive(archive);
             HandleArchiveSaved();
+        }
+
+        private void PublishArchiveSaved()
+        {
+            var observers = ArchiveSaved;
+            if (observers == null)
+            {
+                return;
+            }
+
+            foreach (Action observer in observers.GetInvocationList())
+            {
+                try
+                {
+                    observer();
+                }
+                catch (Exception exception)
+                {
+                    Debug.LogException(exception);
+                }
+            }
         }
 
         private void OnDestroy()

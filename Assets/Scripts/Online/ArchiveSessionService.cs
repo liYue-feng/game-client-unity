@@ -98,7 +98,6 @@ namespace Game.Online
 
             if (_activeOperation != ArchiveOperation.None)
             {
-                Failed?.Invoke("Archive operation is already active.");
                 return false;
             }
 

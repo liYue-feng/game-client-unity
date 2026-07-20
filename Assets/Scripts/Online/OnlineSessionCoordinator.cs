@@ -88,7 +88,6 @@ namespace Game.Online
             if (!accepted && State == OnlineSessionState.Ready)
             {
                 _pendingSaveProgress = null;
-                Fail("Archive save could not start.");
             }
 
             return accepted;
@@ -105,7 +104,7 @@ namespace Game.Online
             var accepted = _archiveService.Load();
             if (!accepted && State == OnlineSessionState.Ready)
             {
-                Fail("Archive reload could not start.");
+                _reloadActive = false;
             }
 
             return accepted;
@@ -157,7 +156,7 @@ namespace Game.Online
             _loginService.Failed += HandleOperationFailed;
             _archiveService.Loaded += HandleArchiveLoaded;
             _archiveService.Saved += HandleArchiveSaved;
-            _archiveService.Failed += HandleOperationFailed;
+            _archiveService.Failed += HandleArchiveOperationFailed;
         }
 
         private void Unsubscribe()
@@ -175,7 +174,7 @@ namespace Game.Online
             _loginService.Failed -= HandleOperationFailed;
             _archiveService.Loaded -= HandleArchiveLoaded;
             _archiveService.Saved -= HandleArchiveSaved;
-            _archiveService.Failed -= HandleOperationFailed;
+            _archiveService.Failed -= HandleArchiveOperationFailed;
         }
 
         private void BeginConnection()
@@ -277,14 +276,29 @@ namespace Game.Online
 
         private void HandleArchiveSaved()
         {
-            if (IsActive && State == OnlineSessionState.Ready)
+            if (!IsActive || State != OnlineSessionState.Ready || _pendingSaveProgress == null)
             {
-                if (_pendingSaveProgress != null)
-                {
-                    _progress = _pendingSaveProgress;
-                    _pendingSaveProgress = null;
-                }
-                ArchiveSaved?.Invoke();
+                return;
+            }
+
+            _progress = _pendingSaveProgress;
+            _pendingSaveProgress = null;
+            ArchiveSaved?.Invoke();
+        }
+
+        private void HandleArchiveOperationFailed(string reason)
+        {
+            if (!IsActive)
+            {
+                return;
+            }
+
+            var ownsOperation = State == OnlineSessionState.LoadingArchive ||
+                                State == OnlineSessionState.Ready &&
+                                (_reloadActive || _pendingSaveProgress != null);
+            if (ownsOperation)
+            {
+                Fail(string.IsNullOrWhiteSpace(reason) ? "Archive operation failed." : reason);
             }
         }
 

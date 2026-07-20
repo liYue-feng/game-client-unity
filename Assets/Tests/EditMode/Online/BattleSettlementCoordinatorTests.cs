@@ -1,12 +1,15 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 using Game.Gameplay;
 using Game.Network;
 using Game.Online;
 using Game.Protocol;
 using Game.Tests.EditMode.Network.TestDoubles;
 using NUnit.Framework;
+using UnityEngine;
+using UnityEngine.TestTools;
 
 namespace Game.Tests.EditMode.Online
 {
@@ -244,6 +247,30 @@ namespace Game.Tests.EditMode.Online
             Assert.That(_coordinator.Retry(), Is.True);
             Assert.That(CombatRequestCount(), Is.EqualTo(1));
             Assert.That(SaveRequestCount(), Is.EqualTo(2));
+        }
+
+        [Test]
+        public void ThrowingArchiveApplyStillCompletesAndReleasesCoordinatorForNextRun()
+        {
+            _coordinator.Dispose();
+            _coordinator = new BattleSettlementCoordinator(
+                _client,
+                _archive,
+                _ => throw new InvalidOperationException("apply failed"));
+            _coordinator.SetSessionState(OnlineSessionState.Ready, 1);
+            BattleSettlementResult result = null;
+            LogAssert.Expect(LogType.Exception, new Regex("apply failed"));
+
+            _coordinator.Settle(BattleRunOutcome.Victory, ResultData(), value => result = value);
+            var first = DecodeLastCombatRequest();
+            CompleteSettlement(first.RunId);
+
+            Assert.That(result?.State, Is.EqualTo(BattleSettlementState.Saved));
+            Assert.That(_coordinator.ActiveRunId, Is.Null);
+            _coordinator.Settle(BattleRunOutcome.Defeat, ResultData(), _ => { });
+            var second = DecodeLastCombatRequest();
+            Assert.That(second.RunId, Is.Not.EqualTo(first.RunId));
+            Assert.That(CombatRequestCount(), Is.EqualTo(2));
         }
 
         private CombatResultReq DecodeLastCombatRequest()
