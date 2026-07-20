@@ -465,6 +465,7 @@ The initial evidence was committed as `docs: record phase a4 verification eviden
 - Real server evidence: `E:/Own_project/game-server-go/logs/a4-integration-server-20260720-203437.stdout.log` recorded one `dev:integration-client` login, initial archive load `dataLen=0`, save `dataLen=24`, and reload `dataLen=24`; stderr was empty and the Unity assertion used exact archive JSON `{"phase":"a4","coins":7}`.
 - Cleanup evidence: captured backend PID `46800` and Unity PID `44560` exited; remaining relevant processes `0`; listeners on ports `8080` and `8081` were both `0`; `GAME_BACKEND_INTEGRATION` was empty after the runner.
 - Hygiene: `git diff --check master...HEAD` passed at reviewed code head `1b9b7d8`; both the working documentation diff and final committed range are checked again before handoff.
+- Remote delivery gate before the closure commit: client feature `c2837eea7ddc5462dbc90039ae73d6294e3ab2fe` and backend `master`/integration feature `874e68e06e2f2e238ecdc605c3976cd1b5c541ac` were remote-exact with clean worktrees and no remaining listeners or owned processes.
 
 ## Final Acceptance Checklist
 
@@ -473,7 +474,7 @@ The initial evidence was committed as `docs: record phase a4 verification eviden
 - [x] Offline default still reaches BattleScene and creates no online host or legacy login/archive managers.
 - [x] MenuScene and BattleScene are valid enabled build scenes; no code references LobbyScene as the main start path.
 - [x] Reconnect re-authenticates through one generation-safe coordinator without duplicate subscriptions.
-- [ ] Client and backend branches have clean task reviews, final reviews, pushed remote SHAs, and no process left on ports 8080/8081.
+- [x] Client and backend branches have clean task reviews, final reviews, pushed remote SHAs, and no process left on ports 8080/8081.
 
 ## Execution Handoff
 
