@@ -45,6 +45,12 @@ namespace Game.Online
 
         public bool Save(string data)
         {
+            if (string.IsNullOrWhiteSpace(data))
+            {
+                Failed?.Invoke("Archive data is required.");
+                return false;
+            }
+
             if (!TryBegin(ArchiveOperation.Save))
             {
                 return false;

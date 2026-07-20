@@ -50,6 +50,11 @@ namespace Game.Tests.EditMode.Online
             prefixedProvider.RequestCode(value => code = value, _ => Assert.Fail("prefixed identity must not fail"));
             Assert.That(code, Is.EqualTo("dev:editor-001"));
 
+            var whitespacePrefixedProvider = new EditorLoginCodeProvider(" dev:editor-001 ");
+            whitespacePrefixedProvider.RequestCode(value => code = value,
+                _ => Assert.Fail("trimmed prefixed identity must not fail"));
+            Assert.That(code, Is.EqualTo("dev:editor-001"));
+
             var blankProvider = new EditorLoginCodeProvider(" ");
             string error = null;
             blankProvider.RequestCode(_ => Assert.Fail("blank identity must not succeed"), value => error = value);
@@ -153,6 +158,28 @@ namespace Game.Tests.EditMode.Online
                 Assert.That(service.Save("{\"gold\":10}"), Is.True);
                 _client.ReceiveFrame(Codec.Encode(MsgID.SaveArchiveResp, new SaveArchiveResp { success = true }));
                 Assert.That(savedCount, Is.EqualTo(1));
+            }
+        }
+
+        [TestCase(null)]
+        [TestCase("")]
+        [TestCase(" ")]
+        public void SaveRejectsBlankDataBeforeSendingOrStartingAnOperation(string data)
+        {
+            _transport.RaiseOpened();
+            using (var service = new ArchiveSessionService())
+            {
+                string error = null;
+                service.Failed += value => error = value;
+
+                Assert.That(service.Save(data), Is.False);
+                Assert.That(error, Is.EqualTo("Archive data is required."));
+                Assert.That(_transport.SentPayloads, Is.Empty);
+
+                Assert.That(service.Load(), Is.True, "invalid save data must not occupy the active operation slot");
+                Assert.That(_transport.SentPayloads, Has.Count.EqualTo(1));
+                Assert.That(Codec.TryDecode(_transport.SentPayloads.Single(), out var sentId, out _), Is.True);
+                Assert.That(sentId, Is.EqualTo(MsgID.LoadArchiveReq));
             }
         }
 

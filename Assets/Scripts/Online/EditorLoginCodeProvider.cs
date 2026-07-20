@@ -19,10 +19,10 @@ namespace Game.Online
 
         public void RequestCode(Action<string> succeeded, Action<string> failed)
         {
-            var identity = _identity;
+            var identity = _identity == null ? null : _identity.Trim();
             while (identity != null && identity.StartsWith("dev:", StringComparison.Ordinal))
             {
-                identity = identity.Substring("dev:".Length);
+                identity = identity.Substring("dev:".Length).TrimStart();
             }
 
             if (string.IsNullOrWhiteSpace(identity))
