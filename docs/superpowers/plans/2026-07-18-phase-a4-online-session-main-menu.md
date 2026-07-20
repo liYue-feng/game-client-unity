@@ -50,11 +50,11 @@
 - Produces: `OfflineStartupSceneName`, `OnlineStartupSceneName`, mode-selected `StartupSceneName`, `EditorLoginIdentity`, `OnlineSessionTimeoutSeconds`.
 - Produces: `NetworkConnectionControllerHost.BeginAuthentication()` and `MarkReady()` delegating to A3 controller methods.
 
-- [ ] **Step 1: Write failing settings and host tests**
+- [x] **Step 1: Write failing settings and host tests**
 
 Add tests that create settings with Offline scene `BattleScene`, Online scene `MenuScene`, identity `editor-001`, and timeout 20 seconds. Assert Offline selects BattleScene, Online selects MenuScene, identity is exposed without `dev:` prefix, timeout must be finite and greater than zero, and both scenes must pass the build-scene callback. Add a host test that opens a fake transport, pumps the dispatcher, calls `BeginAuthentication()` then `MarkReady()`, and observes `Connected -> Authenticating -> Ready`.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Run:
 
@@ -64,7 +64,7 @@ Run:
 
 Expected: FAIL because mode-specific fields/properties are absent. Run the host filter separately and expect missing command methods.
 
-- [ ] **Step 3: Implement the settings contract**
+- [x] **Step 3: Implement the settings contract**
 
 Use `FormerlySerializedAs("_startupSceneName")` on `_offlineStartupSceneName` so the existing asset retains `BattleScene`. Add:
 
@@ -93,7 +93,7 @@ public void BeginAuthentication() => _controller?.BeginAuthentication();
 public void MarkReady() => _controller?.MarkReady();
 ~~~
 
-- [ ] **Step 4: Verify GREEN and commit**
+- [x] **Step 4: Verify GREEN and commit**
 
 Run both focused test filters; expect all pass. Run `tools/validation/Test-UnityAssetIntegrity.ps1`; at this task it may report missing `MenuScene` only if validation inspects the new serialized field, otherwise it must pass.
 
@@ -140,7 +140,7 @@ public sealed class ArchiveSessionService : IDisposable
 }
 ~~~
 
-- [ ] **Step 1: Write failing service tests**
+- [x] **Step 1: Write failing service tests**
 
 Reference `Game.Online` from the EditMode test assembly. Test that the Editor provider returns exactly `dev:editor-001`; blank identity fails. Instantiate a registered `NetworkClient` with `FakeWebSocketTransport`, create both services, and assert:
 
@@ -152,15 +152,15 @@ Reference `Game.Online` from the EditMode test assembly. Test that the Editor pr
 - Error message 9999 routes to the active operation failure;
 - Dispose makes later frames inert.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Run the focused EditMode filter. Expected: compile failure because `Game.Online` and the services do not exist.
 
-- [ ] **Step 3: Implement minimal services**
+- [x] **Step 3: Implement minimal services**
 
 `Game.Online.asmdef` references `Game.Core` and `Game.Network`. Provider prepends `dev:` exactly once. Each service owns its `NetworkClient.On<T>` tokens in a list and disposes them. `LoginSessionService.Begin` refuses blank code or a disconnected client, marks one request active, sends MsgID.LoginReq, and on response calls `SetLoginInfo` before `Succeeded`. `ArchiveSessionService` similarly serializes one active load/save at a time. Both subscribe to `MsgID.Error` as `ErrorResp` and format `[{code}] {msg}`.
 
-- [ ] **Step 4: Verify GREEN and commit**
+- [x] **Step 4: Verify GREEN and commit**
 
 Run the focused filter, then full EditMode. Expected: service tests and existing tests pass with no unexpected logs.
 
@@ -208,21 +208,21 @@ public sealed class OnlineSessionCoordinator : IDisposable
 }
 ~~~
 
-- [ ] **Step 1: Write coordinator RED tests**
+- [x] **Step 1: Write coordinator RED tests**
 
 Cover: normal `Start -> Connecting -> Authenticating -> LoadingArchive -> Ready`; transport reconnect causes `Reconnecting -> Authenticating -> LoadingArchive -> Ready`; provider failure and server error become Failed; Retry increments generation and reconnects once; a delayed provider callback from an old generation is ignored; Stop disconnects, disposes subscriptions, becomes Stopped, and later callbacks do nothing.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Run `Game.Tests.EditMode.Online.OnlineSessionCoordinatorTests`. Expected: compile failure for missing coordinator types.
 
-- [ ] **Step 3: Implement the state machine**
+- [x] **Step 3: Implement the state machine**
 
 `OnlineConnectionAdapter` forwards `NetworkClient.OnConnected/OnDisconnected/OnError` and delegates commands to `NetworkConnectionControllerHost`; it unsubscribes delegates in Dispose. Coordinator stores `int _generation`; every asynchronous provider callback closes over the current generation and returns when stale or stopped. Connected calls host BeginAuthentication, requests code, then begins login. Login success starts archive load. Archive load calls host MarkReady and sets Ready. Disconnected after first connection sets Reconnecting and waits for A3 to reconnect; it does not call Connect itself. Connection Error, login error, archive error, or invalid command result sets FailureReason and Failed. Retry clears login info, increments generation, and calls Connect exactly once.
 
 `SaveArchive` and `ReloadArchive` are accepted only in Ready. They delegate to `ArchiveSessionService`, keep session state Ready, update ArchiveData on reload, and forward the service `Saved` event as `ArchiveSaved`.
 
-- [ ] **Step 4: Verify GREEN and commit**
+- [x] **Step 4: Verify GREEN and commit**
 
 Run focused then full EditMode. Commit coordinator, adapter, fakes, tests, and metas as `feat: orchestrate online session recovery`.
 
@@ -255,15 +255,15 @@ public sealed class OnlineSessionHost : MonoBehaviour, IGameService
 }
 ~~~
 
-- [ ] **Step 1: Write host/service-ownership RED tests**
+- [x] **Step 1: Write host/service-ownership RED tests**
 
 Host EditMode tests assert Install parents `[OnlineSessionHost]`, Initialize wires one coordinator, Shutdown is idempotent, clears Instance, disconnects, and destroys callback effects. Update PlayMode offline assertions to require no `[OnlineSessionHost]`. Add an Online service-construction test through reflection that changes the settings mode, calls `GameServices.Create`, and asserts one host under `[GameServices]`, then Shutdown leaves none; inject fake connection dependencies through an internal Install overload rather than opening a real socket.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Run focused host tests and offline PlayMode filter. Expected: missing host or ownership assertions fail.
 
-- [ ] **Step 3: Implement conditional ownership**
+- [x] **Step 3: Implement conditional ownership**
 
 Host Install creates the provider from `settings.EditorLoginIdentity`, services from the registered client, adapter from client/network host, and coordinator from settings ServerUrl. `Initialize` does not start a connection; `GameApplication` owns the start decision. `Shutdown` disposes coordinator, adapter, login/archive services in that order and clears Instance.
 
@@ -281,7 +281,7 @@ Production uses `transportFactory ?? new WebSocketTransportFactory()` and lets O
 
 In `GameServices.Create`, add OnlineSessionHost immediately after NetworkConnectionControllerHost only when `settings.RuntimeMode == RuntimeMode.Online`; add it to the lifecycle list after the network host. Expose `internal OnlineSessionHost OnlineSession { get; private set; }`. Clear the static in both service and application reset paths. Offline still installs the A3 network host but never connects and never installs online services.
 
-- [ ] **Step 4: Verify GREEN and commit**
+- [x] **Step 4: Verify GREEN and commit**
 
 Run focused EditMode, full EditMode, and offline PlayMode. Commit as `feat: own online session under game services`.
 
@@ -301,15 +301,15 @@ public sealed class OnlineStartupDecision
 }
 ~~~
 
-- [ ] **Step 1: Write startup decision RED tests**
+- [x] **Step 1: Write startup decision RED tests**
 
 Pure tests require Idle/Connecting/Authenticating/LoadingArchive/Reconnecting -> Waiting, Ready -> Ready, Failed -> Failed, and elapsed >= timeout -> TimedOut. Do not modify GameApplication; Task 7 needs its old Phase A3 fail-closed production behavior for the real integration RED run.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Run the focused EditMode test. Expected: missing decision type.
 
-- [ ] **Step 3: Implement only the pure decision**
+- [x] **Step 3: Implement only the pure decision**
 
 Implement `Evaluate` with this order so a terminal state wins before timeout:
 
@@ -320,7 +320,7 @@ if (elapsedSeconds >= timeoutSeconds) return OnlineStartupResult.TimedOut;
 return OnlineStartupResult.Waiting;
 ~~~
 
-- [ ] **Step 4: Verify GREEN and commit**
+- [x] **Step 4: Verify GREEN and commit**
 
 Run startup decision, offline full PlayMode, and full EditMode. Commit as `feat: add online startup decision`.
 
@@ -341,15 +341,15 @@ Run startup decision, offline full PlayMode, and full EditMode. Commit as `feat:
 - `MainMenuUI` reads `OnlineSessionHost.Instance`, unbinds StateChanged in OnDestroy, and starts `BattleScene` directly.
 - `SceneTransitionManager.GoToMainMenu()` loads `MenuScene`.
 
-- [ ] **Step 1: Write failing MenuScene tests**
+- [x] **Step 1: Write failing MenuScene tests**
 
 PlayMode test loads `MenuScene`, expects `[MenuScene]`, `MenuCanvas`, `BtnStart`, `BtnSettings`, and no LoginManager/ArchiveManager/GameBootstrap components. Invoke BtnStart and wait for `BattleScene`. Then call `GoToMainMenu`, wait for `MenuScene`, and assert only one MenuCanvas. Add an EditMode asset assertion that both MenuScene and BattleScene are enabled in Build Settings.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Run asset integrity and focused PlayMode. Expected: MenuScene missing from disk/build and old MainMenu start references LobbyScene.
 
-- [ ] **Step 3: Implement deterministic scene and UI**
+- [x] **Step 3: Implement deterministic scene and UI**
 
 `MenuSceneSetup.Start` creates a single `[MenuScene]` presentation root and adds MainMenuUI only; remove all manager/network creation. LoginUI becomes a compatibility component that delegates Retry to OnlineSessionHost and never creates managers. MainMenu Start loads `BattleScene`; status/player labels read host state and nickname; failure displays a Retry command. OnDestroy removes StateChanged and button listeners.
 
@@ -359,7 +359,7 @@ Run asset integrity and focused PlayMode. Expected: MenuScene missing from disk/
 & 'D:\Unity_Soft\2022\Editor\Unity.exe' -batchmode -nographics -quit -projectPath (Get-Location).Path -executeMethod MenuSceneAssetBuilder.Build -logFile 'Logs\A4-menu-scene-build.log'
 ~~~
 
-- [ ] **Step 4: Verify GREEN and commit**
+- [x] **Step 4: Verify GREEN and commit**
 
 Run asset integrity, focused PlayMode, and full PlayMode. Commit scene, metas, UI/setup/transition code, builder, Build Settings and test as `feat: add online main menu scene`.
 
@@ -376,19 +376,19 @@ Run asset integrity, focused PlayMode, and full PlayMode. Commit scene, metas, U
 - Backend URL: `ws://127.0.0.1:8080/ws`.
 - Credential identity: `integration-client` -> request `dev:integration-client`.
 
-- [ ] **Step 1: Write the opt-in integration test**
+- [x] **Step 1: Write the opt-in integration test**
 
 When the gate is absent, call `Assert.Ignore` before mutating settings. When present, save every changed private field, set Online mode, MenuScene, URL, identity, 10-second timeout, shut down/recreate GameApplication, and wait up to 600 frames for Ready. Require active MenuScene, Network state Ready, positive UID, nonempty token, and nonempty nickname. Subscribe once to `OnlineSessionHost.ArchiveSaved`, call `SaveArchive("{\"phase\":\"a4\",\"coins\":7}")`, wait for that event, call `ReloadArchive()`, and require exact round-trip ArchiveData. In finally remove the event handler, restore every asset field in memory, shut down the Online application, recreate Offline application, and wait for BattleScene Ready.
 
-- [ ] **Step 2: Verify the test is safely skipped**
+- [x] **Step 2: Verify the test is safely skipped**
 
 Run the focused PlayMode filter without the environment variable. Expected: one skipped test, no connection attempt, and Offline application restored.
 
-- [ ] **Step 3: Implement the PowerShell runner**
+- [x] **Step 3: Implement the PowerShell runner**
 
 The script resolves both repo roots, verifies port 8080 is unused, creates backend `logs`, runs `go test ./...`, builds `logs/a4-integration-server.exe`, starts that exact executable hidden with `-config configs/config.dev.yaml`, polls `http://127.0.0.1:8080/health`, sets `GAME_BACKEND_INTEGRATION=1`, runs Unity PlayMode with the focused test and absolute XML/log paths, parses XML for zero failures, and in `finally` stops only the captured process ID and clears the environment variable. It must fail when health, Unity XML creation, or test count fails.
 
-- [ ] **Step 4: Run the real application RED**
+- [x] **Step 4: Run the real application RED**
 
 After the reviewed backend branch is pushed/merged, run:
 
@@ -398,7 +398,7 @@ After the reviewed backend branch is pushed/merged, run:
 
 Expected: FAIL because GameApplication still throws `Online runtime flow is not implemented in Phase A3`. This proves the full-application test reaches the old behavior through a real server.
 
-- [ ] **Step 5: Implement the Online coroutine gate**
+- [x] **Step 5: Implement the Online coroutine gate**
 
 Delete the Online `NotSupportedException`. After services initialize, `Start` branches:
 
@@ -423,11 +423,11 @@ if (_settings.RuntimeMode == RuntimeMode.Online)
 
 Then load mode-selected `StartupSceneName` with the existing guarded scene code and mark application Ready. Offline bypasses the gate exactly as before.
 
-- [ ] **Step 6: Run real GREEN and normal regression**
+- [x] **Step 6: Run real GREEN and normal regression**
 
 Run the runner again. Expected: backend Go suite passes; Unity XML reports one passed, zero failed; server log contains login and archive save/load; no process remains listening on 8080. Then run normal full PlayMode without the integration environment; expect zero failures and the integration case skipped.
 
-- [ ] **Step 7: Commit and push task**
+- [x] **Step 7: Commit and push task**
 
 Commit GameApplication, real integration test/meta, runner, and scoped ignore change as `feat: enable real online application flow`. After task review, parent pushes and verifies remote SHA.
 
@@ -437,29 +437,41 @@ Commit GameApplication, real integration test/meta, runner, and scoped ignore ch
 - Modify: `CLAUDE.md`
 - Modify: `docs/superpowers/plans/2026-07-18-phase-a4-online-session-main-menu.md` checkboxes/evidence
 
-- [ ] **Step 1: Run full repository gates**
+- [x] **Step 1: Run full repository gates**
 
 Run asset integrity and Pester. Run full EditMode and PlayMode to fresh XML files. Run `git diff --check master...HEAD`. Expected: asset pass, Pester 5/5, all EditMode/PlayMode tests pass with only the opt-in backend test skipped in the normal suite, and no whitespace errors.
 
-- [ ] **Step 2: Re-run real integration**
+- [x] **Step 2: Re-run real integration**
 
 Run `Invoke-A4BackendIntegration.ps1` again after the final code commit. Expected: one real integration test passes and port 8080 is free afterward.
 
-- [ ] **Step 3: Update delivery evidence**
+- [x] **Step 3: Update delivery evidence**
 
 Record exact test totals, XML/log paths, backend commit SHA, client commit SHA, and the real integration result in this plan. Update CLAUDE.md: A3 completed, A4 Online route, MenuScene, dev backend command, Offline default, and remaining A5/Phase B/C work.
 
-- [ ] **Step 4: Commit documentation**
+- [x] **Step 4: Commit documentation**
 
 Commit as `docs: record phase a4 verification evidence`. Push after final whole-branch review approves both spec compliance and code quality.
 
+### Task 8 Delivery Evidence (2026-07-20)
+
+- Delivery code head before this evidence-only documentation commit: client `4d0351fd1b92a92599892ca791d3fffee3b77d23`; backend `88cae827262c4648e35dd74496e5a368eb9c1030`. At verification time these matched `origin/feature/phase-a4-online-session-main-menu` and backend `origin/master`, respectively.
+- Asset integrity wrapper: `tools/validation/Test-UnityAssetIntegrity.ps1` passed.
+- Pester asset contract: `tools/validation/UnityAssetIntegrity.Tests.ps1` passed `5/5`, failed `0`, skipped `0`.
+- Full EditMode: `Logs/A4-task8-final-editmode-20260720-143550.xml`, total `208`, passed `208`, failed `0`, skipped `0`, duration `0.7149162` seconds; Unity exit code `0`; `Logs/A4-task8-final-editmode-20260720-143550.log` error markers `0`.
+- Normal full PlayMode with `GAME_BACKEND_INTEGRATION` absent: `Logs/A4-task8-final-playmode-20260720-143631.xml`, total `94`, passed `93`, failed `0`, skipped `1`, duration `93.5061516` seconds; Unity exit code `0`; `Logs/A4-task8-final-playmode-20260720-143631.log` error markers `0`. The only skipped test was `Game.Tests.PlayMode.RealBackendOnlineFlowTests.OnlineApplication_LoginSaveAndReloadArchiveAgainstRealBackend`.
+- Real integration command: `& .\tools\integration\Invoke-A4BackendIntegration.ps1 -BackendRoot 'E:\Own_project\game-server-go'`. Go `go test ./...` passed; `Logs/A4-real-backend-20260720-143900.xml` reported total `1`, passed `1`, failed `0`, skipped `0`, duration `2.4436048` seconds, with Unity exit code `0`; `Logs/A4-real-backend-20260720-143900.log` error markers `0`.
+- Real server evidence: `E:/Own_project/game-server-go/logs/a4-integration-server-20260720-143900.stdout.log` recorded one `dev:integration-client` login, initial archive load `dataLen=0`, save `dataLen=24`, and reload `dataLen=24`; the Unity assertion used exact archive JSON `{"phase":"a4","coins":7}`.
+- Cleanup evidence: captured backend PID `36236` and Unity PID `3092` exited; remaining relevant processes `0`; listeners on ports `8080` and `8081` were both `0`; `GAME_BACKEND_INTEGRATION` was empty after the runner.
+- Hygiene: `git diff --check master...HEAD` passed before the documentation update and is re-run before committing this task.
+
 ## Final Acceptance Checklist
 
-- [ ] Normal Unity suite has zero failures; real integration test is skipped only when its environment gate is absent.
-- [ ] Real Go process plus real Unity WebSocket proves login, archive save, archive load, and full Online application startup to MenuScene.
-- [ ] Offline default still reaches BattleScene and creates no online host or legacy login/archive managers.
-- [ ] MenuScene and BattleScene are valid enabled build scenes; no code references LobbyScene as the main start path.
-- [ ] Reconnect re-authenticates through one generation-safe coordinator without duplicate subscriptions.
+- [x] Normal Unity suite has zero failures; real integration test is skipped only when its environment gate is absent.
+- [x] Real Go process plus real Unity WebSocket proves login, archive save, archive load, and full Online application startup to MenuScene.
+- [x] Offline default still reaches BattleScene and creates no online host or legacy login/archive managers.
+- [x] MenuScene and BattleScene are valid enabled build scenes; no code references LobbyScene as the main start path.
+- [x] Reconnect re-authenticates through one generation-safe coordinator without duplicate subscriptions.
 - [ ] Client and backend branches have clean task reviews, final reviews, pushed remote SHAs, and no process left on ports 8080/8081.
 
 ## Execution Handoff

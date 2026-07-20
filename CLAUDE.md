@@ -83,9 +83,12 @@ game_client_unity/
 
 ## 当前工程阶段（2026-07-20 已验证）
 
-- Phase A2 已建立自动 Offline 生命周期：`RuntimeBootstrap -> [GameApplication] -> [GameServices]`，仅应用根跨场景持久化，默认进入 `BattleScene`
+- Phase A2 已建立自动 Offline 生命周期：`RuntimeBootstrap -> [GameApplication] -> [GameServices]`，仅应用根跨场景持久化；`Assets/Resources/GameRuntimeSettings.asset` 仍以 Offline 为默认模式，启动后直接进入 `BattleScene`，且不创建 `OnlineSessionHost` 或旧 `LoginManager`/`ArchiveManager`
 - Phase A3 已完成 service-owned 网络边界：`NetworkClient`、WebSocket transport、主线程 dispatcher、连接 host 及唯一心跳/重连策略均有自动测试；A3 收口验证为 EditMode `88/88`、PlayMode `11/11`
-- Phase A4 当前只有设计与实施计划，尚未在本分支交付 Online 会话、`MenuScene`、真实后端登录/存档联调；Offline 仍是默认且唯一已交付用户路径
+- Phase A4 已交付 Online 启动闭环：`GameApplication -> OnlineSessionHost -> OnlineSessionCoordinator -> Connect -> Login -> LoadArchive -> MenuScene`；重连后由同一个 generation-safe coordinator 重新认证和加载存档，失败或超时不会加载半初始化菜单
+- `MenuScene` 与 `BattleScene` 已按此顺序加入 Build Settings；主菜单只负责场景内展示，开始战斗进入 `BattleScene`，返回菜单统一进入 `MenuScene`，不会创建跨场景网络或登录管理器
+- 本地开发后端联调命令为 `& .\tools\integration\Invoke-A4BackendIntegration.ps1 -BackendRoot 'E:\Own_project\game-server-go'`；它使用 `configs/config.dev.yaml`、`dev:integration-client` 和 `ws://127.0.0.1:8080/ws` 验证真实登录、存档保存与重新加载，并在退出时清理精确进程、端口和环境变量
+- A4 最终回归为资源完整性 PASS、Pester `5/5`、EditMode `208/208`、常规 PlayMode `93` passed + `1` 个 opt-in real-backend skip、真实后端 PlayMode `1/1`；交付代码 head 为 `4d0351f`，Go 后端为 `88cae82`
 - Phase B1 已建立可玩的离线战斗权威：`CombatHit` 是命中/弹反唯一契约，`BattleTimeController` 是唯一 `Time.timeScale` 写入者，场景内 `ObjectPool`/`DamageNumberPool`/`WaveSpawner` 随战局释放；左向攻击会在攻击开始时镜像真实 hitbox，武器 teardown 不会懒创建替代池
 - `BattleRunController` 统一 Victory/Defeat/Restart；终局冻结动作、移动与热键，结果 UI 只提供 Restart，重开后 Player、Pool、Spawner、UI、EventSystem 和时间状态均为新战局
 - B1 自动截图探针已生成并由父级最终批准 `Logs/phase-b1-combat.png` 与 `Logs/phase-b1-result.png`，两图均为 960x540；combat 为 dark `2639`、chromatic `117796`、variance `304.99`、Player `57.60px`、Grunt `48.00px`、SHA-256 `59E202689676AE66397A1315A4B014C0BF777FB890314AEDF61BD457F1941E93`，result 为 dark `297973`、light `217068`、variance `6281.16`、SHA-256 `9FA4EC1CCE2B36D3B935DC2D133A6B36445038446843AFCF6E3D52AC9932F966`
@@ -94,7 +97,7 @@ game_client_unity/
 - Boss 攻击在进入 Telegraph 前同步停止并冻结 `localToWorldMatrix`，冲锋/砸地结算不再随 Commit 位移偏离预警；`PoisonDot` 在敌人池租约结束和新租约准备时清空层数、计时器与来源，旧租约不会污染复用敌人
 - B2 最终有效验证为 visual `2/2` 连续三次、core `49/49`、enemy `39/39`、combat `37/37`、EditMode `160/160`、PlayMode `92/92` 连续两次、smoke `3/3`、Pester `5/5`；Task 7 规范审查、质量复审和完整分支复审均 PASS
 - 父级最终批准两张 960x540 证据图：`Logs/phase-b2-wave-combat.png`（101674 bytes，dark `8473`、light `506624`、chromatic `73868`、colors `112`、variance `560.11`、Player `29.12px`、Grunt `24.27px`、SHA-256 `2AEABB48FDB548F7F8E3CA072B0ECB2AA5999CCC7B83250A0BC7A07B33B74DF0`）和 `Logs/phase-b2-boss-telegraph.png`（122543 bytes，dark `12998`、light `500312`、chromatic `86814`、colors `139`、variance `809.23`、Boss `48.54px`、Circle `485.39px`、SHA-256 `68B6022A192CE43FBF69EAB5265B7A695A52CE6F19AB84125445FE570DD37350`）
-- 后续工作仍为 Phase A4 Online/MainMenu/真实后端联调，以及 Phase C UI、Prefab、动画、资源加载和打包工程化
+- 后续工作为 Phase A5 的真实微信 SDK、`code2session` 凭证与生产部署，以及 Phase C 的 UI、Prefab、动画、资源加载和打包工程化；Phase B1/B2 战斗竖切已经完成
 
 ## 服务器仓库
 
