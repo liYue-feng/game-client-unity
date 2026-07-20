@@ -143,6 +143,86 @@ namespace Game.Tests.PlayMode
         }
 
         [UnityTest]
+        public IEnumerator ProductionBattleConfigurationHasTenWaves181EnemiesAndFinalBossAndCompletesAccelerated()
+        {
+            yield return LoadBattleScene();
+
+            var setup = FindActiveSceneComponent("BattleSceneSetup");
+            var spawner = FindActiveSceneComponent("WaveSpawner");
+            var run = FindActiveSceneComponent("BattleRunController");
+            var gameOver = FindActiveSceneComponent("GameOverUI");
+            var productionWaves = (Array)GetFieldValue(spawner, "waves");
+
+            Assert.That(productionWaves, Has.Length.EqualTo(10));
+            var productionWaveObjects = productionWaves.Cast<object>().ToArray();
+            Assert.That(productionWaveObjects.Sum(CountWaveEnemies), Is.EqualTo(181));
+            var finalBosses = GetWaveEntries(productionWaveObjects.Last())
+                .Where(entry => GetPublicField(entry, "enemyType").ToString() == "boss")
+                .ToArray();
+            Assert.That(finalBosses, Has.Length.EqualTo(1));
+            Assert.That((int)GetPublicField(finalBosses.Single(), "count"), Is.EqualTo(1));
+
+            yield return ResetRunningWavesForAcceptance(spawner, setup);
+            SetFieldValue(spawner, "waveDelay", 0f);
+            foreach (var wave in productionWaveObjects)
+            {
+                SetPublicField(wave, "spawnDelay", 0f);
+            }
+
+            var completionCount = 0;
+            var waveStartCount = 0;
+            AddEventHandler(spawner, "OnAllWavesComplete", (Action)(() => completionCount++));
+            AddEventHandler(spawner, "OnWaveStart", (Action<int>)(_ => waveStartCount++));
+
+            try
+            {
+                Invoke(spawner, "StartWaves");
+                for (var frame = 0;
+                     frame < 3000 && GetPropertyValue(run, "State").ToString() == "Running";
+                     frame++)
+                {
+                    foreach (var enemyObject in GetEnumerableFieldValues(spawner, "_aliveEnemies")
+                                 .Cast<GameObject>()
+                                 .Where(enemy => enemy != null)
+                                 .ToArray())
+                    {
+                        var enemy = enemyObject.GetComponents<Component>()
+                            .FirstOrDefault(component => component != null && IsEnemyType(component.GetType()));
+                        if (enemy == null || GetBoolProperty(enemy, "IsDead"))
+                        {
+                            continue;
+                        }
+
+                        ((Behaviour)enemy).enabled = false;
+                        var body = enemy.GetComponent<Rigidbody2D>();
+                        if (body != null)
+                        {
+                            body.velocity = Vector2.zero;
+                            body.angularVelocity = 0f;
+                        }
+                        InvokeWithArguments(enemy, "TakeDamage", int.MaxValue, 0f, 0f);
+                    }
+
+                    yield return null;
+                }
+
+                Assert.That(GetFieldValue(spawner, "waves"), Is.SameAs(productionWaves),
+                    "The accelerated acceptance run must retain the production wave configuration.");
+                Assert.That(GetPropertyValue(run, "State").ToString(), Is.EqualTo("Victory"));
+                Assert.That(GetPropertyValue(run, "Outcome").ToString(), Is.EqualTo("Victory"));
+                Assert.That(waveStartCount, Is.EqualTo(10));
+                Assert.That(completionCount, Is.EqualTo(1));
+                Assert.That(GetIntField(setup, "_killCount"), Is.EqualTo(181));
+                Assert.That(GetPropertyValue(gameOver, "SettlementState").ToString(), Is.EqualTo("Saved"));
+            }
+            finally
+            {
+                Invoke(run, "Dispose");
+                Time.timeScale = 1f;
+            }
+        }
+
+        [UnityTest]
         public IEnumerator VictoryCancelsEliteCommitBeforeBattleResultFreeze()
         {
             yield return LoadBattleScene();
@@ -1906,6 +1986,64 @@ namespace Game.Tests.PlayMode
             Assert.That(handlers, Has.Length.EqualTo(1),
                 "WaveSpawner must expose exactly one BattleRunController completion handler.");
             handlers.Single().DynamicInvoke();
+        }
+
+        private static IEnumerator ResetRunningWavesForAcceptance(Component spawner, Component setup)
+        {
+            ((MonoBehaviour)spawner).StopAllCoroutines();
+            foreach (var enemyObject in GetEnumerableFieldValues(spawner, "_aliveEnemies")
+                         .Cast<GameObject>()
+                         .Where(enemy => enemy != null)
+                         .ToArray())
+            {
+                var enemy = enemyObject.GetComponents<Component>()
+                    .FirstOrDefault(component => component != null && IsEnemyType(component.GetType()));
+                if (enemy == null || GetBoolProperty(enemy, "IsDead"))
+                {
+                    continue;
+                }
+
+                ((Behaviour)enemy).enabled = false;
+                InvokeWithArguments(enemy, "TakeDamage", int.MaxValue, 0f, 0f);
+            }
+
+            Assert.That((int)GetPropertyValue(spawner, "AliveEnemyCount"), Is.Zero,
+                "The scene-started wave must be retired before the production acceptance run.");
+            yield return new WaitForSecondsRealtime(0.7f);
+            ((MonoBehaviour)spawner).StopAllCoroutines();
+            SetIntField(setup, "_killCount", 0);
+            SetIntField(setup, "_bossKills", 0);
+        }
+
+        private static int CountWaveEnemies(object wave)
+        {
+            return GetWaveEntries(wave).Sum(entry => (int)GetPublicField(entry, "count"));
+        }
+
+        private static object[] GetWaveEntries(object wave)
+        {
+            return ((Array)GetPublicField(wave, "enemies")).Cast<object>().ToArray();
+        }
+
+        private static object GetPublicField(object owner, string fieldName)
+        {
+            var field = owner.GetType().GetField(fieldName, BindingFlags.Instance | BindingFlags.Public);
+            Assert.That(field, Is.Not.Null, $"Expected public {owner.GetType().Name}.{fieldName}.");
+            return field.GetValue(owner);
+        }
+
+        private static void SetPublicField(object owner, string fieldName, object value)
+        {
+            var field = owner.GetType().GetField(fieldName, BindingFlags.Instance | BindingFlags.Public);
+            Assert.That(field, Is.Not.Null, $"Expected public {owner.GetType().Name}.{fieldName}.");
+            field.SetValue(owner, value);
+        }
+
+        private static void AddEventHandler(Component publisher, string eventName, Delegate handler)
+        {
+            var eventInfo = publisher.GetType().GetEvent(eventName, InstanceFlags);
+            Assert.That(eventInfo, Is.Not.Null, $"Expected public event {publisher.GetType().Name}.{eventName}.");
+            eventInfo.AddEventHandler(publisher, handler);
         }
 
         private static Component SpawnTrackedEnemy(Component spawner, string poolKey, string typeName)
