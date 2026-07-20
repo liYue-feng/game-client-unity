@@ -100,6 +100,19 @@ function Wait-ForCompleteUnityXml {
     throw "Unity test XML was not created or did not close completely: $Path"
 }
 
+function Quote-CommandLineArgument {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Value
+    )
+
+    if ($Value.Contains('"')) {
+        throw "Command-line argument cannot contain a quote: $Value"
+    }
+
+    return '"' + $Value + '"'
+}
+
 $clientRoot = Resolve-ExistingDirectory -Path (Join-Path $PSScriptRoot '..\..') -Description 'Unity client root'
 if ([string]::IsNullOrWhiteSpace($BackendRoot)) {
     $gitCommonDirectory = (& git -C $clientRoot rev-parse --path-format=absolute --git-common-dir).Trim()
@@ -135,6 +148,15 @@ $unityResults = Join-Path $clientRoot "Logs\A4-real-backend-$stamp.xml"
 $unityLog = Join-Path $clientRoot "Logs\A4-real-backend-$stamp.log"
 $serverProcess = $null
 $unityProcess = $null
+$operationError = $null
+$cleanupErrors = New-Object 'System.Collections.Generic.List[string]'
+$originalIntegrationEnvironment = [Environment]::GetEnvironmentVariable('GAME_BACKEND_INTEGRATION', 'Process')
+$total = 0
+$passed = 0
+$failed = 0
+$skipped = 0
+$loginEvidence = 0
+$archiveEvidence = 0
 
 try {
     Push-Location $backendRoot
@@ -167,12 +189,12 @@ try {
     [Environment]::SetEnvironmentVariable('GAME_BACKEND_INTEGRATION', '1', 'Process')
     $unityArguments = @(
         '-batchmode',
-        '-projectPath', $clientRoot,
+        '-projectPath', (Quote-CommandLineArgument $clientRoot),
         '-runTests',
         '-testPlatform', 'PlayMode',
         '-testFilter', 'Game.Tests.PlayMode.RealBackendOnlineFlowTests.OnlineApplication_LoginSaveAndReloadArchiveAgainstRealBackend',
-        '-testResults', $unityResults,
-        '-logFile', $unityLog
+        '-testResults', (Quote-CommandLineArgument $unityResults),
+        '-logFile', (Quote-CommandLineArgument $unityLog)
     )
     $unityProcess = Start-Process `
         -FilePath $UnityEditor `
@@ -181,6 +203,15 @@ try {
         -WindowStyle Hidden
     Write-Host "UNITY_PID=$($unityProcess.Id)"
     Wait-ForProcessExit -Process $unityProcess
+    if ($unityProcess.ExitCode -ne 0) {
+        throw "Unity test process exited with code $($unityProcess.ExitCode)."
+    }
+
+    $serverProcess.Refresh()
+    if ($serverProcess.HasExited) {
+        throw "Backend exited during Unity integration run (exit $($serverProcess.ExitCode))."
+    }
+
     Wait-ForCompleteUnityXml -Path $unityResults
 
     [xml]$testDocument = Get-Content -Raw -LiteralPath $unityResults
@@ -208,37 +239,76 @@ try {
         throw "Backend log contains $archiveEvidence archive dataLen=24 entries; expected save and reload evidence."
     }
 
-    Write-Host "GO_TESTS=PASS"
-    Write-Host "UNITY_RESULT=total=$total passed=$passed failed=$failed skipped=$skipped"
-    Write-Host "SERVER_EVIDENCE=login:$loginEvidence archive_data_len_24:$archiveEvidence"
-    Write-Host "UNITY_XML=$unityResults"
-    Write-Host "UNITY_LOG=$unityLog"
-    Write-Host "SERVER_LOG=$serverStandardOutput"
+}
+catch {
+    $operationError = $_
 }
 finally {
-    [Environment]::SetEnvironmentVariable('GAME_BACKEND_INTEGRATION', $null, 'Process')
+    try {
+        [Environment]::SetEnvironmentVariable(
+            'GAME_BACKEND_INTEGRATION',
+            $originalIntegrationEnvironment,
+            'Process')
+    }
+    catch {
+        [void]$cleanupErrors.Add("Restore GAME_BACKEND_INTEGRATION: $($_.Exception.Message)")
+    }
 
     if ($unityProcess -ne $null) {
-        $unityProcess.Refresh()
-        if (-not $unityProcess.HasExited) {
-            Stop-Process -Id $unityProcess.Id -Force
-            $unityProcess.WaitForExit()
+        try {
+            $unityProcess.Refresh()
+            if (-not $unityProcess.HasExited) {
+                Stop-Process -Id $unityProcess.Id -Force
+                $unityProcess.WaitForExit()
+            }
+        }
+        catch {
+            [void]$cleanupErrors.Add("Stop Unity PID $($unityProcess.Id): $($_.Exception.Message)")
         }
     }
 
     if ($serverProcess -ne $null) {
-        $serverProcess.Refresh()
-        if (-not $serverProcess.HasExited) {
-            Stop-Process -Id $serverProcess.Id -Force
-            $serverProcess.WaitForExit()
+        try {
+            $serverProcess.Refresh()
+            if (-not $serverProcess.HasExited) {
+                Stop-Process -Id $serverProcess.Id -Force
+                $serverProcess.WaitForExit()
+            }
+        }
+        catch {
+            [void]$cleanupErrors.Add("Stop backend PID $($serverProcess.Id): $($_.Exception.Message)")
         }
     }
 
-    $portDeadline = (Get-Date).AddSeconds(10)
-    while ((Get-Date) -lt $portDeadline -and @(Get-Port8080Listeners).Count -ne 0) {
-        Start-Sleep -Milliseconds 250
+    try {
+        $portDeadline = (Get-Date).AddSeconds(10)
+        while ((Get-Date) -lt $portDeadline -and @(Get-Port8080Listeners).Count -ne 0) {
+            Start-Sleep -Milliseconds 250
+        }
+        if (@(Get-Port8080Listeners).Count -ne 0) {
+            [void]$cleanupErrors.Add('Port 8080 is still listening after captured backend process cleanup.')
+        }
     }
-    if (@(Get-Port8080Listeners).Count -ne 0) {
-        throw 'Port 8080 is still listening after captured backend process cleanup.'
+    catch {
+        [void]$cleanupErrors.Add("Verify port 8080 cleanup: $($_.Exception.Message)")
     }
 }
+
+if ($operationError -ne $null) {
+    foreach ($cleanupError in $cleanupErrors) {
+        Write-Warning "Cleanup after integration failure: $cleanupError"
+    }
+
+    $PSCmdlet.ThrowTerminatingError($operationError)
+}
+
+if ($cleanupErrors.Count -ne 0) {
+    throw "Integration cleanup failed: $($cleanupErrors -join '; ')"
+}
+
+Write-Host "GO_TESTS=PASS"
+Write-Host "UNITY_RESULT=total=$total passed=$passed failed=$failed skipped=$skipped exit_code=$($unityProcess.ExitCode)"
+Write-Host "SERVER_EVIDENCE=login:$loginEvidence archive_data_len_24:$archiveEvidence"
+Write-Host "UNITY_XML=$unityResults"
+Write-Host "UNITY_LOG=$unityLog"
+Write-Host "SERVER_LOG=$serverStandardOutput"

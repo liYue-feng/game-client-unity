@@ -93,9 +93,11 @@ namespace Game.Tests.PlayMode
                     archiveSavedHandler = () => archiveSaved = true;
                     host.ArchiveSaved += archiveSavedHandler;
                     saveAccepted = host.SaveArchive(ExpectedArchive);
-                    yield return WaitUntil(() => archiveSaved);
+                    yield return WaitUntil(() => archiveSaved, "archive save acknowledgement");
                     reloadAccepted = host.ReloadArchive();
-                    yield return WaitUntil(() => string.Equals(host.ArchiveData, ExpectedArchive, StringComparison.Ordinal));
+                    yield return WaitUntil(
+                        () => string.Equals(host.ArchiveData, ExpectedArchive, StringComparison.Ordinal),
+                        "reloaded archive to match the exact A4 payload");
                     archiveData = host.ArchiveData;
                 }
             }
@@ -146,13 +148,30 @@ namespace Game.Tests.PlayMode
 
                 yield return null;
             }
+
+            var application = FindApplication();
+            Assert.Fail(
+                $"GameApplication did not reach Ready or Failed within {MaxWaitFrames} frames. " +
+                $"State={GetApplicationProperty(application, "State")}, " +
+                $"FailureStage={GetApplicationProperty(application, "FailureStage")}, " +
+                $"FailureReason={GetApplicationProperty(application, "FailureReason")}, " +
+                $"ActiveScene={SceneManager.GetActiveScene().name}.");
         }
 
-        private static IEnumerator WaitUntil(Func<bool> predicate)
+        private static IEnumerator WaitUntil(Func<bool> predicate, string description)
         {
             for (var frame = 0; frame < MaxWaitFrames && !predicate(); frame++)
             {
                 yield return null;
+            }
+
+            if (!predicate())
+            {
+                var host = OnlineSessionHost.Instance;
+                Assert.Fail(
+                    $"Timed out after {MaxWaitFrames} frames waiting for {description}. " +
+                    $"ApplicationState={GetApplicationProperty(FindApplication(), "State")}, " +
+                    $"OnlineState={host?.State}, FailureReason={host?.FailureReason}.");
             }
         }
 
@@ -168,6 +187,11 @@ namespace Game.Tests.PlayMode
 
                 yield return null;
             }
+
+            Assert.Fail(
+                $"Offline cleanup did not reach BattleScene Ready within {MaxWaitFrames} frames. " +
+                $"ApplicationState={GetApplicationProperty(FindApplication(), "State")}, " +
+                $"ActiveScene={SceneManager.GetActiveScene().name}.");
         }
 
         private static Component FindApplication()
