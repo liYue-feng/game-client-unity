@@ -46,7 +46,6 @@ public class CombatManager : MonoBehaviour
 
         // 注册网络消息监听
         var client = NetworkClient.Instance;
-        _networkSubscriptions.Add(client.On<CombatResultResp>(MsgID.CombatResultResp, HandleCombatResultResp));
         _networkSubscriptions.Add(client.On<GetEnemyConfigsResp>(MsgID.GetEnemyConfigsResp, HandleGetEnemyConfigsResp));
         _networkSubscriptions.Add(client.On<GetDungeonConfigResp>(MsgID.GetDungeonConfigResp, HandleGetDungeonConfigResp));
         _networkSubscriptions.Add(client.On<GetStyleConfigsResp>(MsgID.GetStyleConfigsResp, HandleGetStyleConfigsResp));
@@ -82,7 +81,6 @@ public class CombatManager : MonoBehaviour
 
     // ========== 事件 ==========
 
-    public event System.Action<CombatResultResp> OnCombatResult;
     public event System.Action<GetEnemyConfigsResp> OnEnemyConfigsLoaded;
     public event System.Action<GetDungeonConfigResp> OnDungeonConfigLoaded;
     public event System.Action<GetStyleConfigsResp> OnStyleConfigsLoaded;
@@ -91,12 +89,6 @@ public class CombatManager : MonoBehaviour
     public event System.Action<string> OnError;
 
     // ========== 发送请求 ==========
-
-    /// <summary>上报战斗结算</summary>
-    public void ReportCombatResult(CombatResultReq req)
-    {
-        NetworkClient.Instance.Send(MsgID.CombatResultReq, req);
-    }
 
     /// <summary>请求敌人配置</summary>
     public void RequestEnemyConfigs()
@@ -129,11 +121,6 @@ public class CombatManager : MonoBehaviour
     }
 
     // ========== 响应处理 ==========
-
-    private void HandleCombatResultResp(CombatResultResp resp)
-    {
-        OnCombatResult?.Invoke(resp);
-    }
 
     private void HandleGetEnemyConfigsResp(GetEnemyConfigsResp resp)
     {

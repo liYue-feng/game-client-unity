@@ -43,6 +43,7 @@ namespace Game.Online
         }
 
         public OnlineSessionState State { get; private set; } = OnlineSessionState.Idle;
+        public int Generation => _generation;
         public string FailureReason { get; private set; }
         public string Nickname { get; private set; }
         private PlayerProgressState _progress = PlayerProgressState.Empty;
@@ -108,6 +109,14 @@ namespace Game.Online
             }
 
             return accepted;
+        }
+
+        internal void ApplyPersistedArchive(PlayerArchive archive)
+        {
+            if (IsActive && State == OnlineSessionState.Ready && archive != null)
+            {
+                _progress = PlayerProgressState.FromArchive(archive);
+            }
         }
 
         public void Stop()

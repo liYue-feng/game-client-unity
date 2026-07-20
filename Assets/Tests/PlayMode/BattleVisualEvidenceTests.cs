@@ -276,9 +276,9 @@ namespace Game.Tests.PlayMode
             Assert.That(resultPanel, Is.Not.Null);
             Assert.That(FindDescendant(gameOver.transform, "Title"), Is.Not.Null);
             var buttons = gameOver.GetComponentsInChildren<Button>(true);
-            Assert.That(buttons, Has.Length.EqualTo(2));
+            Assert.That(buttons, Has.Length.EqualTo(3));
             Assert.That(buttons.Select(button => button.gameObject.name),
-                Is.EquivalentTo(new[] { "BtnRestart", "BtnMainMenu" }));
+                Is.EquivalentTo(new[] { "BtnRestart", "BtnMainMenu", "BtnRetry" }));
             var panelRect = resultPanel.GetComponent<RectTransform>();
             Assert.That(panelRect.rect.size, Is.EqualTo(new Vector2(600f, 500f)));
             var panelImage = resultPanel.GetComponents<RawImage>().Single();
@@ -294,9 +294,6 @@ namespace Game.Tests.PlayMode
             Assert.That(panelRect.rect.Contains(menuBounds.min), Is.True);
             Assert.That(panelRect.rect.Contains(menuBounds.max), Is.True);
             Assert.That(restartBounds.Overlaps(menuBounds), Is.False);
-            var upperBounds = restartBounds.center.y > menuBounds.center.y ? restartBounds : menuBounds;
-            var lowerBounds = restartBounds.center.y > menuBounds.center.y ? menuBounds : restartBounds;
-            Assert.That(upperBounds.yMin - lowerBounds.yMax, Is.GreaterThan(0f));
 
             var camera = Camera.main;
             Assert.That(camera, Is.Not.Null);

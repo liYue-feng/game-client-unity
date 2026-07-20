@@ -12,6 +12,7 @@ namespace Game.Online
         private OnlineConnectionAdapter _adapter;
         private LoginSessionService _loginService;
         private ArchiveSessionService _archiveService;
+        private BattleSettlementCoordinator _battleSettlement;
         private OnlineSessionState _lastState = OnlineSessionState.Idle;
         private string _lastFailureReason;
         private string _lastNickname;
@@ -27,6 +28,8 @@ namespace Game.Online
         public string Nickname => _coordinator?.Nickname ?? _lastNickname;
         public PlayerProgressState Progress => _coordinator?.Progress ?? _lastProgress;
         public PlayerArchive Archive => Progress.ToArchive();
+        public IBattleSettlementGateway BattleSettlement =>
+            (IBattleSettlementGateway)_battleSettlement ?? new OfflineBattleSettlementGateway();
 
         public event Action<OnlineSessionState> StateChanged;
         public event Action ArchiveSaved;
@@ -107,6 +110,8 @@ namespace Game.Online
 
             _adapter?.Dispose();
             _adapter = null;
+            _battleSettlement?.Dispose();
+            _battleSettlement = null;
             _loginService?.Dispose();
             _loginService = null;
             _archiveService?.Dispose();
@@ -200,6 +205,11 @@ namespace Game.Online
                     serverUrl);
                 host._coordinator.StateChanged += host.HandleStateChanged;
                 host._coordinator.ArchiveSaved += host.HandleArchiveSaved;
+                host._battleSettlement = new BattleSettlementCoordinator(
+                    client,
+                    host._archiveService,
+                    host._coordinator.ApplyPersistedArchive);
+                host._battleSettlement.SetSessionState(host._coordinator.State, host._coordinator.Generation);
                 Instance = host;
                 return host;
             }
@@ -231,6 +241,7 @@ namespace Game.Online
             _lastFailureReason = _coordinator?.FailureReason;
             _lastNickname = _coordinator?.Nickname;
             _lastProgress = _coordinator?.Progress ?? _lastProgress;
+            _battleSettlement?.SetSessionState(state, _coordinator?.Generation ?? 0);
             StateChanged?.Invoke(state);
         }
 

@@ -24,7 +24,7 @@ namespace Game.Tests.EditMode.Network
         }
 
         [Test]
-        public void DestroyedManagersReleaseAllTwelveSubscriptionsAndClearSingletons()
+        public void DestroyedManagersReleaseAllSubscriptionsAndClearSingletons()
         {
             var client = new NetworkClient();
             NetworkClient.RegisterInstance(client);
@@ -42,7 +42,6 @@ namespace Game.Tests.EditMode.Network
             AddCallback(archive, "OnLoadSuccess");
             AddCallback(rank, "OnRankLoaded");
             AddCallback(rank, "OnScoreSubmitted");
-            AddCallback(combat, "OnCombatResult");
             AddCallback(combat, "OnEnemyConfigsLoaded");
             AddCallback(combat, "OnDungeonConfigLoaded");
             AddCallback(combat, "OnStyleConfigsLoaded");
@@ -60,7 +59,6 @@ namespace Game.Tests.EditMode.Network
             client.ReceiveFrame(Codec.Encode(MsgID.LoadArchiveResp, new LoadArchiveResp { Found = true, Archive = new PlayerArchive() }));
             client.ReceiveFrame(Codec.Encode(MsgID.GetRankResp, new GetRankResp()));
             client.ReceiveFrame(Codec.Encode(MsgID.SubmitScoreResp, new SubmitScoreResp { Success = true, BestScore = 8 }));
-            client.ReceiveFrame(Codec.Encode(MsgID.CombatResultResp, new CombatResultResp()));
             client.ReceiveFrame(Codec.Encode(MsgID.GetEnemyConfigsResp, new GetEnemyConfigsResp()));
             client.ReceiveFrame(Codec.Encode(MsgID.GetDungeonConfigResp, new GetDungeonConfigResp()));
             client.ReceiveFrame(Codec.Encode(MsgID.GetStyleConfigsResp, new GetStyleConfigsResp()));

@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using System.Reflection;
 using Game.Core;
+using Game.Gameplay;
 using Game.Network;
 using Game.Online;
 using Game.Protocol;
@@ -83,6 +84,41 @@ namespace Game.Tests.EditMode.Online
             Assert.That(_host.State, Is.EqualTo(OnlineSessionState.Ready));
             Assert.That(_host.Progress.Gold, Is.EqualTo(7));
             Assert.That(_host.Progress.UnlockedStyles, Is.EqualTo(new[] { 1, 3 }));
+        }
+
+        [Test]
+        public void BattleSettlementAppliesServerArchiveOnlyAfterSaveAcknowledgement()
+        {
+            _host.Initialize();
+            _host.StartSession();
+            _connection.RaiseConnected();
+            _provider.Succeed(0);
+            _client.ReceiveFrame(Codec.Encode(MsgID.LoginResp,
+                new LoginResp { Uid = 42, Nickname = "ink-user", Token = "session-token" }));
+            _client.ReceiveFrame(Codec.Encode(MsgID.LoadArchiveResp,
+                new LoadArchiveResp { Found = true, Archive = new PlayerArchive { Gold = 7 } }));
+            BattleSettlementResult result = null;
+
+            _host.BattleSettlement.Settle(
+                BattleRunOutcome.Victory,
+                new CombatResultData { killCount = 2, playerLevel = 1 },
+                value => result = value);
+            Assert.That(Codec.TryDecode(_transport.SentPayloads.Last(), out var messageId, out var body), Is.True);
+            Assert.That(messageId, Is.EqualTo(MsgID.CombatResultReq));
+            var request = CombatResultReq.Parser.ParseFrom(body);
+            _client.ReceiveFrame(Codec.Encode(MsgID.CombatResultResp, new CombatResultResp
+            {
+                Success = true,
+                RunId = request.RunId,
+                Archive = new PlayerArchive { Gold = 44, TalentPoints = 3 }
+            }));
+
+            Assert.That(_host.Progress.Gold, Is.EqualTo(7));
+            _client.ReceiveFrame(Codec.Encode(MsgID.SaveArchiveResp, new SaveArchiveResp { Success = true }));
+
+            Assert.That(result?.State, Is.EqualTo(BattleSettlementState.Saved));
+            Assert.That(_host.Progress.Gold, Is.EqualTo(44));
+            Assert.That(_host.Progress.TalentPoints, Is.EqualTo(3));
         }
 
         [Test]

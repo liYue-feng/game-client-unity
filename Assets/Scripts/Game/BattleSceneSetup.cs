@@ -456,26 +456,6 @@ public class BattleSceneSetup : MonoBehaviour
     private void HandlePlayerDeath()
     {
         AudioManager.Instance.PlaySFX("game_over");
-        var stats = _player.GetComponent<CharacterStats>();
-        if (stats != null)
-        {
-            TalentManager.Instance.AddTalentPoints(stats.level);
-
-            // 汇报成就数据
-            var data = new CombatResultData
-            {
-                killCount = _killCount,
-                expGained = stats.currentExp + stats.ExpToNextLevel * (stats.level - 1),
-                maxCombo = 0, // ComboCounter 目前没有 MaxCombo 属性
-                survivalTime = Mathf.RoundToInt(Time.time - _startTime),
-                playerLevel = stats.level,
-                bossKills = _bossKills,
-                elementalUpgradeCount = _elementalUpgradeCount,
-                summonUpgradeCount = _summonUpgradeCount,
-                styleSwitchCount = _styleSwitchCount
-            };
-            AchievementManager.Instance.ReportBattleResult(data);
-        }
     }
 
     private CombatResultData CaptureCombatResultData()

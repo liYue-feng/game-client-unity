@@ -1,5 +1,6 @@
 using System;
 using Game.Gameplay;
+using Game.Online;
 using UnityEngine;
 
 public sealed class BattleRunController : MonoBehaviour, IDisposable
@@ -24,6 +25,7 @@ public sealed class BattleRunController : MonoBehaviour, IDisposable
     private bool _disposed;
     private BattleCameraRig _cameraRig;
     private CombatFeedbackController _combatFeedback;
+    private IBattleSettlementGateway _settlementGateway;
 
     public BattleRunState State => _runState.State;
     public BattleRunOutcome Outcome => _runState.Outcome;
@@ -70,11 +72,13 @@ public sealed class BattleRunController : MonoBehaviour, IDisposable
             ? battleHotkeyOwner
             : throw new ArgumentNullException(nameof(battleHotkeyOwner));
         _resultDataProvider = resultDataProvider ?? throw new ArgumentNullException(nameof(resultDataProvider));
+        _settlementGateway = OnlineSessionHost.Instance?.BattleSettlement ?? new OfflineBattleSettlementGateway();
 
         _playerStats.OnDeath += HandlePlayerDeath;
         _waveSpawner.OnAllWavesComplete += HandleAllWavesComplete;
         _gameOverUI.OnRestart += Restart;
         _gameOverUI.OnBackToMenu += ReturnToMainMenu;
+        _gameOverUI.OnRetry += RetrySettlement;
         _configured = true;
     }
 
@@ -152,6 +156,9 @@ public sealed class BattleRunController : MonoBehaviour, IDisposable
             BattleTimeController.BattleResultReason,
             0f);
 
+        var resultData = _resultDataProvider();
+        TalentManager.Instance.AddTalentPoints(resultData.playerLevel);
+        AchievementManager.Instance.ReportBattleResult(resultData);
         if (outcome == BattleRunOutcome.Defeat)
         {
             _playerStateMachine.ForceDie();
@@ -160,7 +167,8 @@ public sealed class BattleRunController : MonoBehaviour, IDisposable
 
         _gameOverUI.DisplayGameOver(
             outcome == BattleRunOutcome.Victory,
-            _resultDataProvider());
+            resultData);
+        _settlementGateway.Settle(outcome, resultData, HandleSettlementCompleted);
     }
 
     public void Restart()
@@ -220,6 +228,7 @@ public sealed class BattleRunController : MonoBehaviour, IDisposable
             _waveSpawner.OnAllWavesComplete -= HandleAllWavesComplete;
             _gameOverUI.OnRestart -= Restart;
             _gameOverUI.OnBackToMenu -= ReturnToMainMenu;
+            _gameOverUI.OnRetry -= RetrySettlement;
         }
 
         if (_battleResultToken.IsValid)
@@ -250,6 +259,22 @@ public sealed class BattleRunController : MonoBehaviour, IDisposable
 
         _runState.Dispose();
         _resultDataProvider = null;
+    }
+
+    private void HandleSettlementCompleted(BattleSettlementResult result)
+    {
+        if (!_disposed)
+        {
+            _gameOverUI.SetSettlementResult(result);
+        }
+    }
+
+    private void RetrySettlement()
+    {
+        if (!_disposed)
+        {
+            _settlementGateway.Retry();
+        }
     }
 
     private void OnDestroy()

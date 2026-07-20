@@ -142,20 +142,6 @@ public class DungeonManager : MonoBehaviour
     {
         float survivalTime = Time.time - _startTime;
         OnDungeonComplete?.Invoke(_totalScore, _totalKills, _roomsCleared, survivalTime);
-
-        // 上报服务器
-        var combatResult = new Game.Protocol.CombatResultReq
-        {
-            RunId = Guid.NewGuid().ToString("N"),
-            DungeonLevel = DungeonLevel,
-            Score = _totalScore,
-            Kills = _totalKills,
-            DurationMs = (long)(survivalTime * 1000f),
-            StyleId = 0,
-            Outcome = Game.Protocol.BattleOutcome.Victory,
-            PlayerLevel = 1 // TODO: 从 StyleManager 读取
-        };
-        CombatManager.Instance.ReportCombatResult(combatResult);
     }
 
     private void OnEnemyDeathHandler(GameObject enemy)

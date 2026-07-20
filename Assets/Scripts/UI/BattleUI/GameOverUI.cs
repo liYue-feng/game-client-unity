@@ -1,4 +1,6 @@
 using System;
+using Game.Gameplay;
+using Game.Online;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -8,12 +10,20 @@ public class GameOverUI : MonoBehaviour
 
     public event Action OnRestart;
     public event Action OnBackToMenu;
+    public event Action OnRetry;
 
     private GameObject _overlay;
     private Text _resultText;
     private Font _font;
     private GameObject _canvasRoot;
     private Texture2D _overlayTexture;
+    private Text _statusText;
+    private Text _rewardText;
+    private Button _restartButton;
+    private Button _menuButton;
+    private Button _retryButton;
+
+    public BattleSettlementState SettlementState { get; private set; }
 
     private void Awake()
     {
@@ -49,6 +59,12 @@ public class GameOverUI : MonoBehaviour
             ? new Color(0.65f, 0.15f, 0.15f)
             : new Color(0.1f, 0.1f, 0.1f);
         _canvasRoot.SetActive(true);
+        SetSettlementState(BattleSettlementState.Pending, null);
+    }
+
+    public void SetSettlementResult(BattleSettlementResult result)
+    {
+        SetSettlementState(result?.State ?? BattleSettlementState.Failed, result);
     }
 
     private void Build(CombatResultData data)
@@ -94,18 +110,28 @@ public class GameOverUI : MonoBehaviour
                 new Vector2(0, statsY - 135));
         }
 
-        CreateInkButton(
+        _statusText = CreateText(panel.transform, "SettlementStatus", string.Empty, 28, TextAnchor.MiddleCenter);
+        _statusText.rectTransform.anchoredPosition = new Vector2(0, -105);
+        _statusText.rectTransform.sizeDelta = new Vector2(500, 40);
+        _statusText.color = new Color(0.2f, 0.2f, 0.2f, 1f);
+        _rewardText = CreateText(panel.transform, "Reward", string.Empty, 26, TextAnchor.MiddleCenter);
+        _rewardText.rectTransform.anchoredPosition = new Vector2(0, -145);
+        _rewardText.rectTransform.sizeDelta = new Vector2(500, 40);
+        _rewardText.color = new Color(0.45f, 0.12f, 0.1f, 1f);
+
+        _restartButton = CreateInkButton(
             panel.transform,
             "BtnRestart",
             "\u518d\u6765\u4e00\u5c40",
             () => OnRestart?.Invoke(),
-            new Vector2(0, -125));
-        CreateInkButton(
+            new Vector2(-130, -205));
+        _menuButton = CreateInkButton(
             panel.transform,
             "BtnMainMenu",
             "\u8fd4\u56de\u4e3b\u83dc\u5355",
             () => OnBackToMenu?.Invoke(),
-            new Vector2(0, -205));
+            new Vector2(130, -205));
+        _retryButton = CreateInkButton(panel.transform, "BtnRetry", "\u91cd\u8bd5", () => OnRetry?.Invoke(), new Vector2(0, -205));
     }
 
     private Texture2D MakeOverlayTexture(int width, int height)
@@ -171,7 +197,7 @@ public class GameOverUI : MonoBehaviour
         return text;
     }
 
-    private void CreateInkButton(
+    private Button CreateInkButton(
         Transform parent,
         string objectName,
         string label,
@@ -206,12 +232,29 @@ public class GameOverUI : MonoBehaviour
         labelRect.anchorMax = Vector2.one;
         labelRect.offsetMin = Vector2.zero;
         labelRect.offsetMax = Vector2.zero;
+        return button;
+    }
+
+    private void SetSettlementState(BattleSettlementState state, BattleSettlementResult result)
+    {
+        SettlementState = state;
+        var saved = state == BattleSettlementState.Saved;
+        var failed = state == BattleSettlementState.Failed;
+        _restartButton.interactable = saved;
+        _menuButton.interactable = saved;
+        _restartButton.gameObject.SetActive(!failed);
+        _menuButton.gameObject.SetActive(!failed);
+        _retryButton.gameObject.SetActive(failed);
+        _retryButton.interactable = failed;
+        _statusText.text = saved ? "\u7ed3\u7b97\u5b8c\u6210" : failed ? "\u7ed3\u7b97\u5931\u8d25" : "\u7ed3\u7b97\u4e2d";
+        _rewardText.text = saved ? $"\u91d1\u5e01 {result.RewardGold}  \u7ecf\u9a8c {result.RewardExp}" : string.Empty;
     }
 
     private void OnDestroy()
     {
         OnRestart = null;
         OnBackToMenu = null;
+        OnRetry = null;
         if (_overlayTexture != null)
         {
             Destroy(_overlayTexture);
@@ -223,18 +266,4 @@ public class GameOverUI : MonoBehaviour
             Instance = null;
         }
     }
-}
-
-public class CombatResultData
-{
-    public int killCount;
-    public int expGained;
-    public int maxCombo;
-    public int survivalTime;
-    public int playerLevel;
-    public int bossKills;
-    public int elementalUpgradeCount;
-    public int summonUpgradeCount;
-    public int styleSwitchCount;
-    public int[] obtainedUpgradeIds;
 }
