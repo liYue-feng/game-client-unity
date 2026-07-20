@@ -12,6 +12,7 @@ namespace Game.Online
         private OnlineConnectionAdapter _adapter;
         private LoginSessionService _loginService;
         private ArchiveSessionService _archiveService;
+        private ArchiveSessionService _battleArchiveService;
         private BattleSettlementCoordinator _battleSettlement;
         private OnlineSessionState _lastState = OnlineSessionState.Idle;
         private string _lastFailureReason;
@@ -112,6 +113,8 @@ namespace Game.Online
             _adapter = null;
             _battleSettlement?.Dispose();
             _battleSettlement = null;
+            _battleArchiveService?.Dispose();
+            _battleArchiveService = null;
             _loginService?.Dispose();
             _loginService = null;
             _archiveService?.Dispose();
@@ -205,16 +208,25 @@ namespace Game.Online
                     serverUrl);
                 host._coordinator.StateChanged += host.HandleStateChanged;
                 host._coordinator.ArchiveSaved += host.HandleArchiveSaved;
+                host._battleArchiveService = new ArchiveSessionService(client);
                 host._battleSettlement = new BattleSettlementCoordinator(
                     client,
-                    host._archiveService,
-                    host._coordinator.ApplyPersistedArchive);
+                    host._battleArchiveService,
+                    host.ApplyBattleArchive);
                 host._battleSettlement.SetSessionState(host._coordinator.State, host._coordinator.Generation);
                 Instance = host;
                 return host;
             }
             catch
             {
+                host._battleSettlement?.Dispose();
+                host._battleArchiveService?.Dispose();
+                if (host._coordinator != null)
+                {
+                    host._coordinator.StateChanged -= host.HandleStateChanged;
+                    host._coordinator.ArchiveSaved -= host.HandleArchiveSaved;
+                    host._coordinator.Dispose();
+                }
                 host._archiveService?.Dispose();
                 host._loginService?.Dispose();
                 UnityEngine.Object.DestroyImmediate(serviceObject);
@@ -249,6 +261,12 @@ namespace Game.Online
         {
             _lastProgress = _coordinator?.Progress ?? _lastProgress;
             ArchiveSaved?.Invoke();
+        }
+
+        private void ApplyBattleArchive(PlayerArchive archive)
+        {
+            _coordinator?.ApplyPersistedArchive(archive);
+            HandleArchiveSaved();
         }
 
         private void OnDestroy()

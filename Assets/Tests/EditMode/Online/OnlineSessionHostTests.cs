@@ -98,6 +98,13 @@ namespace Game.Tests.EditMode.Online
             _client.ReceiveFrame(Codec.Encode(MsgID.LoadArchiveResp,
                 new LoadArchiveResp { Found = true, Archive = new PlayerArchive { Gold = 7 } }));
             BattleSettlementResult result = null;
+            var archiveSavedEvents = 0;
+            var observedGold = 0;
+            _host.ArchiveSaved += () =>
+            {
+                archiveSavedEvents++;
+                observedGold = _host.Progress.Gold;
+            };
 
             _host.BattleSettlement.Settle(
                 BattleRunOutcome.Victory,
@@ -119,6 +126,56 @@ namespace Game.Tests.EditMode.Online
             Assert.That(result?.State, Is.EqualTo(BattleSettlementState.Saved));
             Assert.That(_host.Progress.Gold, Is.EqualTo(44));
             Assert.That(_host.Progress.TalentPoints, Is.EqualTo(3));
+            Assert.That(archiveSavedEvents, Is.EqualTo(1));
+            Assert.That(observedGold, Is.EqualTo(44));
+        }
+
+        [Test]
+        public void BattleArchiveFailureRemainsRetryableWithoutFailingTheOnlineSession()
+        {
+            _host.Initialize();
+            _host.StartSession();
+            _connection.RaiseConnected();
+            _provider.Succeed(0);
+            _client.ReceiveFrame(Codec.Encode(MsgID.LoginResp,
+                new LoginResp { Uid = 42, Nickname = "ink-user", Token = "session-token" }));
+            _client.ReceiveFrame(Codec.Encode(MsgID.LoadArchiveResp,
+                new LoadArchiveResp { Found = true, Archive = new PlayerArchive { Gold = 7 } }));
+            BattleSettlementResult result = null;
+
+            _host.BattleSettlement.Settle(
+                BattleRunOutcome.Victory,
+                new CombatResultData { killCount = 2, playerLevel = 1 },
+                value => result = value);
+            Assert.That(Codec.TryDecode(_transport.SentPayloads.Last(), out var messageId, out var body), Is.True);
+            Assert.That(messageId, Is.EqualTo(MsgID.CombatResultReq));
+            var request = CombatResultReq.Parser.ParseFrom(body);
+            _client.ReceiveFrame(Codec.Encode(MsgID.CombatResultResp, new CombatResultResp
+            {
+                Success = true,
+                RunId = request.RunId,
+                Archive = new PlayerArchive { Gold = 44 }
+            }));
+
+            _client.ReceiveFrame(Codec.Encode(MsgID.SaveArchiveResp, new SaveArchiveResp { Success = false }));
+
+            Assert.That(result?.State, Is.EqualTo(BattleSettlementState.Failed));
+            Assert.That(_host.State, Is.EqualTo(OnlineSessionState.Ready));
+            Assert.That(_connection.DisconnectCalls, Is.Zero);
+            var combatRequestsBeforeRetry = _transport.SentPayloads.Count(frame =>
+            {
+                Codec.TryDecode(frame, out var id, out _);
+                return id == MsgID.CombatResultReq;
+            });
+
+            Assert.That(_host.BattleSettlement.Retry(), Is.True);
+            Assert.That(Codec.TryDecode(_transport.SentPayloads.Last(), out messageId, out _), Is.True);
+            Assert.That(messageId, Is.EqualTo(MsgID.SaveArchiveReq));
+            Assert.That(_transport.SentPayloads.Count(frame =>
+            {
+                Codec.TryDecode(frame, out var id, out _);
+                return id == MsgID.CombatResultReq;
+            }), Is.EqualTo(combatRequestsBeforeRetry));
         }
 
         [Test]
