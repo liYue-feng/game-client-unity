@@ -15,6 +15,8 @@ public sealed class MainMenuUI : MonoBehaviour
     private Button _startButton;
     private Button _settingsButton;
     private Button _retryButton;
+    private Texture2D _paperTexture;
+    private Texture2D _inkWashTexture;
 
     private void Awake()
     {
@@ -54,6 +56,18 @@ public sealed class MainMenuUI : MonoBehaviour
         {
             _retryButton.onClick.RemoveListener(RetrySession);
         }
+
+        if (_paperTexture != null)
+        {
+            Destroy(_paperTexture);
+            _paperTexture = null;
+        }
+
+        if (_inkWashTexture != null)
+        {
+            Destroy(_inkWashTexture);
+            _inkWashTexture = null;
+        }
     }
 
     private void BuildUi()
@@ -76,26 +90,42 @@ public sealed class MainMenuUI : MonoBehaviour
         scaler.matchWidthOrHeight = 0.5f;
         canvasObject.AddComponent<GraphicRaycaster>();
 
-        var background = CreateImage(canvasObject.transform, "Background", new Color(0.94f, 0.92f, 0.87f));
+        var background = CreateRawImage(canvasObject.transform, "PaperBackground");
+        _paperTexture = CreatePaperTexture(192, 192);
+        background.texture = _paperTexture;
+        background.uvRect = new Rect(0, 0, 4, 8);
         Stretch(background.rectTransform);
 
-        var title = CreateText(canvasObject.transform, "Title", "Main Menu", 64, TextAnchor.MiddleCenter);
-        Place(title.rectTransform, new Vector2(0.5f, 0.76f), new Vector2(680, 100));
+        var inkWash = CreateRawImage(canvasObject.transform, "InkWash");
+        _inkWashTexture = CreateInkWashTexture(256, 64);
+        inkWash.texture = _inkWashTexture;
+        PlaceBand(inkWash.rectTransform, 0.70f, 0.90f);
 
-        _nicknameText = CreateText(canvasObject.transform, "Nickname", "Guest", 30, TextAnchor.MiddleCenter);
-        Place(_nicknameText.rectTransform, new Vector2(0.5f, 0.67f), new Vector2(600, 52));
+        var title = CreateText(canvasObject.transform, "Title", "剑", 92, TextAnchor.MiddleCenter);
+        title.color = new Color(0.94f, 0.95f, 0.92f);
+        Place(title.rectTransform, new Vector2(0.5f, 0.82f), new Vector2(680, 120));
 
-        _statusText = CreateText(canvasObject.transform, "Status", "Offline", 24, TextAnchor.MiddleCenter);
-        _statusText.color = new Color(0.25f, 0.25f, 0.25f);
-        Place(_statusText.rectTransform, new Vector2(0.5f, 0.63f), new Vector2(600, 44));
+        var subtitle = CreateText(canvasObject.transform, "Subtitle", "水墨武侠 · 行于无尽", 26, TextAnchor.MiddleCenter);
+        subtitle.color = new Color(0.82f, 0.87f, 0.84f);
+        Place(subtitle.rectTransform, new Vector2(0.5f, 0.75f), new Vector2(680, 48));
 
-        _startButton = CreateButton(canvasObject.transform, "BtnStart", "Start", new Vector2(0.5f, 0.49f));
+        _nicknameText = CreateText(canvasObject.transform, "Nickname", "游侠", 30, TextAnchor.MiddleCenter);
+        Place(_nicknameText.rectTransform, new Vector2(0.5f, 0.64f), new Vector2(600, 52));
+
+        _statusText = CreateText(canvasObject.transform, "Status", "离线游玩", 24, TextAnchor.MiddleCenter);
+        _statusText.color = ShuiMoPalette.FlowerBlue;
+        _statusText.resizeTextForBestFit = true;
+        _statusText.resizeTextMinSize = 14;
+        _statusText.resizeTextMaxSize = 24;
+        Place(_statusText.rectTransform, new Vector2(0.5f, 0.60f), new Vector2(720, 52));
+
+        _startButton = CreateButton(canvasObject.transform, "BtnStart", "开始战斗", new Vector2(0.5f, 0.46f));
         _startButton.onClick.AddListener(StartGame);
 
-        _settingsButton = CreateButton(canvasObject.transform, "BtnSettings", "Settings", new Vector2(0.5f, 0.40f));
+        _settingsButton = CreateButton(canvasObject.transform, "BtnSettings", "设置", new Vector2(0.5f, 0.37f));
         _settingsButton.onClick.AddListener(OpenSettings);
 
-        _retryButton = CreateButton(canvasObject.transform, "BtnRetry", "Retry", new Vector2(0.5f, 0.31f));
+        _retryButton = CreateButton(canvasObject.transform, "BtnRetry", "重试连接", new Vector2(0.5f, 0.28f));
         _retryButton.onClick.AddListener(RetrySession);
         _retryButton.gameObject.SetActive(false);
     }
@@ -123,17 +153,22 @@ public sealed class MainMenuUI : MonoBehaviour
         if (_nicknameText != null)
         {
             var nickname = _onlineSession?.Nickname;
-            _nicknameText.text = string.IsNullOrWhiteSpace(nickname) ? "Guest" : nickname;
+            _nicknameText.text = string.IsNullOrWhiteSpace(nickname) ? "游侠" : nickname;
         }
 
         if (_statusText != null)
         {
-            _statusText.text = _onlineSession == null ? "Offline" : state.ToString();
+            _statusText.text = _onlineSession == null ? "离线游玩" : GetStatusLabel(state);
         }
 
         if (_retryButton != null)
         {
             _retryButton.gameObject.SetActive(_onlineSession != null && state == OnlineSessionState.Failed);
+        }
+
+        if (_startButton != null)
+        {
+            _startButton.interactable = _onlineSession == null || state == OnlineSessionState.Ready;
         }
     }
 
@@ -177,13 +212,11 @@ public sealed class MainMenuUI : MonoBehaviour
         return text;
     }
 
-    private static Image CreateImage(Transform parent, string name, Color color)
+    private static RawImage CreateRawImage(Transform parent, string name)
     {
         var imageObject = new GameObject(name);
         imageObject.transform.SetParent(parent, false);
-        var image = imageObject.AddComponent<Image>();
-        image.color = color;
-        return image;
+        return imageObject.AddComponent<RawImage>();
     }
 
     private static void Place(RectTransform rectTransform, Vector2 anchor, Vector2 size)
@@ -201,6 +234,83 @@ public sealed class MainMenuUI : MonoBehaviour
         rectTransform.anchorMax = Vector2.one;
         rectTransform.offsetMin = Vector2.zero;
         rectTransform.offsetMax = Vector2.zero;
+    }
+
+    private static void PlaceBand(RectTransform rectTransform, float anchorBottom, float anchorTop)
+    {
+        rectTransform.anchorMin = new Vector2(0, anchorBottom);
+        rectTransform.anchorMax = new Vector2(1, anchorTop);
+        rectTransform.offsetMin = Vector2.zero;
+        rectTransform.offsetMax = Vector2.zero;
+    }
+
+    private static Texture2D CreatePaperTexture(int width, int height)
+    {
+        var texture = new Texture2D(width, height, TextureFormat.RGBA32, false);
+        var pixels = new Color32[width * height];
+        for (var y = 0; y < height; y++)
+        {
+            for (var x = 0; x < width; x++)
+            {
+                var grain = Mathf.PerlinNoise(x * 0.055f, y * 0.08f);
+                var fiber = Mathf.PerlinNoise(x * 0.015f, y * 0.32f);
+                var tone = (byte)Mathf.Clamp(224 + grain * 18 + fiber * 8, 0, 255);
+                pixels[y * width + x] = new Color32(tone, (byte)Mathf.Min(255, tone + 2), tone, 255);
+            }
+        }
+
+        texture.SetPixels32(pixels);
+        texture.wrapMode = TextureWrapMode.Repeat;
+        texture.filterMode = FilterMode.Bilinear;
+        texture.Apply();
+        return texture;
+    }
+
+    private static Texture2D CreateInkWashTexture(int width, int height)
+    {
+        var texture = new Texture2D(width, height, TextureFormat.RGBA32, false);
+        var pixels = new Color32[width * height];
+        for (var y = 0; y < height; y++)
+        {
+            var edge = Mathf.Sin(Mathf.PI * y / (height - 1f));
+            for (var x = 0; x < width; x++)
+            {
+                var wash = Mathf.PerlinNoise(x * 0.035f, y * 0.09f);
+                var alpha = (byte)(Mathf.Clamp01(edge * (0.66f + wash * 0.34f)) * 235);
+                pixels[y * width + x] = new Color32(24, 34, 34, alpha);
+            }
+        }
+
+        texture.SetPixels32(pixels);
+        texture.wrapMode = TextureWrapMode.Clamp;
+        texture.filterMode = FilterMode.Bilinear;
+        texture.Apply();
+        return texture;
+    }
+
+    private string GetStatusLabel(OnlineSessionState state)
+    {
+        switch (state)
+        {
+            case OnlineSessionState.Connecting:
+                return "连接中";
+            case OnlineSessionState.Authenticating:
+                return "验证身份";
+            case OnlineSessionState.LoadingArchive:
+                return "读取存档";
+            case OnlineSessionState.Ready:
+                return "已就绪";
+            case OnlineSessionState.Reconnecting:
+                return "重连中";
+            case OnlineSessionState.Failed:
+                return string.IsNullOrWhiteSpace(_onlineSession?.FailureReason)
+                    ? "连接失败"
+                    : $"连接失败：{_onlineSession.FailureReason}";
+            case OnlineSessionState.Stopped:
+                return "已停止";
+            default:
+                return "等待连接";
+        }
     }
 
     private static void EnsureEventSystem()

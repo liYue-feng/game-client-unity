@@ -27,12 +27,22 @@ public class InkButton : MonoBehaviour
 
     void OnValidate()
     {
-        if (_label != null && buttonText != _label.text)
-            _label.text = buttonText;
-        if (_label != null && _label.fontSize != fontSize)
-            _label.fontSize = fontSize;
-        if (_label != null && _label.color != inkColor)
-            _label.color = inkColor;
+        RefreshLabel();
+    }
+
+    void Start()
+    {
+        RefreshLabel();
+    }
+
+    private void RefreshLabel()
+    {
+        if (_label == null)
+            return;
+
+        _label.text = buttonText;
+        _label.fontSize = fontSize;
+        _label.color = inkColor;
     }
 
     void SetupBackground()
