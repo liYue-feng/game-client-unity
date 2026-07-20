@@ -126,6 +126,38 @@ namespace Game.Tests.EditMode.Online
         }
 
         [Test]
+        public void FailedSessionIgnoresLaterDisconnectAndConnectedUntilRetry()
+        {
+            _coordinator.Start();
+            _connection.RaiseConnected();
+            _provider.Fail(0, "platform unavailable");
+            Assert.That(_coordinator.State, Is.EqualTo(OnlineSessionState.Failed));
+
+            _connection.RaiseDisconnected();
+            _connection.RaiseConnected();
+
+            Assert.That(_coordinator.State, Is.EqualTo(OnlineSessionState.Failed));
+            Assert.That(_coordinator.FailureReason, Is.EqualTo("platform unavailable"));
+            Assert.That(_provider.RequestCount, Is.EqualTo(1));
+            Assert.That(_connection.ConnectCalls, Is.EqualTo(1));
+        }
+
+        [Test]
+        public void IdleConnectionNotificationsAreIgnoredAndDoNotBlockStart()
+        {
+            _connection.RaiseError("pre-start error");
+            _connection.RaiseDisconnected();
+
+            Assert.That(_coordinator.State, Is.EqualTo(OnlineSessionState.Idle));
+            Assert.That(_coordinator.FailureReason, Is.Null);
+
+            _coordinator.Start();
+
+            Assert.That(_coordinator.State, Is.EqualTo(OnlineSessionState.Connecting));
+            Assert.That(_connection.ConnectCalls, Is.EqualTo(1));
+        }
+
+        [Test]
         public void ArchiveServerErrorBecomesFailed()
         {
             _coordinator.Start();

@@ -264,7 +264,10 @@ namespace Game.Online
 
         private void HandleDisconnected()
         {
-            if (!IsActive)
+            if (!IsActive ||
+                State == OnlineSessionState.Idle ||
+                State == OnlineSessionState.Failed ||
+                State == OnlineSessionState.Reconnecting)
             {
                 return;
             }
@@ -283,7 +286,7 @@ namespace Game.Online
 
         private void HandleConnectionError(string reason)
         {
-            if (IsActive)
+            if (IsActive && State != OnlineSessionState.Idle && State != OnlineSessionState.Failed)
             {
                 Fail(string.IsNullOrWhiteSpace(reason) ? "Connection failed." : reason);
             }
