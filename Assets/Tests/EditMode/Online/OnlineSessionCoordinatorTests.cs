@@ -9,6 +9,7 @@ using Game.Tests.EditMode.Network.TestDoubles;
 using Game.Tests.EditMode.Online.TestDoubles;
 using NUnit.Framework;
 using UnityEngine;
+using UnityEngine.TestTools;
 using Object = UnityEngine.Object;
 
 namespace Game.Tests.EditMode.Online
@@ -114,6 +115,7 @@ namespace Game.Tests.EditMode.Online
 
             Assert.That(_coordinator.State, Is.EqualTo(OnlineSessionState.Failed));
             Assert.That(_coordinator.FailureReason, Is.EqualTo("platform unavailable"));
+            Assert.That(_connection.DisconnectCalls, Is.EqualTo(1));
 
             _coordinator.Retry();
             _connection.RaiseConnected();
@@ -123,6 +125,7 @@ namespace Game.Tests.EditMode.Online
 
             Assert.That(_coordinator.State, Is.EqualTo(OnlineSessionState.Failed));
             Assert.That(_coordinator.FailureReason, Is.EqualTo("[9999] login denied"));
+            Assert.That(_connection.DisconnectCalls, Is.EqualTo(2));
         }
 
         [Test]
@@ -132,6 +135,7 @@ namespace Game.Tests.EditMode.Online
             _connection.RaiseConnected();
             _provider.Fail(0, "platform unavailable");
             Assert.That(_coordinator.State, Is.EqualTo(OnlineSessionState.Failed));
+            Assert.That(_connection.DisconnectCalls, Is.EqualTo(1));
 
             _connection.RaiseDisconnected();
             _connection.RaiseConnected();
@@ -140,6 +144,7 @@ namespace Game.Tests.EditMode.Online
             Assert.That(_coordinator.FailureReason, Is.EqualTo("platform unavailable"));
             Assert.That(_provider.RequestCount, Is.EqualTo(1));
             Assert.That(_connection.ConnectCalls, Is.EqualTo(1));
+            Assert.That(_connection.DisconnectCalls, Is.EqualTo(1));
         }
 
         [Test]
@@ -171,6 +176,7 @@ namespace Game.Tests.EditMode.Online
 
             Assert.That(_coordinator.State, Is.EqualTo(OnlineSessionState.Failed));
             Assert.That(_coordinator.FailureReason, Is.EqualTo("[9999] archive unavailable"));
+            Assert.That(_connection.DisconnectCalls, Is.EqualTo(1));
         }
 
         [Test]
@@ -312,6 +318,176 @@ namespace Game.Tests.EditMode.Online
             }
         }
 
+        [Test]
+        public void RetryAfterLoginErrorStartsFreshTransportAndCompletesSession()
+        {
+            var root = new GameObject("online-retry-real-stack-test-root");
+            var client = new NetworkClient();
+            var factory = new FakeWebSocketTransportFactory();
+            var dispatcher = new FakeNetworkDispatcher();
+            var settings = NetworkTestSettings.Create();
+            var host = NetworkConnectionControllerHost.Install(
+                root.transform,
+                client,
+                factory,
+                settings,
+                dispatcher);
+            var adapter = new OnlineConnectionAdapter(client, host);
+            var provider = new FakeLoginCodeProvider();
+            var login = new LoginSessionService(client);
+            var archive = new ArchiveSessionService(client);
+            var coordinator = new OnlineSessionCoordinator(
+                adapter,
+                provider,
+                login,
+                archive,
+                client,
+                settings.ServerUrl);
+            var states = new List<OnlineSessionState>();
+            coordinator.StateChanged += states.Add;
+
+            try
+            {
+                host.Initialize();
+                coordinator.Start();
+                var failedTransport = factory.LastTransport;
+                failedTransport.RaiseOpened();
+                dispatcher.PumpAll();
+                provider.Succeed(0, "dev:first");
+                failedTransport.RaiseMessage(Codec.Encode(MsgID.Error,
+                    new ErrorResp { code = 9999, msg = "login denied" }));
+                dispatcher.PumpAll();
+
+                Assert.That(coordinator.State, Is.EqualTo(OnlineSessionState.Failed));
+                Assert.That(coordinator.FailureReason, Is.EqualTo("[9999] login denied"));
+
+                coordinator.Retry();
+
+                Assert.That(coordinator.State, Is.EqualTo(OnlineSessionState.Connecting),
+                    "retry must not be failed by the replaced transport's synchronous disconnect notification");
+                Assert.That(factory.Created, Has.Count.EqualTo(2));
+                Assert.That(failedTransport.CloseCalls, Has.Count.EqualTo(1));
+                Assert.That(failedTransport.CloseCalls[0].Reason, Is.EqualTo("Client disconnect"));
+                Assert.That(failedTransport.DisposeCalls, Is.EqualTo(1));
+
+                var retryTransport = factory.LastTransport;
+                retryTransport.RaiseOpened();
+                dispatcher.PumpAll();
+                Assert.That(coordinator.State, Is.EqualTo(OnlineSessionState.Authenticating));
+                Assert.That(provider.RequestCount, Is.EqualTo(2));
+                provider.Succeed(1, "dev:retry");
+
+                failedTransport.RaiseMessage(Codec.Encode(MsgID.LoginResp,
+                    new LoginResp { uid = 1, nickname = "stale", token = "stale-token" }));
+                failedTransport.RaiseMessage(Codec.Encode(MsgID.LoadArchiveResp,
+                    new LoadArchiveResp { data = "{\"generation\":1}" }));
+                dispatcher.PumpAll();
+
+                Assert.That(coordinator.State, Is.EqualTo(OnlineSessionState.Authenticating));
+                Assert.That(coordinator.Nickname, Is.Null);
+                Assert.That(DecodeMessageIds(retryTransport.SentPayloads),
+                    Is.EqualTo(new[] { MsgID.LoginReq }));
+
+                retryTransport.RaiseMessage(Codec.Encode(MsgID.LoginResp,
+                    new LoginResp { uid = 2, nickname = "retry-user", token = "retry-token" }));
+                dispatcher.PumpAll();
+                retryTransport.RaiseMessage(Codec.Encode(MsgID.LoadArchiveResp,
+                    new LoadArchiveResp { data = "{\"generation\":2}" }));
+                dispatcher.PumpAll();
+
+                Assert.That(coordinator.State, Is.EqualTo(OnlineSessionState.Ready));
+                Assert.That(coordinator.Nickname, Is.EqualTo("retry-user"));
+                Assert.That(coordinator.ArchiveData, Is.EqualTo("{\"generation\":2}"));
+                Assert.That(DecodeMessageIds(retryTransport.SentPayloads),
+                    Is.EqualTo(new[] { MsgID.LoginReq, MsgID.LoadArchiveReq }));
+                Assert.That(states.Count(state => state == OnlineSessionState.Authenticating), Is.EqualTo(2),
+                    "each connection generation must own exactly one authentication subscription path");
+                Assert.That(states.Count(state => state == OnlineSessionState.Ready), Is.EqualTo(1));
+            }
+            finally
+            {
+                coordinator.Dispose();
+                adapter.Dispose();
+                archive.Dispose();
+                login.Dispose();
+                host.Shutdown();
+                client.Dispose();
+                Object.DestroyImmediate(root);
+                Object.DestroyImmediate(settings);
+            }
+        }
+
+        [Test]
+        public void ExhaustedTransportErrorThenStopAndDisposeRemainIdempotent()
+        {
+            var root = new GameObject("online-exhausted-error-test-root");
+            var client = new NetworkClient();
+            var factory = new FakeWebSocketTransportFactory();
+            var dispatcher = new FakeNetworkDispatcher();
+            var settings = NetworkTestSettings.Create(maxAttempts: 0);
+            var host = NetworkConnectionControllerHost.Install(
+                root.transform,
+                client,
+                factory,
+                settings,
+                dispatcher);
+            var adapter = new OnlineConnectionAdapter(client, host);
+            var provider = new FakeLoginCodeProvider();
+            var login = new LoginSessionService(client);
+            var archive = new ArchiveSessionService(client);
+            var coordinator = new OnlineSessionCoordinator(
+                adapter,
+                provider,
+                login,
+                archive,
+                client,
+                settings.ServerUrl);
+            var errors = 0;
+            var disconnected = 0;
+            client.OnError += _ => errors++;
+            client.OnDisconnected += () => disconnected++;
+
+            try
+            {
+                host.Initialize();
+                coordinator.Start();
+                var failedTransport = factory.LastTransport;
+                LogAssert.Expect(LogType.Error,
+                    "[NetworkConnectionController] WebSocket error in state Connecting generation 1: exhausted");
+                failedTransport.RaiseError("exhausted");
+                dispatcher.PumpAll();
+
+                Assert.That(coordinator.State, Is.EqualTo(OnlineSessionState.Failed));
+                Assert.That(coordinator.FailureReason, Is.EqualTo("exhausted"));
+                Assert.That(host.State, Is.EqualTo(NetworkConnectionState.Disconnected));
+                Assert.That(failedTransport.DisposeCalls, Is.EqualTo(1));
+                Assert.That(errors, Is.EqualTo(1));
+                Assert.That(disconnected, Is.Zero);
+
+                coordinator.Stop();
+                coordinator.Stop();
+                coordinator.Dispose();
+                coordinator.Dispose();
+
+                Assert.That(coordinator.State, Is.EqualTo(OnlineSessionState.Stopped));
+                Assert.That(host.State, Is.EqualTo(NetworkConnectionState.Disconnected));
+                Assert.That(failedTransport.DisposeCalls, Is.EqualTo(1));
+                Assert.That(errors, Is.EqualTo(1));
+                Assert.That(disconnected, Is.Zero);
+            }
+            finally
+            {
+                coordinator.Dispose();
+                adapter.Dispose();
+                archive.Dispose();
+                login.Dispose();
+                host.Shutdown();
+                client.Dispose();
+                Object.DestroyImmediate(root);
+                Object.DestroyImmediate(settings);
+            }
+        }
+
         private void CompleteInitialSession(string nickname, string archiveData)
         {
             _coordinator.Start();
@@ -344,6 +520,15 @@ namespace Game.Tests.EditMode.Online
         {
             Assert.That(Codec.TryDecode(_transport.SentPayloads.Last(), out var msgId, out _), Is.True);
             return msgId;
+        }
+
+        private static ushort[] DecodeMessageIds(IEnumerable<byte[]> payloads)
+        {
+            return payloads.Select(payload =>
+            {
+                Assert.That(Codec.TryDecode(payload, out var msgId, out _), Is.True);
+                return msgId;
+            }).ToArray();
         }
 
         private static void InvokeClientNotification(NetworkClient client, string methodName, string argument)

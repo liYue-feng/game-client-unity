@@ -316,6 +316,8 @@ namespace Game.Online
             FailureReason = reason;
             CancelActiveOperations();
             TransitionTo(OnlineSessionState.Failed);
+            _client.ClearLoginInfo();
+            _connection.Disconnect();
         }
 
         private void CancelActiveOperations()
