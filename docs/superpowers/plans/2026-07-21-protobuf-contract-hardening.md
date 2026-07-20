@@ -47,24 +47,33 @@ Resolve the client root using the existing workspace/worktree discovery pattern 
 Run:
 
 ```powershell
-powershell.exe -NoProfile -Command "Invoke-Pester -Script tools/protobuf/Generate-Protocol.Tests.ps1 -PassThru; if (`$LASTEXITCODE -ne 0) { exit `$LASTEXITCODE }"
+powershell.exe -NoProfile -Command "Invoke-Pester -Script tools/protobuf/Generate-Protocol.Tests.ps1 -EnableExit"
 ```
 
 Expected: FAIL because the current hash comparison treats committed CRLF and generated LF as different.
 
-- [ ] **Step 3: Implement normalized text comparison and the runtime destination**
+- [ ] **Step 3: Implement byte-exact CRLF-only comparison and the runtime destination**
 
-Add a text comparison helper and use it only in `-Check` mode:
+Add a byte comparison helper and use it only in `-Check` mode. It removes `0x0D` only when it immediately precedes `0x0A`, then returns a case-sensitive base64 fingerprint of every remaining byte:
 
 ```powershell
-function Get-NormalizedGeneratedText {
+function Get-NormalizedGeneratedFingerprint {
     param([string]$Path)
 
-    return [IO.File]::ReadAllText($Path).Replace("`r`n", "`n").Replace("`r", "`n")
+    [byte[]]$source = [IO.File]::ReadAllBytes($Path)
+    $normalized = New-Object 'System.Collections.Generic.List[byte]'
+    for ($index = 0; $index -lt $source.Length; $index++) {
+        if ($source[$index] -eq 0x0D -and $index + 1 -lt $source.Length -and $source[$index + 1] -eq 0x0A) {
+            continue
+        }
+        $normalized.Add($source[$index])
+    }
+
+    return [Convert]::ToBase64String($normalized.ToArray())
 }
 ```
 
-In `Copy-OrCheckGeneratedFile`, compare normalized strings with `-cne`. Define the Unity runtime destination as:
+In `Copy-OrCheckGeneratedFile`, compare normalized fingerprints with `-cne`. Define the Unity runtime destination as:
 
 ```powershell
 $csharpRuntimeOutputPath = Join-Path $ClientRoot 'Assets\Scripts\Protocol\Generated\Messages.cs'
@@ -77,7 +86,7 @@ Call `Copy-OrCheckGeneratedFile` for both C# destinations using the same generat
 Run:
 
 ```powershell
-powershell.exe -NoProfile -Command "Invoke-Pester -Script tools/protobuf/Generate-Protocol.Tests.ps1 -PassThru; if (`$LASTEXITCODE -ne 0) { exit `$LASTEXITCODE }"
+powershell.exe -NoProfile -Command "Invoke-Pester -Script tools/protobuf/Generate-Protocol.Tests.ps1 -EnableExit"
 powershell.exe -NoProfile -File tools/protobuf/Verify-Protocol.ps1 -ClientRoot E:\Own_project\game-client-unity\.worktrees\protobuf-battle-completion
 go test ./...
 ```
@@ -119,14 +128,14 @@ The fixture's staged source must include `namespace Game.Protocol`, `public seal
 Run:
 
 ```powershell
-powershell.exe -NoProfile -Command "Invoke-Pester -Script tools/protobuf/GeneratedProtocol.Tests.ps1 -PassThru; if (`$LASTEXITCODE -ne 0) { exit `$LASTEXITCODE }"
+powershell.exe -NoProfile -Command "Invoke-Pester -Script tools/protobuf/GeneratedProtocol.Tests.ps1 -EnableExit"
 ```
 
 Expected: FAIL because the current verifier never reads the runtime `Assets` copy.
 
 - [ ] **Step 3: Implement runtime generated-source verification**
 
-Resolve the runtime path from `$projectRoot`, require it to exist, normalize line endings for both generated files, and throw when the normalized contents differ:
+Resolve the runtime path from `$projectRoot`, require it to exist, compare CRLF-normalized byte fingerprints for both generated files, and throw when the fingerprints differ:
 
 ```powershell
 $runtimeGeneratedPath = Join-Path $projectRoot 'Assets\Scripts\Protocol\Generated\Messages.cs'
@@ -134,9 +143,22 @@ if (-not (Test-Path -LiteralPath $runtimeGeneratedPath -PathType Leaf)) {
     throw "Unity runtime generated C# protocol is missing: $runtimeGeneratedPath"
 }
 
-$stagedText = [IO.File]::ReadAllText($generatedPath).Replace("`r`n", "`n").Replace("`r", "`n")
-$runtimeText = [IO.File]::ReadAllText($runtimeGeneratedPath).Replace("`r`n", "`n").Replace("`r", "`n")
-if ($stagedText -cne $runtimeText) {
+function Get-NormalizedGeneratedFingerprint {
+    param([string]$Path)
+
+    [byte[]]$source = [IO.File]::ReadAllBytes($Path)
+    $normalized = New-Object 'System.Collections.Generic.List[byte]'
+    for ($index = 0; $index -lt $source.Length; $index++) {
+        if ($source[$index] -eq 0x0D -and $index + 1 -lt $source.Length -and $source[$index + 1] -eq 0x0A) {
+            continue
+        }
+        $normalized.Add($source[$index])
+    }
+
+    return [Convert]::ToBase64String($normalized.ToArray())
+}
+
+if ((Get-NormalizedGeneratedFingerprint -Path $generatedPath) -cne (Get-NormalizedGeneratedFingerprint -Path $runtimeGeneratedPath)) {
     throw "Unity runtime generated C# protocol differs from staging: $runtimeGeneratedPath"
 }
 ```
@@ -146,7 +168,7 @@ if ($stagedText -cne $runtimeText) {
 Run:
 
 ```powershell
-powershell.exe -NoProfile -Command "Invoke-Pester -Script tools/protobuf/GeneratedProtocol.Tests.ps1 -PassThru; if (`$LASTEXITCODE -ne 0) { exit `$LASTEXITCODE }"
+powershell.exe -NoProfile -Command "Invoke-Pester -Script tools/protobuf/GeneratedProtocol.Tests.ps1 -EnableExit"
 powershell.exe -NoProfile -File tools/protobuf/Verify-GeneratedProtocol.ps1
 ```
 

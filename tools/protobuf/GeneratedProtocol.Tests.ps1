@@ -42,6 +42,69 @@ namespace Game.Protocol {
         }
     }
 
+    It 'rejects a runtime generated source with a standalone carriage return' {
+        $fixtureRoot = Join-Path ([IO.Path]::GetTempPath()) ("GeneratedProtocolFixture-{0}" -f [guid]::NewGuid())
+        $fixtureToolsPath = Join-Path $fixtureRoot 'tools\protobuf'
+        $fixtureGeneratedPath = Join-Path $fixtureToolsPath 'generated\Messages.cs'
+        $fixtureRuntimePath = Join-Path $fixtureRoot 'Assets\Scripts\Protocol\Generated\Messages.cs'
+        $fixtureVerifier = Join-Path $fixtureToolsPath 'Verify-GeneratedProtocol.ps1'
+        $fixtureSource = @'
+using Google.Protobuf;
+namespace Game.Protocol {
+    public sealed partial class LoginReq { }
+}
+'@
+
+        try {
+            New-Item -ItemType Directory -Path (Split-Path -Parent $fixtureGeneratedPath) -Force | Out-Null
+            New-Item -ItemType Directory -Path (Split-Path -Parent $fixtureRuntimePath) -Force | Out-Null
+            Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Verify-GeneratedProtocol.ps1') -Destination $fixtureVerifier
+            [IO.File]::WriteAllText($fixtureGeneratedPath, $fixtureSource, (New-Object Text.UTF8Encoding($false)))
+            $firstLineFeed = $fixtureSource.IndexOf("`n")
+            $firstLineFeed | Should BeGreaterThan -1
+            $runtimeSource = $fixtureSource.Substring(0, $firstLineFeed) + "`r" + $fixtureSource.Substring($firstLineFeed + 1)
+            [IO.File]::WriteAllText($fixtureRuntimePath, $runtimeSource, (New-Object Text.UTF8Encoding($false)))
+
+            { & $fixtureVerifier } | Should Throw
+        }
+        finally {
+            Remove-Item -LiteralPath $fixtureRoot -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    It 'rejects a runtime generated source with a UTF-8 BOM' {
+        $fixtureRoot = Join-Path ([IO.Path]::GetTempPath()) ("GeneratedProtocolFixture-{0}" -f [guid]::NewGuid())
+        $fixtureToolsPath = Join-Path $fixtureRoot 'tools\protobuf'
+        $fixtureGeneratedPath = Join-Path $fixtureToolsPath 'generated\Messages.cs'
+        $fixtureRuntimePath = Join-Path $fixtureRoot 'Assets\Scripts\Protocol\Generated\Messages.cs'
+        $fixtureVerifier = Join-Path $fixtureToolsPath 'Verify-GeneratedProtocol.ps1'
+        $fixtureSource = @'
+using Google.Protobuf;
+namespace Game.Protocol {
+    public sealed partial class LoginReq { }
+}
+'@
+
+        try {
+            New-Item -ItemType Directory -Path (Split-Path -Parent $fixtureGeneratedPath) -Force | Out-Null
+            New-Item -ItemType Directory -Path (Split-Path -Parent $fixtureRuntimePath) -Force | Out-Null
+            Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Verify-GeneratedProtocol.ps1') -Destination $fixtureVerifier
+            [IO.File]::WriteAllText($fixtureGeneratedPath, $fixtureSource, (New-Object Text.UTF8Encoding($false)))
+            $content = [IO.File]::ReadAllBytes($fixtureGeneratedPath)
+            $withBom = New-Object byte[] ($content.Length + 3)
+            $withBom[0] = 0xEF
+            $withBom[1] = 0xBB
+            $withBom[2] = 0xBF
+            [Array]::Copy($content, 0, $withBom, 3, $content.Length)
+            [IO.File]::WriteAllBytes($fixtureRuntimePath, $withBom)
+
+            { & $fixtureVerifier } | Should Throw
+        }
+        finally {
+            Remove-Item -LiteralPath $fixtureRoot -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
     It 'does not introduce a client-side proto source of truth' {
         $clientProtoFiles = @(Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot '..\..') -Recurse -Filter '*.proto')
         $clientProtoFiles.Count | Should Be 0

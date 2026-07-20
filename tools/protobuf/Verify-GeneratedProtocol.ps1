@@ -25,9 +25,22 @@ if (-not (Test-Path -LiteralPath $runtimeGeneratedPath -PathType Leaf)) {
     throw "Unity runtime generated C# protocol is missing: $runtimeGeneratedPath"
 }
 
-$stagedText = [IO.File]::ReadAllText($generatedPath).Replace("`r`n", "`n").Replace("`r", "`n")
-$runtimeText = [IO.File]::ReadAllText($runtimeGeneratedPath).Replace("`r`n", "`n").Replace("`r", "`n")
-if ($stagedText -cne $runtimeText) {
+function Get-NormalizedGeneratedFingerprint {
+    param([string]$Path)
+
+    [byte[]]$source = [IO.File]::ReadAllBytes($Path)
+    $normalized = New-Object 'System.Collections.Generic.List[byte]'
+    for ($index = 0; $index -lt $source.Length; $index++) {
+        if ($source[$index] -eq 0x0D -and $index + 1 -lt $source.Length -and $source[$index + 1] -eq 0x0A) {
+            continue
+        }
+        $normalized.Add($source[$index])
+    }
+
+    return [Convert]::ToBase64String($normalized.ToArray())
+}
+
+if ((Get-NormalizedGeneratedFingerprint -Path $generatedPath) -cne (Get-NormalizedGeneratedFingerprint -Path $runtimeGeneratedPath)) {
     throw "Unity runtime generated C# protocol differs from staging: $runtimeGeneratedPath"
 }
 
