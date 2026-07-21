@@ -9,12 +9,14 @@ namespace Game.Online
     public sealed class GmCommandService : IDisposable
     {
         private readonly NetworkClient _client;
+        private readonly PendingRequestOwner _requests;
         private readonly IDisposable _broadcastSubscription;
         private bool _disposed;
 
         public GmCommandService(NetworkClient client = null)
         {
             _client = client ?? NetworkClient.Instance;
+            _requests = new PendingRequestOwner(_client);
             _broadcastSubscription = _client.On<GMCommandResp>(
                 MsgID.GMCommandResp,
                 PublishBroadcast);
@@ -35,7 +37,7 @@ namespace Game.Online
                 return false;
             }
 
-            return _client.Request<GMCommandReq, GMCommandResp>(
+            return _requests.Request<GMCommandReq, GMCommandResp>(
                 MsgID.GMCommandReq,
                 MsgID.GMCommandResp,
                 new GMCommandReq
@@ -58,6 +60,7 @@ namespace Game.Online
             _disposed = true;
             _broadcastSubscription.Dispose();
             BroadcastReceived = null;
+            _requests.Dispose();
         }
 
         private void PublishBroadcast(GMCommandResp response)

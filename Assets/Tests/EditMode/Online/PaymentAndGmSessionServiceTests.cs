@@ -141,6 +141,157 @@ namespace Game.Tests.EditMode.Online
             Assert.That(gmCalls, Is.EqualTo(1));
         }
 
+        [Test]
+        public void PaymentDisposeCancelsConcurrentRequestsAndSuppressesLateFrames()
+        {
+            var client = CreateConnectedClient(out var transport);
+            var service = new PaymentSessionService(client);
+            var successes = 0;
+            var failures = 0;
+            var pushes = 0;
+            service.PaymentResult += _ => pushes++;
+            Assert.That(service.CreateOrder(1, _ => successes++, _ => failures++, out var successSeq), Is.True);
+            Assert.That(service.CreateOrder(2, _ => successes++, _ => failures++, out var errorSeq), Is.True);
+            Assert.That(transport.SentPayloads, Has.Count.EqualTo(2));
+
+            service.Dispose();
+
+            Assert.That(failures, Is.Zero, "dispose cancellation must not escape as a business failure");
+            ReceiveUnknown(client, MsgID.CreateOrderResp, successSeq,
+                new CreateOrderResp { OrderNo = "late" });
+            ReceiveUnknown(client, MsgID.Error, errorSeq,
+                new ErrorResp { Code = 500, Msg = "late error" });
+            client.ReceiveFrame(Codec.Encode(MsgID.PayResultNotify, 0,
+                new PayResultNotify { OrderNo = "late push" }));
+            Assert.That(successes, Is.Zero);
+            Assert.That(failures, Is.Zero);
+            Assert.That(pushes, Is.Zero);
+        }
+
+        [Test]
+        public void GmDisposeCancelsConcurrentRequestsAndSuppressesLateFrames()
+        {
+            var client = CreateConnectedClient(out var transport);
+            var service = new GmCommandService(client);
+            var successes = 0;
+            var failures = 0;
+            var pushes = 0;
+            service.BroadcastReceived += _ => pushes++;
+            Assert.That(service.Execute("one", Array.Empty<byte>(), _ => successes++, _ => failures++,
+                out var successSeq), Is.True);
+            Assert.That(service.Execute("two", Array.Empty<byte>(), _ => successes++, _ => failures++,
+                out var errorSeq), Is.True);
+            Assert.That(transport.SentPayloads, Has.Count.EqualTo(2));
+
+            service.Dispose();
+
+            Assert.That(failures, Is.Zero, "dispose cancellation must not escape as a business failure");
+            ReceiveUnknown(client, MsgID.GMCommandResp, successSeq,
+                new GMCommandResp { Cmd = "one", Result = "late" });
+            ReceiveUnknown(client, MsgID.Error, errorSeq,
+                new ErrorResp { Code = 500, Msg = "late error" });
+            client.ReceiveFrame(Codec.Encode(MsgID.GMCommandResp, 0,
+                new GMCommandResp { Cmd = "broadcast", Result = "late push" }));
+            Assert.That(successes, Is.Zero);
+            Assert.That(failures, Is.Zero);
+            Assert.That(pushes, Is.Zero);
+        }
+
+        [Test]
+        public void PaymentDisposeDuringSendCancelsTheReentrantPendingRequest()
+        {
+            var client = CreateConnectedClient(out var transport);
+            PaymentSessionService service = null;
+            service = new PaymentSessionService(client);
+            var successes = 0;
+            var failures = 0;
+            transport.SendAction = _ => service.Dispose();
+
+            Assert.That(service.CreateOrder(7, _ => successes++, _ => failures++, out var seq), Is.True);
+
+            Assert.That(client.CancelRequest(seq), Is.False, "the disposed service must leave no pending request");
+            Assert.That(successes, Is.Zero);
+            Assert.That(failures, Is.Zero);
+            ReceiveUnknown(client, MsgID.CreateOrderResp, seq, new CreateOrderResp { OrderNo = "late" });
+            Assert.That(successes, Is.Zero);
+            Assert.That(failures, Is.Zero);
+        }
+
+        [Test]
+        public void GmDisposeDuringSendCancelsTheReentrantPendingRequest()
+        {
+            var client = CreateConnectedClient(out var transport);
+            GmCommandService service = null;
+            service = new GmCommandService(client);
+            var successes = 0;
+            var failures = 0;
+            transport.SendAction = _ => service.Dispose();
+
+            Assert.That(service.Execute("dispose", Array.Empty<byte>(), _ => successes++, _ => failures++,
+                out var seq), Is.True);
+
+            Assert.That(client.CancelRequest(seq), Is.False, "the disposed service must leave no pending request");
+            Assert.That(successes, Is.Zero);
+            Assert.That(failures, Is.Zero);
+            ReceiveUnknown(client, MsgID.GMCommandResp, seq,
+                new GMCommandResp { Cmd = "dispose", Result = "late" });
+            Assert.That(successes, Is.Zero);
+            Assert.That(failures, Is.Zero);
+        }
+
+        [Test]
+        public void PaymentHandlesSynchronousResponseAndSendFailureOnce()
+        {
+            var client = CreateConnectedClient(out var transport);
+            var service = new PaymentSessionService(client);
+            var successes = 0;
+            var failures = 0;
+            transport.SendAction = frame =>
+            {
+                Assert.That(Codec.TryDecode(frame, out _, out var seq, out _), Is.True);
+                client.ReceiveFrame(Codec.Encode(MsgID.CreateOrderResp, seq,
+                    new CreateOrderResp { OrderNo = "sync" }));
+            };
+
+            Assert.That(service.CreateOrder(8, _ => successes++, _ => failures++, out var completedSeq), Is.True);
+            Assert.That(successes, Is.EqualTo(1));
+            Assert.That(failures, Is.Zero);
+            Assert.That(client.CancelRequest(completedSeq), Is.False);
+
+            transport.SendAction = null;
+            transport.SendException = new InvalidOperationException("send failed");
+            Assert.That(service.CreateOrder(9, _ => successes++, _ => failures++, out var failedSeq), Is.False);
+            Assert.That(failedSeq, Is.Not.Zero);
+            Assert.That(successes, Is.EqualTo(1));
+            Assert.That(failures, Is.EqualTo(1));
+            Assert.That(client.CancelRequest(failedSeq), Is.False);
+            service.Dispose();
+            Assert.That(failures, Is.EqualTo(1));
+        }
+
+        [Test]
+        public void GmHandlesSynchronousErrorOnce()
+        {
+            var client = CreateConnectedClient(out var transport);
+            var service = new GmCommandService(client);
+            var successes = 0;
+            var failures = 0;
+            transport.SendAction = frame =>
+            {
+                Assert.That(Codec.TryDecode(frame, out _, out var seq, out _), Is.True);
+                client.ReceiveFrame(Codec.Encode(MsgID.Error, seq,
+                    new ErrorResp { Code = 403, Msg = "denied" }));
+            };
+
+            Assert.That(service.Execute("deny", Array.Empty<byte>(), _ => successes++, _ => failures++,
+                out var seq), Is.True);
+            Assert.That(successes, Is.Zero);
+            Assert.That(failures, Is.EqualTo(1));
+            Assert.That(client.CancelRequest(seq), Is.False);
+            service.Dispose();
+            Assert.That(failures, Is.EqualTo(1));
+        }
+
         private static NetworkClient CreateConnectedClient(out FakeWebSocketTransport transport)
         {
             transport = new FakeWebSocketTransport();

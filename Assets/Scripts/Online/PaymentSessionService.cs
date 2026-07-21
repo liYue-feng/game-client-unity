@@ -8,12 +8,14 @@ namespace Game.Online
     public sealed class PaymentSessionService : IDisposable
     {
         private readonly NetworkClient _client;
+        private readonly PendingRequestOwner _requests;
         private readonly IDisposable _paymentSubscription;
         private bool _disposed;
 
         public PaymentSessionService(NetworkClient client = null)
         {
             _client = client ?? NetworkClient.Instance;
+            _requests = new PendingRequestOwner(_client);
             _paymentSubscription = _client.On<PayResultNotify>(
                 MsgID.PayResultNotify,
                 PublishPaymentResult);
@@ -33,7 +35,7 @@ namespace Game.Online
                 return false;
             }
 
-            return _client.Request<CreateOrderReq, CreateOrderResp>(
+            return _requests.Request<CreateOrderReq, CreateOrderResp>(
                 MsgID.CreateOrderReq,
                 MsgID.CreateOrderResp,
                 new CreateOrderReq { ProductId = productId },
@@ -52,6 +54,7 @@ namespace Game.Online
             _disposed = true;
             _paymentSubscription.Dispose();
             PaymentResult = null;
+            _requests.Dispose();
         }
 
         private void PublishPaymentResult(PayResultNotify notification)

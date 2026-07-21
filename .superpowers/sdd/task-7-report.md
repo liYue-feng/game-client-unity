@@ -78,3 +78,46 @@ Scans covered `Assets/Scripts` and `Assets/Tests` C# files.
 - Full EditMode logs include expected exceptions and malformed-frame warnings asserted by existing tests; the final XML has zero failures.
 - Git reports the repository's existing LF-to-CRLF checkout warnings during diff checks; `git diff --check` remains clean.
 - No server checkout, main checkout, remote branch, or deployment state was modified.
+
+## Review Corrective Pass
+
+The Task 7 review found two lifecycle gaps and requested additional concurrency coverage.
+
+- `PaymentSessionService` and `GmCommandService` now delegate correlated calls to `PendingRequestOwner`, which tracks every active sequence and request-specific active state.
+  - Concurrent requests remain independent.
+  - Success, `ErrorResp`, and synchronous send failure complete at most once.
+  - Disposal marks the owner and every request state inactive before calling `CancelRequest`, so cancellation failure callbacks cannot escape after disposal.
+  - If disposal occurs reentrantly during `transport.Send`, the returned pending sequence is cancelled instead of being registered after disposal.
+- All four manager request helpers now recheck `_destroyed` after `NetworkClient.Request` returns. A request returned across destroy-during-send reentrancy is cancelled instead of being added to the manager set.
+- Manager tests now issue an actual request before destruction, inject late matching success and `ErrorResp` frames, and prove no callback or login-state mutation. The EditMode fixture explicitly invokes private `OnDestroy` before `DestroyImmediate` because ordinary MonoBehaviour lifecycle callbacks are not automatically dispatched in this EditMode setup; manually invoking `Awake` is invalid because these managers call `DontDestroyOnLoad`.
+- Added out-of-order, same-response-ID rank coverage using two distinct sequences.
+
+Corrective RED-GREEN evidence:
+
+1. Corrective RED.
+   - XML: `Logs/task7-review-red.xml`
+   - Result: total 16, passed 10, failed 6, skipped 0.
+   - Expected failures: payment and GM each leaked one callback after concurrent disposal; payment, GM, and the representative manager each retained a request created across dispose/destroy-during-send reentrancy; the initial manager lifecycle fixture exposed that its pending request was still accepted after object destruction.
+2. Manager lifecycle isolation.
+   - XML: `Logs/task7-review-manager-isolated-5.xml`
+   - Result: total 1, passed 0, failed 1, skipped 0.
+   - The manager owned one sequence before destruction, but `NetworkClient.CancelRequest(seq)` still returned true afterward. This proved the late `LoginResp` was accepted through the pending path rather than delivered as a `seq=0` push.
+3. Corrective focused GREEN.
+   - XML: `Logs/task7-review-focused-green.xml`
+   - Result: total 16, passed 16, failed 0, skipped 0.
+4. Corrective refactor gate covering manager/payment/GM, `NetworkClient`, controller, and protocol tests.
+   - XML: `Logs/task7-review-refactor-green.xml`
+   - Result: total 60, passed 60, failed 0, skipped 0.
+5. Corrective full EditMode.
+   - XML: `Logs/task7-review-all-editmode.xml`
+   - Result: total 280, passed 280, failed 0, skipped 0.
+
+Fresh corrective non-Unity verification also passed:
+
+- Protocol plus asset Pester: passed 15, failed 0, skipped 0.
+- Generated protocol verifier: exit 0 with unchanged schema and C# SHA-256 values.
+- Asset integrity wrapper: passed.
+- Static legacy API/call gates: no matches.
+- Production push subscriptions: exactly `PayResultNotify` and GM `GMCommandResp`.
+- Static post-request destruction guard check: passed for Login, Archive, Rank, and Combat managers.
+- `git diff --check`: exit 0.

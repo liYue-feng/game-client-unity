@@ -174,7 +174,14 @@ namespace Game.Managers
                 out seq);
             if (sent && !completed)
             {
-                _pendingRequests.Add(seq);
+                if (_destroyed)
+                {
+                    NetworkClient.Instance.CancelRequest(seq);
+                }
+                else
+                {
+                    _pendingRequests.Add(seq);
+                }
             }
 
             return sent;

@@ -114,20 +114,77 @@ namespace Game.Tests.EditMode.Network
         }
 
         [Test]
+        public void ManagerDestroyedDuringSendCancelsTheReentrantPendingRequest()
+        {
+            var client = CreateConnectedClient(out var transport);
+            NetworkClient.RegisterInstance(client);
+            var login = CreateManager("login-test", "Game.Managers.LoginManager");
+            AddCallback(login, "OnLoginSuccess");
+            AddCallback(login, "OnLoginFailed");
+            transport.SendAction = _ => DestroyManager(login);
+
+            Invoke(login, "SendLoginReq", "destroy-during-send");
+
+            var seq = RequireRequestSeq(transport, MsgID.LoginReq);
+            Assert.That(client.CancelRequest(seq), Is.False,
+                "destroy-during-send must not add the returned sequence after OnDestroy");
+            Assert.That(_callbacks, Is.Zero);
+            ReceiveUnknownResponse(client, MsgID.LoginResp, seq, new LoginResp { Uid = 99 });
+            ReceiveUnknownResponse(client, MsgID.Error, seq,
+                new ErrorResp { Code = 500, Msg = "late" });
+            Assert.That(client.IsLoggedIn, Is.False);
+            Assert.That(_callbacks, Is.Zero);
+        }
+
+        [Test]
+        public void ConcurrentRankRequestsCompleteByTheirOwnSequenceOutOfOrder()
+        {
+            var client = CreateConnectedClient(out var transport);
+            NetworkClient.RegisterInstance(client);
+            var rank = CreateManager("rank-test", "Game.Managers.RankManager");
+            var arrivals = new System.Collections.Generic.List<string>();
+            rank.GetType().GetEvent("OnRankLoaded").AddEventHandler(
+                rank,
+                new Action<RankItem[]>(items => arrivals.Add(items.Single().Nickname)));
+
+            Invoke(rank, "GetRank", 1, 0, 1);
+            Invoke(rank, "GetRank", 1, 1, 1);
+
+            var sequences = transport.SentPayloads.Select(frame =>
+            {
+                Assert.That(Codec.TryDecode(frame, out var id, out var seq, out _), Is.True);
+                Assert.That(id, Is.EqualTo(MsgID.GetRankReq));
+                Assert.That(seq, Is.Not.Zero);
+                return seq;
+            }).ToArray();
+            Assert.That(sequences[0], Is.Not.EqualTo(sequences[1]));
+
+            client.ReceiveFrame(Codec.Encode(MsgID.GetRankResp, sequences[1], RankResponse("second")));
+            client.ReceiveFrame(Codec.Encode(MsgID.GetRankResp, sequences[0], RankResponse("first")));
+            Assert.That(arrivals, Is.EqualTo(new[] { "second", "first" }));
+        }
+
+        [Test]
         public void DestroyedManagersReleaseAllSubscriptionsAndClearSingletons()
         {
-            var client = new NetworkClient();
+            var client = CreateConnectedClient(out var transport);
             NetworkClient.RegisterInstance(client);
             var loginType = RequireType("Game.Managers.LoginManager");
             var archiveType = RequireType("Game.Managers.ArchiveManager");
             var rankType = RequireType("Game.Managers.RankManager");
             var combatType = RequireType("CombatManager");
-            var login = new GameObject("login-test").AddComponent(loginType);
-            var archive = new GameObject("archive-test").AddComponent(archiveType);
-            var rank = new GameObject("rank-test").AddComponent(rankType);
-            var combat = new GameObject("combat-test").AddComponent(combatType);
+            var login = CreateManager("login-test", "Game.Managers.LoginManager");
+            var archive = CreateManager("archive-test", "Game.Managers.ArchiveManager");
+            var rank = CreateManager("rank-test", "Game.Managers.RankManager");
+            var combat = CreateManager("combat-test", "CombatManager");
+            var lateLoginSuccesses = 0;
+            var lateLoginFailures = 0;
 
             AddCallback(login, "OnLoginSuccess");
+            login.GetType().GetEvent("OnLoginSuccess").AddEventHandler(
+                login, new Action<LoginResp>(_ => lateLoginSuccesses++));
+            login.GetType().GetEvent("OnLoginFailed").AddEventHandler(
+                login, new Action<string>(_ => lateLoginFailures++));
             AddCallback(archive, "OnSaveSuccess");
             AddCallback(archive, "OnLoadSuccess");
             AddCallback(rank, "OnRankLoaded");
@@ -139,10 +196,32 @@ namespace Game.Tests.EditMode.Network
             AddCallback(combat, "OnPlayerStatsLoaded");
             AddCallback(combat, "OnError");
 
-            Object.DestroyImmediate(login.gameObject);
-            Object.DestroyImmediate(archive.gameObject);
-            Object.DestroyImmediate(rank.gameObject);
-            Object.DestroyImmediate(combat.gameObject);
+            Invoke(login, "SendLoginReq", "destroy-before-response");
+            var loginSeq = RequireRequestSeq(transport, MsgID.LoginReq);
+            Assert.That(_callbacks, Is.Zero, "sending must not publish a manager event");
+            Assert.That(PendingRequestCount(login), Is.EqualTo(1),
+                "the manager must own the pending sequence before destruction");
+
+            DestroyManager(login);
+            Assert.That(_callbacks, Is.Zero, "destroy cancellation must not publish a login failure");
+            AssertSingletonCleared(loginType, "_instance");
+            Assert.That(PendingRequestCount(login), Is.Zero,
+                "OnDestroy must clear the manager-owned sequence set");
+            DestroyManager(archive);
+            DestroyManager(rank);
+            DestroyManager(combat);
+            Assert.That(_callbacks, Is.Zero, "destroying idle managers must not publish events");
+            Assert.That(client.CancelRequest(loginSeq), Is.False,
+                "OnDestroy must remove the manager-owned pending request");
+
+            ReceiveUnknownResponse(client, MsgID.LoginResp, loginSeq,
+                new LoginResp { Uid = 44, Token = "late" });
+            Assert.That(lateLoginSuccesses, Is.Zero, "late success reached OnLoginSuccess");
+            Assert.That(lateLoginFailures, Is.Zero, "destroy cancellation reached OnLoginFailed");
+            Assert.That(_callbacks, Is.Zero, "late success must not publish manager events");
+            ReceiveUnknownResponse(client, MsgID.Error, loginSeq,
+                new ErrorResp { Code = 500, Msg = "late" });
+            Assert.That(_callbacks, Is.Zero, "late pending responses must not publish manager events");
 
             client.ReceiveFrame(Codec.Encode(MsgID.LoginResp, 0, new LoginResp { Uid = 1, Token = "x" }));
             client.ReceiveFrame(Codec.Encode(MsgID.SaveArchiveResp, 0, new SaveArchiveResp { Success = true }));
@@ -157,6 +236,7 @@ namespace Game.Tests.EditMode.Network
             client.ReceiveFrame(Codec.Encode(MsgID.UpdatePlayerStatsResp, 0, new UpdatePlayerStatsResp { Success = false }));
 
             Assert.That(_callbacks, Is.Zero, "no destroyed manager callback may remain registered");
+            Assert.That(client.IsLoggedIn, Is.False, "a destroyed login manager must not mutate login state");
             AssertSingletonCleared(loginType, "_instance");
             AssertSingletonCleared(archiveType, "_instance");
             AssertSingletonCleared(rankType, "_instance");
@@ -172,8 +252,24 @@ namespace Game.Tests.EditMode.Network
             return type;
         }
 
-        private static Component CreateManager(string objectName, string typeName) =>
-            new GameObject(objectName).AddComponent(RequireType(typeName));
+        private static Component CreateManager(string objectName, string typeName)
+        {
+            return new GameObject(objectName).AddComponent(RequireType(typeName));
+        }
+
+        private static void DestroyManager(Component component)
+        {
+            InvokeLifecycle(component, "OnDestroy");
+            Object.DestroyImmediate(component.gameObject);
+        }
+
+        private static void InvokeLifecycle(Component component, string methodName)
+        {
+            var method = component.GetType().GetMethod(
+                methodName, BindingFlags.Instance | BindingFlags.NonPublic);
+            Assert.That(method, Is.Not.Null);
+            method.Invoke(component, null);
+        }
 
         private static NetworkClient CreateConnectedClient(out FakeWebSocketTransport transport)
         {
@@ -198,6 +294,21 @@ namespace Game.Tests.EditMode.Network
 
             Assert.Fail($"No request frame found for msgId={requestId}.");
             return 0;
+        }
+
+        private static GetRankResp RankResponse(string nickname)
+        {
+            var response = new GetRankResp();
+            response.Ranks.Add(new RankItem { Nickname = nickname });
+            return response;
+        }
+
+        private static int PendingRequestCount(Component component)
+        {
+            var field = component.GetType().GetField("_pendingRequests", BindingFlags.Instance | BindingFlags.NonPublic);
+            Assert.That(field, Is.Not.Null);
+            var count = field.FieldType.GetProperty("Count").GetValue(field.GetValue(component));
+            return (int)count;
         }
 
         private static void ReceiveUnknownResponse<T>(
