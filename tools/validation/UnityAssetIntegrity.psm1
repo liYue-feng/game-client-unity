@@ -9,11 +9,18 @@ function Test-UnityAssetIntegrity {
 
     $resolvedRoot = (Resolve-Path -LiteralPath $ProjectRoot).Path
     $assetsRoot = Join-Path $resolvedRoot 'Assets'
-    $guidPattern = '^guid:\s*([0-9a-fA-F]{32})\s*$'
+    $metaGuidPattern = '^guid:\s*([0-9a-fA-F]{32})\s*$'
+    $guidPattern = [regex]'guid:\s*([0-9a-fA-F]{32})'
     $scriptPattern = 'm_Script:\s*\{fileID:\s*11500000,\s*guid:\s*([0-9a-fA-F]{32})'
+    $serializedExtensions = @('.unity', '.prefab', '.asset', '.mat', '.anim', '.controller')
+    $ignoredGuids = @(
+        '00000000000000000000000000000000'
+        '0000000000000000e000000000000000'
+        '0000000000000000f000000000000000'
+    )
 
-    $metaRecords = foreach ($metaFile in Get-ChildItem -LiteralPath $assetsRoot -Recurse -File -Filter '*.meta') {
-        $match = Select-String -LiteralPath $metaFile.FullName -Pattern $guidPattern | Select-Object -First 1
+    $metaRecords = foreach ($metaFile in Get-ChildItem -LiteralPath $assetsRoot -Recurse -File -Filter '*.meta' | Sort-Object FullName) {
+        $match = Select-String -LiteralPath $metaFile.FullName -Pattern $metaGuidPattern | Select-Object -First 1
         if ($null -ne $match) {
             [PSCustomObject]@{
                 Guid = $match.Matches[0].Groups[1].Value.ToLowerInvariant()
@@ -40,8 +47,26 @@ function Test-UnityAssetIntegrity {
         $metaByGuid[$record.Guid] += $record.Path
     }
 
-    $serializedAssets = Get-ChildItem -LiteralPath $assetsRoot -Recurse -File |
-        Where-Object { $_.Extension -in '.unity', '.prefab', '.asset' }
+    $serializedAssets = @(Get-ChildItem -LiteralPath $assetsRoot -Recurse -File |
+        Where-Object { $_.Extension.ToLowerInvariant() -in $serializedExtensions } |
+        Sort-Object FullName)
+
+    $missingGuidReferences = foreach ($asset in $serializedAssets) {
+        $assetPath = $asset.FullName.Substring($resolvedRoot.Length + 1).Replace('\', '/')
+        foreach ($lineMatch in Select-String -LiteralPath $asset.FullName -Pattern $guidPattern) {
+            foreach ($match in $lineMatch.Matches) {
+                $guid = $match.Groups[1].Value.ToLowerInvariant()
+                if ($guid -notin $ignoredGuids -and -not $metaByGuid.ContainsKey($guid)) {
+                    [PSCustomObject]@{
+                        Guid = $guid
+                        AssetPath = $assetPath
+                        Line = $lineMatch.LineNumber
+                    }
+                }
+            }
+        }
+    }
+
     $invalidScriptReferences = foreach ($asset in $serializedAssets) {
         foreach ($match in Select-String -LiteralPath $asset.FullName -Pattern $scriptPattern) {
             $guid = $match.Matches[0].Groups[1].Value.ToLowerInvariant()
@@ -69,11 +94,46 @@ function Test-UnityAssetIntegrity {
             Where-Object { -not (Test-Path -LiteralPath (Join-Path $resolvedRoot $_)) })
     }
 
+    $resourceCounts = @{
+        AnimationClip = 0
+        AnimatorController = 0
+        AudioClip = 0
+        Font = 0
+        Material = 0
+        Prefab = 0
+        Scene = 0
+        SpriteTexture = 0
+    }
+    foreach ($assetFile in Get-ChildItem -LiteralPath $assetsRoot -Recurse -File) {
+        switch ($assetFile.Extension.ToLowerInvariant()) {
+            '.unity' { $resourceCounts.Scene++; break }
+            '.prefab' { $resourceCounts.Prefab++; break }
+            { $_ -in '.png', '.jpg', '.jpeg', '.psd' } { $resourceCounts.SpriteTexture++; break }
+            '.mat' { $resourceCounts.Material++; break }
+            '.anim' { $resourceCounts.AnimationClip++; break }
+            '.controller' { $resourceCounts.AnimatorController++; break }
+            { $_ -in '.wav', '.mp3', '.ogg' } { $resourceCounts.AudioClip++; break }
+            { $_ -in '.ttf', '.otf' } { $resourceCounts.Font++; break }
+        }
+    }
+    $resourceInventory = [PSCustomObject][ordered]@{
+        Scene = $resourceCounts.Scene
+        Prefab = $resourceCounts.Prefab
+        SpriteTexture = $resourceCounts.SpriteTexture
+        Material = $resourceCounts.Material
+        AnimationClip = $resourceCounts.AnimationClip
+        AnimatorController = $resourceCounts.AnimatorController
+        AudioClip = $resourceCounts.AudioClip
+        Font = $resourceCounts.Font
+    }
+
     [PSCustomObject]@{
-        IsValid = $duplicateGuids.Count -eq 0 -and @($invalidScriptReferences).Count -eq 0 -and $missingBuildScenes.Count -eq 0
+        IsValid = $duplicateGuids.Count -eq 0 -and @($invalidScriptReferences).Count -eq 0 -and @($missingGuidReferences).Count -eq 0 -and $missingBuildScenes.Count -eq 0
         DuplicateGuids = $duplicateGuids
         InvalidScriptReferences = @($invalidScriptReferences)
+        MissingGuidReferences = @($missingGuidReferences)
         MissingBuildScenes = $missingBuildScenes
+        ResourceInventory = $resourceInventory
     }
 }
 
