@@ -310,7 +310,14 @@ namespace Game.Tests.EditMode.Network
                 nested.RaiseOpened();
                 fixture.Dispatcher.PumpAll();
                 Assert.That(fixture.Controller.State, Is.EqualTo(NetworkConnectionState.Connected));
-                Assert.That(fixture.Client.Send(MsgID.HeartbeatReq, new HeartbeatReq()), Is.True);
+                Assert.That(fixture.Client.Request<HeartbeatReq, HeartbeatResp>(
+                    MsgID.HeartbeatReq,
+                    MsgID.HeartbeatResp,
+                    new HeartbeatReq(),
+                    _ => { },
+                    _ => { },
+                    out var seq), Is.True);
+                Assert.That(seq, Is.Not.Zero);
                 Assert.That(outer.SentPayloads, Is.Empty);
                 Assert.That(nested.SentPayloads, Has.Count.EqualTo(1));
             }

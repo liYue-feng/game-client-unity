@@ -71,15 +71,5 @@ namespace Game.Protocol
             return true;
         }
 
-        // Kept only so later migration tasks can compile before updating their call sites.
-        public static byte[] Encode(ushort msgID, IMessage message)
-            => throw new InvalidOperationException("A protocol sequence is required.");
-
-        public static bool TryDecode(byte[] data, out ushort msgID, out byte[] body)
-        {
-            msgID = 0;
-            body = null;
-            throw new InvalidOperationException("The protocol sequence must be decoded.");
-        }
     }
 }

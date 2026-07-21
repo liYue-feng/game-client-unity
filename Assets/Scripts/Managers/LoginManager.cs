@@ -23,7 +23,8 @@ namespace Game.Managers
     public class LoginManager : MonoBehaviour
     {
         private static LoginManager _instance;
-        private readonly List<IDisposable> _networkSubscriptions = new List<IDisposable>();
+        private readonly HashSet<uint> _pendingRequests = new HashSet<uint>();
+        private bool _destroyed;
         public static LoginManager Instance
         {
             get
@@ -67,18 +68,17 @@ namespace Game.Managers
             DontDestroyOnLoad(gameObject);
 
             // 注册消息监听
-            var client = NetworkClient.Instance;
-            _networkSubscriptions.Add(client.On<LoginResp>(MsgID.LoginResp, HandleLoginResp));
         }
 
         private void OnDestroy()
         {
-            foreach (var subscription in _networkSubscriptions)
+            _destroyed = true;
+            foreach (var seq in new List<uint>(_pendingRequests))
             {
-                subscription.Dispose();
+                NetworkClient.Instance.CancelRequest(seq);
             }
 
-            _networkSubscriptions.Clear();
+            _pendingRequests.Clear();
             if (ReferenceEquals(_instance, this))
             {
                 _instance = null;
@@ -114,7 +114,12 @@ namespace Game.Managers
             }
 
             Debug.Log($"[LoginManager] 发送登录请求: code={code}");
-            NetworkClient.Instance.Send(MsgID.LoginReq, new LoginReq { Code = code });
+            Request<LoginReq, LoginResp>(
+                MsgID.LoginReq,
+                MsgID.LoginResp,
+                new LoginReq { Code = code },
+                HandleLoginResp,
+                reason => OnLoginFailed?.Invoke(reason));
         }
 
         /// <summary>
@@ -132,6 +137,48 @@ namespace Game.Managers
 
             // 触发事件
             OnLoginSuccess?.Invoke(resp);
+        }
+
+        private bool Request<TRequest, TResponse>(
+            ushort requestId,
+            ushort responseId,
+            TRequest payload,
+            Action<TResponse> onSuccess,
+            Action<string> onFailure)
+            where TRequest : class, Google.Protobuf.IMessage<TRequest>
+            where TResponse : class, Google.Protobuf.IMessage<TResponse>
+        {
+            var completed = false;
+            uint seq = 0;
+            var sent = NetworkClient.Instance.Request<TRequest, TResponse>(
+                requestId,
+                responseId,
+                payload,
+                response =>
+                {
+                    completed = true;
+                    _pendingRequests.Remove(seq);
+                    if (!_destroyed)
+                    {
+                        onSuccess?.Invoke(response);
+                    }
+                },
+                reason =>
+                {
+                    completed = true;
+                    _pendingRequests.Remove(seq);
+                    if (!_destroyed)
+                    {
+                        onFailure?.Invoke(reason);
+                    }
+                },
+                out seq);
+            if (sent && !completed)
+            {
+                _pendingRequests.Add(seq);
+            }
+
+            return sent;
         }
 
         /// <summary>

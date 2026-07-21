@@ -22,7 +22,8 @@ namespace Game.Managers
     public class RankManager : MonoBehaviour
     {
         private static RankManager _instance;
-        private readonly List<IDisposable> _networkSubscriptions = new List<IDisposable>();
+        private readonly HashSet<uint> _pendingRequests = new HashSet<uint>();
+        private bool _destroyed;
         public static RankManager Instance
         {
             get
@@ -68,19 +69,17 @@ namespace Game.Managers
             _instance = this;
             DontDestroyOnLoad(gameObject);
 
-            var client = NetworkClient.Instance;
-            _networkSubscriptions.Add(client.On<GetRankResp>(MsgID.GetRankResp, HandleGetRankResp));
-            _networkSubscriptions.Add(client.On<SubmitScoreResp>(MsgID.SubmitScoreResp, HandleSubmitScoreResp));
         }
 
         private void OnDestroy()
         {
-            foreach (var subscription in _networkSubscriptions)
+            _destroyed = true;
+            foreach (var seq in new List<uint>(_pendingRequests))
             {
-                subscription.Dispose();
+                NetworkClient.Instance.CancelRequest(seq);
             }
 
-            _networkSubscriptions.Clear();
+            _pendingRequests.Clear();
             if (ReferenceEquals(_instance, this))
             {
                 _instance = null;
@@ -96,12 +95,7 @@ namespace Game.Managers
         public void GetRank(int rankType, int start, int count)
         {
             Debug.Log($"[RankManager] 查询排行榜: type={rankType} start={start} count={count}");
-            NetworkClient.Instance.Send(MsgID.GetRankReq, new GetRankReq
-            {
-                RankType = rankType,
-                Start = start,
-                Count = count
-            });
+            RequestRank(rankType, start, count);
         }
 
         /// <summary>
@@ -112,11 +106,16 @@ namespace Game.Managers
         public void SubmitScore(long score, ScoreMetadata metadata = null)
         {
             Debug.Log($"[RankManager] 提交分数: score={score}");
-            NetworkClient.Instance.Send(MsgID.SubmitScoreReq, new SubmitScoreReq
-            {
-                Score = score,
-                Metadata = metadata ?? new ScoreMetadata()
-            });
+            Request<SubmitScoreReq, SubmitScoreResp>(
+                MsgID.SubmitScoreReq,
+                MsgID.SubmitScoreResp,
+                new SubmitScoreReq
+                {
+                    Score = score,
+                    Metadata = metadata ?? new ScoreMetadata()
+                },
+                HandleSubmitScoreResp,
+                reason => OnError?.Invoke(reason));
         }
 
         /// <summary>
@@ -126,12 +125,64 @@ namespace Game.Managers
         public void FetchRankList(int rankType = 1, int start = 0, int count = DefaultFetchCount)
         {
             Debug.Log($"[RankManager] 拉取排行榜: type={rankType} start={start} count={count}");
-            NetworkClient.Instance.Send(MsgID.GetRankReq, new GetRankReq
+            RequestRank(rankType, start, count);
+        }
+
+        private void RequestRank(int rankType, int start, int count)
+        {
+            Request<GetRankReq, GetRankResp>(
+                MsgID.GetRankReq,
+                MsgID.GetRankResp,
+                new GetRankReq
+                {
+                    RankType = rankType,
+                    Start = start,
+                    Count = count
+                },
+                HandleGetRankResp,
+                reason => OnError?.Invoke(reason));
+        }
+
+        private bool Request<TRequest, TResponse>(
+            ushort requestId,
+            ushort responseId,
+            TRequest payload,
+            Action<TResponse> onSuccess,
+            Action<string> onFailure)
+            where TRequest : class, Google.Protobuf.IMessage<TRequest>
+            where TResponse : class, Google.Protobuf.IMessage<TResponse>
+        {
+            var completed = false;
+            uint seq = 0;
+            var sent = NetworkClient.Instance.Request<TRequest, TResponse>(
+                requestId,
+                responseId,
+                payload,
+                response =>
+                {
+                    completed = true;
+                    _pendingRequests.Remove(seq);
+                    if (!_destroyed)
+                    {
+                        onSuccess?.Invoke(response);
+                    }
+                },
+                reason =>
+                {
+                    completed = true;
+                    _pendingRequests.Remove(seq);
+                    if (!_destroyed)
+                    {
+                        onFailure?.Invoke(reason);
+                    }
+                },
+                out seq);
+            if (sent && !completed)
             {
-                RankType = rankType,
-                Start = start,
-                Count = count
-            });
+                _pendingRequests.Add(seq);
+            }
+
+            return sent;
         }
 
         private void HandleGetRankResp(GetRankResp resp)

@@ -9,8 +9,9 @@ namespace Game.Managers
     public class ArchiveManager : MonoBehaviour
     {
         private static ArchiveManager _instance;
-        private readonly List<IDisposable> _networkSubscriptions = new List<IDisposable>();
+        private readonly HashSet<uint> _pendingRequests = new HashSet<uint>();
         private bool _isSaving;
+        private bool _destroyed;
 
         public static ArchiveManager Instance
         {
@@ -42,19 +43,17 @@ namespace Game.Managers
 
             _instance = this;
             DontDestroyOnLoad(gameObject);
-            var client = NetworkClient.Instance;
-            _networkSubscriptions.Add(client.On<SaveArchiveResp>(MsgID.SaveArchiveResp, HandleSaveResp));
-            _networkSubscriptions.Add(client.On<LoadArchiveResp>(MsgID.LoadArchiveResp, HandleLoadResp));
         }
 
         private void OnDestroy()
         {
-            foreach (var subscription in _networkSubscriptions)
+            _destroyed = true;
+            foreach (var seq in new List<uint>(_pendingRequests))
             {
-                subscription.Dispose();
+                NetworkClient.Instance.CancelRequest(seq);
             }
 
-            _networkSubscriptions.Clear();
+            _pendingRequests.Clear();
             if (ReferenceEquals(_instance, this))
             {
                 _instance = null;
@@ -69,7 +68,12 @@ namespace Game.Managers
                 return;
             }
 
-            NetworkClient.Instance.Send(MsgID.LoadArchiveReq, new LoadArchiveReq());
+            Request<LoadArchiveReq, LoadArchiveResp>(
+                MsgID.LoadArchiveReq,
+                MsgID.LoadArchiveResp,
+                new LoadArchiveReq(),
+                HandleLoadResp,
+                reason => OnError?.Invoke(reason));
         }
 
         public void SaveArchive(PlayerArchive archive = null, bool immediate = false)
@@ -87,7 +91,7 @@ namespace Game.Managers
 
             _isSaving = true;
             CurrentArchive = archive ?? new PlayerArchive();
-            NetworkClient.Instance.Send(MsgID.SaveArchiveReq, new SaveArchiveReq { Archive = CurrentArchive });
+            SendArchiveSave(CurrentArchive);
         }
 
         public void LoadArchive(int slotIndex)
@@ -120,11 +124,67 @@ namespace Game.Managers
             OnLoadSuccess?.Invoke(CurrentArchive);
         }
 
+        private void SendArchiveSave(PlayerArchive archive)
+        {
+            Request<SaveArchiveReq, SaveArchiveResp>(
+                MsgID.SaveArchiveReq,
+                MsgID.SaveArchiveResp,
+                new SaveArchiveReq { Archive = archive },
+                HandleSaveResp,
+                reason =>
+                {
+                    _isSaving = false;
+                    OnError?.Invoke(reason);
+                });
+        }
+
+        private bool Request<TRequest, TResponse>(
+            ushort requestId,
+            ushort responseId,
+            TRequest payload,
+            Action<TResponse> onSuccess,
+            Action<string> onFailure)
+            where TRequest : class, Google.Protobuf.IMessage<TRequest>
+            where TResponse : class, Google.Protobuf.IMessage<TResponse>
+        {
+            var completed = false;
+            uint seq = 0;
+            var sent = NetworkClient.Instance.Request<TRequest, TResponse>(
+                requestId,
+                responseId,
+                payload,
+                response =>
+                {
+                    completed = true;
+                    _pendingRequests.Remove(seq);
+                    if (!_destroyed)
+                    {
+                        onSuccess?.Invoke(response);
+                    }
+                },
+                reason =>
+                {
+                    completed = true;
+                    _pendingRequests.Remove(seq);
+                    if (!_destroyed)
+                    {
+                        onFailure?.Invoke(reason);
+                    }
+                },
+                out seq);
+            if (sent && !completed)
+            {
+                _pendingRequests.Add(seq);
+            }
+
+            return sent;
+        }
+
         private void OnApplicationQuit()
         {
             if (CurrentArchive != null && NetworkClient.Instance.IsLoggedIn)
             {
-                NetworkClient.Instance.Send(MsgID.SaveArchiveReq, new SaveArchiveReq { Archive = CurrentArchive });
+                SendArchiveSave(CurrentArchive);
             }
         }
     }

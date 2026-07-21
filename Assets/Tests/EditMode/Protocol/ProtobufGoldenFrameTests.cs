@@ -110,7 +110,7 @@ namespace Game.Tests.EditMode.Protocol
         }
 
         [Test]
-        public void TypedSendFailsClosedWhileDisconnected()
+        public void TypedRequestFailsClosedWhileDisconnected()
         {
             var transport = new FakeWebSocketTransport();
             var client = new NetworkClient();
@@ -118,7 +118,14 @@ namespace Game.Tests.EditMode.Protocol
 
             LogAssert.Expect(LogType.Warning,
                 "[NetworkClient] Send dropped because transport is disconnected. msgId=1001");
-            Assert.That(client.Send(MsgID.LoginReq, new LoginReq { Code = "abc" }), Is.False);
+            Assert.That(client.Request<LoginReq, LoginResp>(
+                MsgID.LoginReq,
+                MsgID.LoginResp,
+                new LoginReq { Code = "abc" },
+                _ => { },
+                _ => { },
+                out var seq), Is.False);
+            Assert.That(seq, Is.Zero);
             Assert.That(transport.SentPayloads, Is.Empty);
         }
 

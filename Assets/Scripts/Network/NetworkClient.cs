@@ -131,56 +131,6 @@ namespace Game.Network
             return AddSubscription(msgId, wrapper);
         }
 
-        public bool Send<T>(ushort msgId, T payload) where T : class, IMessage<T>
-        {
-            if (!ProtocolMessageRegistry.IsRegistered<T>(msgId))
-            {
-                Debug.LogWarning($"[NetworkClient] Send dropped because message type does not match msgId={msgId}");
-                return false;
-            }
-
-            byte[] body;
-            try
-            {
-                body = payload.ToByteArray();
-            }
-            catch (Exception exception)
-            {
-                Debug.LogWarning($"[NetworkClient] Send serialization failed. msgId={msgId}: {exception.Message}");
-                return false;
-            }
-
-            var transport = _transport;
-            if (transport == null || !transport.IsAlive)
-            {
-                LogDisconnectedSend(msgId);
-                return false;
-            }
-
-            uint seq;
-            lock (_pendingGate)
-            {
-                if (_disposed || !ReferenceEquals(_transport, transport) || !transport.IsAlive)
-                {
-                    LogDisconnectedSend(msgId);
-                    return false;
-                }
-
-                seq = AllocateSequenceLocked();
-            }
-
-            try
-            {
-                transport.Send(Codec.Encode(msgId, seq, body));
-                return true;
-            }
-            catch (Exception exception)
-            {
-                Debug.LogWarning($"[NetworkClient] Send failed. msgId={msgId} seq={seq}: {exception.Message}");
-                return false;
-            }
-        }
-
         public bool Request<TRequest, TResponse>(
             ushort requestId,
             ushort responseId,

@@ -41,16 +41,16 @@ namespace Game.Tests.EditMode.Network
         }
 
         [Test]
-        public void SendEncodesFrameToOpenTransport()
+        public void RequestEncodesFrameToOpenTransport()
         {
             var transport = new FakeWebSocketTransport();
             var client = new NetworkClient();
             client.SetTransport(transport);
             transport.RaiseOpened();
-            Assert.That(client.Send(MsgID.LoginReq, new LoginReq { Code = "abc" }), Is.True);
+            Assert.That(RequestLogin(client, "abc", _ => { }, _ => { }, out var requestSeq), Is.True);
             Assert.That(Codec.TryDecode(transport.SentPayloads.Single(), out var id, out var seq, out _), Is.True);
             Assert.That(id, Is.EqualTo(MsgID.LoginReq));
-            Assert.That(seq, Is.Not.Zero);
+            Assert.That(seq, Is.EqualTo(requestSeq).And.Not.Zero);
         }
 
         [Test]
@@ -78,21 +78,25 @@ namespace Game.Tests.EditMode.Network
         }
 
         [Test]
-        public void DisconnectedSendFailsClosedWithoutTouchingTransport()
+        public void DisconnectedRequestFailsClosedWithoutTouchingTransport()
         {
             var transport = new FakeWebSocketTransport();
             var client = new NetworkClient();
             client.SetTransport(transport);
-            Assert.That(client.Send(MsgID.HeartbeatReq, new HeartbeatReq()), Is.False);
+            Assert.That(client.Request<HeartbeatReq, HeartbeatResp>(
+                MsgID.HeartbeatReq, MsgID.HeartbeatResp, new HeartbeatReq(),
+                _ => { }, _ => { }, out var seq), Is.False);
+            Assert.That(seq, Is.Zero);
             Assert.That(transport.SentPayloads, Is.Empty);
         }
 
         [Test]
-        public void SendWhileDisconnectedReturnsFalseAndLogsConciseWarning()
+        public void RequestWhileDisconnectedReturnsFalseAndLogsConciseWarning()
         {
             var client = new NetworkClient();
             LogAssert.Expect(LogType.Warning, new Regex(@"\[NetworkClient\] Send dropped because transport is disconnected\. msgId=1001"));
-            Assert.That(client.Send(MsgID.LoginReq, new LoginReq { Code = "abc" }), Is.False);
+            Assert.That(RequestLogin(client, "abc", _ => { }, _ => { }, out var seq), Is.False);
+            Assert.That(seq, Is.Zero);
         }
 
         [Test]

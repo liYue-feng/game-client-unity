@@ -19,7 +19,8 @@ using Game.Protocol;
 public class CombatManager : MonoBehaviour
 {
     private static CombatManager _instance;
-    private readonly List<IDisposable> _networkSubscriptions = new List<IDisposable>();
+    private readonly HashSet<uint> _pendingRequests = new HashSet<uint>();
+    private bool _destroyed;
     public static CombatManager Instance
     {
         get
@@ -45,23 +46,17 @@ public class CombatManager : MonoBehaviour
         DontDestroyOnLoad(gameObject);
 
         // 注册网络消息监听
-        var client = NetworkClient.Instance;
-        _networkSubscriptions.Add(client.On<GetEnemyConfigsResp>(MsgID.GetEnemyConfigsResp, HandleGetEnemyConfigsResp));
-        _networkSubscriptions.Add(client.On<GetDungeonConfigResp>(MsgID.GetDungeonConfigResp, HandleGetDungeonConfigResp));
-        _networkSubscriptions.Add(client.On<GetStyleConfigsResp>(MsgID.GetStyleConfigsResp, HandleGetStyleConfigsResp));
-        _networkSubscriptions.Add(client.On<UnlockStyleResp>(MsgID.UnlockStyleResp, HandleUnlockStyleResp));
-        _networkSubscriptions.Add(client.On<GetPlayerStatsResp>(MsgID.GetPlayerStatsResp, HandleGetPlayerStatsResp));
-        _networkSubscriptions.Add(client.On<UpdatePlayerStatsResp>(MsgID.UpdatePlayerStatsResp, HandleUpdatePlayerStatsResp));
     }
 
     private void OnDestroy()
     {
-        foreach (var subscription in _networkSubscriptions)
+        _destroyed = true;
+        foreach (var seq in new List<uint>(_pendingRequests))
         {
-            subscription.Dispose();
+            NetworkClient.Instance.CancelRequest(seq);
         }
 
-        _networkSubscriptions.Clear();
+        _pendingRequests.Clear();
         if (ReferenceEquals(_instance, this))
         {
             _instance = null;
@@ -93,31 +88,64 @@ public class CombatManager : MonoBehaviour
     /// <summary>请求敌人配置</summary>
     public void RequestEnemyConfigs()
     {
-        NetworkClient.Instance.Send(MsgID.GetEnemyConfigsReq, new GetEnemyConfigsReq());
+        Request<GetEnemyConfigsReq, GetEnemyConfigsResp>(
+            MsgID.GetEnemyConfigsReq, MsgID.GetEnemyConfigsResp, new GetEnemyConfigsReq(),
+            HandleGetEnemyConfigsResp);
     }
 
     /// <summary>请求地牢配置</summary>
     public void RequestDungeonConfig(int level)
     {
-        NetworkClient.Instance.Send(MsgID.GetDungeonConfigReq, new GetDungeonConfigReq { Level = level });
+        Request<GetDungeonConfigReq, GetDungeonConfigResp>(
+            MsgID.GetDungeonConfigReq, MsgID.GetDungeonConfigResp,
+            new GetDungeonConfigReq { Level = level }, HandleGetDungeonConfigResp);
     }
 
     /// <summary>请求流派配置</summary>
     public void RequestStyleConfigs()
     {
-        NetworkClient.Instance.Send(MsgID.GetStyleConfigsReq, new GetStyleConfigsReq());
+        Request<GetStyleConfigsReq, GetStyleConfigsResp>(
+            MsgID.GetStyleConfigsReq, MsgID.GetStyleConfigsResp, new GetStyleConfigsReq(),
+            HandleGetStyleConfigsResp);
     }
 
     /// <summary>请求解锁流派</summary>
     public void RequestUnlockStyle(int styleId)
     {
-        NetworkClient.Instance.Send(MsgID.UnlockStyleReq, new UnlockStyleReq { StyleId = styleId });
+        Request<UnlockStyleReq, UnlockStyleResp>(
+            MsgID.UnlockStyleReq, MsgID.UnlockStyleResp,
+            new UnlockStyleReq { StyleId = styleId }, HandleUnlockStyleResp);
     }
 
     /// <summary>请求玩家战斗属性</summary>
     public void RequestPlayerStats()
     {
-        NetworkClient.Instance.Send(MsgID.GetPlayerStatsReq, new GetPlayerStatsReq());
+        Request<GetPlayerStatsReq, GetPlayerStatsResp>(
+            MsgID.GetPlayerStatsReq, MsgID.GetPlayerStatsResp, new GetPlayerStatsReq(),
+            HandleGetPlayerStatsResp);
+    }
+
+    public void UpdatePlayerStats(PlayerStatsData stats)
+    {
+        if (stats == null)
+        {
+            OnError?.Invoke("Player stats are required.");
+            return;
+        }
+
+        var request = new UpdatePlayerStatsReq
+        {
+            Level = stats.Level,
+            Exp = stats.Exp,
+            Gold = stats.Gold,
+            MaxHp = stats.MaxHp,
+            MaxStamina = stats.MaxStamina,
+            AttackPower = stats.AttackPower
+        };
+        request.UnlockedStyles.Add(stats.UnlockedStyles);
+        Request<UpdatePlayerStatsReq, UpdatePlayerStatsResp>(
+            MsgID.UpdatePlayerStatsReq, MsgID.UpdatePlayerStatsResp, request,
+            HandleUpdatePlayerStatsResp);
     }
 
     // ========== 响应处理 ==========
@@ -156,5 +184,46 @@ public class CombatManager : MonoBehaviour
         {
             OnError?.Invoke("更新玩家属性失败");
         }
+    }
+
+    private bool Request<TRequest, TResponse>(
+        ushort requestId,
+        ushort responseId,
+        TRequest payload,
+        Action<TResponse> onSuccess)
+        where TRequest : class, Google.Protobuf.IMessage<TRequest>
+        where TResponse : class, Google.Protobuf.IMessage<TResponse>
+    {
+        var completed = false;
+        uint seq = 0;
+        var sent = NetworkClient.Instance.Request<TRequest, TResponse>(
+            requestId,
+            responseId,
+            payload,
+            response =>
+            {
+                completed = true;
+                _pendingRequests.Remove(seq);
+                if (!_destroyed)
+                {
+                    onSuccess?.Invoke(response);
+                }
+            },
+            reason =>
+            {
+                completed = true;
+                _pendingRequests.Remove(seq);
+                if (!_destroyed)
+                {
+                    OnError?.Invoke(reason);
+                }
+            },
+            out seq);
+        if (sent && !completed)
+        {
+            _pendingRequests.Add(seq);
+        }
+
+        return sent;
     }
 }
