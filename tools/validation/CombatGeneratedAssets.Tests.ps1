@@ -25,6 +25,104 @@ function Get-BigEndianInt32([byte[]]$bytes, [int]$offset) {
         $bytes[$offset + 3])
 }
 
+function Get-WriteIfMissingMethodRange([string]$source) {
+    $signature = [regex]::Match(
+        $source,
+        'public\s+static\s+bool\s+WriteIfMissing\s*\([^)]*\)')
+    if (-not $signature.Success) { return $null }
+
+    $openingBrace = $source.IndexOf('{', $signature.Index + $signature.Length)
+    if ($openingBrace -lt 0) { return $null }
+
+    $depth = 0
+    for ($index = $openingBrace; $index -lt $source.Length; $index++) {
+        if ($source[$index] -eq '{') {
+            $depth++
+        }
+        elseif ($source[$index] -eq '}') {
+            $depth--
+            if ($depth -eq 0) {
+                return [pscustomobject]@{
+                    Start = $signature.Index
+                    Length = $index - $signature.Index + 1
+                    Text = $source.Substring($signature.Index, $index - $signature.Index + 1)
+                }
+            }
+        }
+    }
+
+    return $null
+}
+
+function Test-ContainsForbiddenResourceWriter(
+    [string]$source,
+    [bool]$allowSingleWriteAllBytes = $false) {
+    $scan = $source
+    $allowedWriter = [regex]'(?:System\s*\.\s*IO\s*\.\s*)?File\s*\.\s*WriteAllBytes\s*\('
+    if ($allowSingleWriteAllBytes) {
+        if ($allowedWriter.Matches($scan).Count -ne 1) { return $true }
+        $scan = $allowedWriter.Replace($scan, 'AllowedResourceWrite(', 1)
+    }
+
+    $directWriterPattern =
+        '(?<![A-Za-z0-9_])(?:System\s*\.\s*IO\s*\.\s*)?File\s*\.\s*' +
+        '(?:Write[A-Za-z0-9_]*|Append[A-Za-z0-9_]*|Create|CreateText|OpenWrite)\s*\('
+    if ($scan -match $directWriterPattern) { return $true }
+
+    $writeModes = 'FileMode\s*\.\s*(?:Create|CreateNew|OpenOrCreate|Truncate|Append)'
+    $writeAccess = 'FileAccess\s*\.\s*(?:Write|ReadWrite)'
+    $fileOpenPattern =
+        '(?s)(?:System\s*\.\s*IO\s*\.\s*)?File\s*\.\s*Open\s*\((?<args>.*?)\)'
+    foreach ($match in [regex]::Matches($scan, $fileOpenPattern)) {
+        if ($match.Groups['args'].Value -match $writeModes -or
+            $match.Groups['args'].Value -match $writeAccess) {
+            return $true
+        }
+    }
+
+    $fileStreamPattern =
+        '(?s)new\s+(?:System\s*\.\s*IO\s*\.\s*)?FileStream\s*\((?<args>.*?)\)'
+    foreach ($match in [regex]::Matches($scan, $fileStreamPattern)) {
+        if ($match.Groups['args'].Value -match $writeModes -or
+            $match.Groups['args'].Value -match $writeAccess) {
+            return $true
+        }
+    }
+
+    $fileInfoWriter = '(?:OpenWrite|Create|CreateText|AppendText)'
+    $directFileInfoPattern =
+        'new\s+(?:System\s*\.\s*IO\s*\.\s*)?FileInfo\s*\([^)]*\)\s*\.\s*' +
+        $fileInfoWriter + '\s*\('
+    if ($scan -match $directFileInfoPattern) { return $true }
+
+    $fileInfoVariablePattern =
+        '(?:var|(?:System\s*\.\s*IO\s*\.\s*)?FileInfo)\s+(?<name>[A-Za-z_][A-Za-z0-9_]*)' +
+        '\s*=\s*new\s+(?:System\s*\.\s*IO\s*\.\s*)?FileInfo\s*\('
+    foreach ($match in [regex]::Matches($scan, $fileInfoVariablePattern)) {
+        $name = [regex]::Escape($match.Groups['name'].Value)
+        if ($scan -match "\b$name\s*\.\s*$fileInfoWriter\s*\(") { return $true }
+    }
+
+    if ($scan -match 'new\s+(?:System\s*\.\s*IO\s*\.\s*)?StreamWriter\s*\(') {
+        return $true
+    }
+
+    return $false
+}
+
+function Test-UsesOnlyGuardedResourceWrites([string]$source) {
+    $writeMethod = Get-WriteIfMissingMethodRange $source
+    if ($null -eq $writeMethod) { return $false }
+    if ($writeMethod.Text -notmatch 'File\s*\.\s*Exists\s*\(') { return $false }
+    if (([regex]::Matches($writeMethod.Text, 'File\s*\.\s*WriteAllBytes\s*\(')).Count -ne 1) {
+        return $false
+    }
+    if (Test-ContainsForbiddenResourceWriter $writeMethod.Text $true) { return $false }
+
+    $outsideMethod = $source.Remove($writeMethod.Start, $writeMethod.Length)
+    return -not (Test-ContainsForbiddenResourceWriter $outsideMethod)
+}
+
 Describe 'Generated combat assets' {
     It 'declares a deterministic create-only generator with a single guarded writer' {
         $generatorPath | Should Exist
@@ -42,16 +140,51 @@ Describe 'Generated combat assets' {
         $source | Should Match '4201'
         $source | Should Match 'new\s+Color32'
         $source | Should Not Match 'UnityEngine\.Random'
-        ([regex]::Matches($source, 'File\.WriteAllBytes')).Count | Should Be 1
+        (Test-UsesOnlyGuardedResourceWrites $source) | Should Be $true
+    }
 
-        $writeMethod = [regex]::Match(
-            $source,
-            'public\s+static\s+bool\s+WriteIfMissing\s*\([^)]*\)\s*\{(?<body>.*?)(?=\n\s*private\s+static\s+byte\[\]\s+GenerateEnemyPng)',
-            [Text.RegularExpressions.RegexOptions]::Singleline)
-        $writeMethod.Success | Should Be $true
-        if ($writeMethod.Success) {
-            $writeMethod.Groups['body'].Value | Should Match 'File\.Exists'
-            $writeMethod.Groups['body'].Value | Should Match 'File\.WriteAllBytes'
+    It 'rejects alternate file writers outside WriteIfMissing' {
+        $validSource = @'
+public static bool WriteIfMissing(string path, byte[] bytes)
+{
+    if (File.Exists(path)) return false;
+    File.WriteAllBytes(path, bytes);
+    return true;
+}
+private static byte[] GenerateEnemyPng() { return null; }
+private static byte[] BuildWav()
+{
+    using (var output = new MemoryStream())
+    using (var writer = new BinaryWriter(output))
+    {
+        writer.Write((short)1);
+        return output.ToArray();
+    }
+}
+private static void ReadOnly(string path)
+{
+    using (var stream = File.Open(path, FileMode.Open, FileAccess.Read)) { }
+}
+'@
+        (Test-UsesOnlyGuardedResourceWrites $validSource) | Should Be $true
+
+        $mutations = @(
+            "$validSource`nprivate static void Bypass(string path) { File.WriteAllText(path, `"x`"); }",
+            "$validSource`nprivate static void Bypass(string path) { File.AppendAllText(path, `"x`"); }",
+            "$validSource`nprivate static void Bypass(string path) { File.Create(path); }",
+            "$validSource`nprivate static void Bypass(string path) { File.OpenWrite(path); }",
+            "$validSource`nprivate static void Bypass(string path) { File.Open(path, FileMode.Create); }",
+            "$validSource`nprivate static void Bypass(string path) { File.Open(path, FileMode.Open, FileAccess.Write); }",
+            "$validSource`nprivate static void Bypass(string path) { new FileStream(path, FileMode.Create, FileAccess.Write); }",
+            "$validSource`nprivate static void Bypass(string path) { new FileStream(path, FileMode.Open, FileAccess.Write); }",
+            "$validSource`nprivate static void Bypass(string path) { new FileInfo(path).OpenWrite(); }",
+            "$validSource`nprivate static void Bypass(string path) { var info = new FileInfo(path); info.Create(); }",
+            "$validSource`nprivate static void Bypass(string path) { new StreamWriter(path); }",
+            ($validSource -replace 'File\.WriteAllBytes\(path, bytes\);',
+                'File.Create(path); File.WriteAllBytes(path, bytes);')
+        )
+        foreach ($mutation in $mutations) {
+            (Test-UsesOnlyGuardedResourceWrites $mutation) | Should Be $false
         }
     }
 

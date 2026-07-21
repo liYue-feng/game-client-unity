@@ -62,7 +62,7 @@ public static class AiSpriteLoader
     }
 
     /// <summary>
-    /// 获取弓手Sprite（用杂兵占位，以后可以单独生成）。
+    /// Gets the distinct Archer resource, with a generated placeholder fallback.
     /// </summary>
     public static Sprite ArcherSprite()
     {
@@ -71,7 +71,7 @@ public static class AiSpriteLoader
     }
 
     /// <summary>
-    /// 获取精英Sprite（用Boss占位，以后可以单独生成）。
+    /// Gets the distinct Elite resource, with a generated placeholder fallback.
     /// </summary>
     public static Sprite EliteSprite()
     {
