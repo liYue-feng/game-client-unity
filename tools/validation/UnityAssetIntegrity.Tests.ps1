@@ -151,15 +151,16 @@ Describe 'Test-UnityAssetIntegrity' {
         foreach ($fixture in $serializedFixtures) {
             Set-Content -Encoding UTF8 -Path (Join-Path $projectRoot $fixture.Path) -Value "  m_Reference: {fileID: 1, guid: $($fixture.Guid), type: 3}"
         }
-        Add-Content -Encoding UTF8 -Path (Join-Path $projectRoot 'Assets/Missing.asset') -Value '  m_ExtraReferences: [{fileID: 1, guid: 30000000000000000000000000000007, type: 3}, {fileID: 0, guid: 0000000000000000e000000000000000, type: 0}]'
+        Add-Content -Encoding UTF8 -Path (Join-Path $projectRoot 'Assets/Missing.asset') -Value '  m_ExtraReferences: [{fileID: 1, guid: 30000000000000000000000000000007, type: 3}, {fileID: 1, guid: 30000000000000000000000000000008, type: 3}, {fileID: 0, guid: 0000000000000000e000000000000000, type: 0}]'
 
         $result = Test-UnityAssetIntegrity -ProjectRoot $projectRoot
 
-        @($result.MissingGuidReferences).Count | Should Be 7
+        @($result.MissingGuidReferences).Count | Should Be 8
         foreach ($fixture in $serializedFixtures) {
             @($result.MissingGuidReferences | Where-Object { $_.Guid -eq $fixture.Guid -and $_.AssetPath -eq $fixture.Path }).Count | Should Be 1
         }
         @($result.MissingGuidReferences | Where-Object { $_.Guid -eq '30000000000000000000000000000007' -and $_.Line -eq 2 }).Count | Should Be 1
+        @($result.MissingGuidReferences | Where-Object { $_.Guid -eq '30000000000000000000000000000008' -and $_.Line -eq 2 }).Count | Should Be 1
     }
 
     It 'combines alternate sprite, audio, and font extensions in inventory categories' {

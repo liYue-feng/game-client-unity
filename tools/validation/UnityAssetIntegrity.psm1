@@ -53,7 +53,7 @@ function Test-UnityAssetIntegrity {
 
     $missingGuidReferences = foreach ($asset in $serializedAssets) {
         $assetPath = $asset.FullName.Substring($resolvedRoot.Length + 1).Replace('\', '/')
-        foreach ($lineMatch in Select-String -LiteralPath $asset.FullName -Pattern $guidPattern) {
+        foreach ($lineMatch in Select-String -LiteralPath $asset.FullName -Pattern $guidPattern -AllMatches) {
             foreach ($match in $lineMatch.Matches) {
                 $guid = $match.Groups[1].Value.ToLowerInvariant()
                 if ($guid -notin $ignoredGuids -and -not $metaByGuid.ContainsKey($guid)) {
