@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Superseded correction (2026-07-21):** `CombatResultReq` field 5 is now `double survival_time`, measured in seconds, in both repository-owned `proto/game.proto` files. The historical `int64 duration_ms` steps below are retained as an implementation record and no longer define the current contract; `ScoreMetadata.duration_ms` field 1 is unchanged.
+
 **Goal:** Keep `CombatResultReq.duration_ms` wire-compatible as protobuf `int64` and make protocol drift checks reliable on Windows and against the C# source Unity actually compiles.
 
 **Architecture:** `game-server-go/proto/game/v1/messages.proto` remains the only schema source. The pinned backend generator produces Go plus both C# copies, while comparison normalizes line endings so Git's Windows checkout policy cannot create false drift. The client verifier independently rejects a missing or stale runtime copy under `Assets`.

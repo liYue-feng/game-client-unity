@@ -23,7 +23,7 @@ namespace Game.Online
                 DungeonLevel = 1,
                 Score = Math.Max(0, data.killCount) * 100L,
                 Kills = Math.Max(0, data.killCount),
-                DurationMs = Math.Max(0, data.survivalTime) * 1000L,
+                SurvivalTime = Math.Max(0, data.survivalTime),
                 StyleId = 1,
                 Outcome = outcome == BattleRunOutcome.Victory
                     ? BattleOutcome.Victory

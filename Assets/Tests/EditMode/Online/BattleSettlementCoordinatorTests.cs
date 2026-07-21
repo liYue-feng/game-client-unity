@@ -57,6 +57,7 @@ namespace Game.Tests.EditMode.Online
 
             Assert.That(CombatRequestCount(), Is.EqualTo(1));
             Assert.That(firstRequest.RunId, Is.Not.Empty);
+            Assert.That(firstRequest.SurvivalTime, Is.EqualTo(12d));
 
             _client.ReceiveFrame(EncodeResponse(MsgID.CombatResultResp, new CombatResultResp
             {

@@ -1,4 +1,6 @@
 using System;
+using Google.Protobuf;
+using Google.Protobuf.Reflection;
 using Game.Network;
 using Game.Protocol;
 using Game.Tests.EditMode.Network.TestDoubles;
@@ -21,6 +23,24 @@ namespace Game.Tests.EditMode.Protocol
             CollectionAssert.AreEqual(
                 new byte[] { 0x0F, 0, 0, 0, 0xE9, 0x03, 1, 0, 0, 0, 0x0A, 0x03, 0x61, 0x62, 0x63 },
                 frame);
+        }
+
+        [Test]
+        public void CombatResultSurvivalTimeUsesDoubleFixed64Wire()
+        {
+            var field = CombatResultReq.Descriptor.FindFieldByNumber(5);
+            Assert.That(field, Is.Not.Null);
+            Assert.That(field.Name, Is.EqualTo("survival_time"));
+            Assert.That(field.FieldType, Is.EqualTo(FieldType.Double));
+
+            var property = typeof(CombatResultReq).GetProperty("SurvivalTime");
+            Assert.That(property, Is.Not.Null);
+            var request = new CombatResultReq();
+            property.SetValue(request, 12.5d);
+
+            CollectionAssert.AreEqual(
+                new byte[] { 0x29, 0, 0, 0, 0, 0, 0, 0x29, 0x40 },
+                request.ToByteArray());
         }
 
         [Test]

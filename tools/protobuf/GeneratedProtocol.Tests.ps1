@@ -93,6 +93,12 @@ Describe 'Canonical schema ownership' {
         $runtimePath = Join-Path $repoRoot 'Assets\Scripts\Protocol\Generated\Game.cs'
         (Get-CrlfNormalizedFingerprint -Path $stagingPath) | Should Be (Get-CrlfNormalizedFingerprint -Path $runtimePath)
     }
+
+    It 'defines CombatResultReq field 5 as double survival_time' {
+        $schema = [IO.File]::ReadAllText((Join-Path $repoRoot 'proto\game.proto'))
+        $schema | Should Match '(?m)^\s*double\s+survival_time\s*=\s*5\s*;'
+        $schema | Should Not Match '(?m)^\s*int64\s+duration_ms\s*=\s*5\s*;'
+    }
 }
 
 Describe 'Generated protobuf protocol staging contract' {
