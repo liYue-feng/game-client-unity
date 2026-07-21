@@ -71,11 +71,15 @@ function Test-ContainsForbiddenResourceWriter(
 
     $writeModes = 'FileMode\s*\.\s*(?:Create|CreateNew|OpenOrCreate|Truncate|Append)'
     $writeAccess = 'FileAccess\s*\.\s*(?:Write|ReadWrite)'
+    $openMode = 'FileMode\s*\.\s*Open\b'
+    $readOnlyAccess = 'FileAccess\s*\.\s*Read\b'
     $fileOpenPattern =
         '(?s)(?:System\s*\.\s*IO\s*\.\s*)?File\s*\.\s*Open\s*\((?<args>.*?)\)'
     foreach ($match in [regex]::Matches($scan, $fileOpenPattern)) {
-        if ($match.Groups['args'].Value -match $writeModes -or
-            $match.Groups['args'].Value -match $writeAccess) {
+        $arguments = $match.Groups['args'].Value
+        if ($arguments -match $writeModes -or
+            $arguments -match $writeAccess -or
+            ($arguments -match $openMode -and $arguments -notmatch $readOnlyAccess)) {
             return $true
         }
     }
@@ -83,8 +87,10 @@ function Test-ContainsForbiddenResourceWriter(
     $fileStreamPattern =
         '(?s)new\s+(?:System\s*\.\s*IO\s*\.\s*)?FileStream\s*\((?<args>.*?)\)'
     foreach ($match in [regex]::Matches($scan, $fileStreamPattern)) {
-        if ($match.Groups['args'].Value -match $writeModes -or
-            $match.Groups['args'].Value -match $writeAccess) {
+        $arguments = $match.Groups['args'].Value
+        if ($arguments -match $writeModes -or
+            $arguments -match $writeAccess -or
+            ($arguments -match $openMode -and $arguments -notmatch $readOnlyAccess)) {
             return $true
         }
     }
@@ -103,8 +109,23 @@ function Test-ContainsForbiddenResourceWriter(
         if ($scan -match "\b$name\s*\.\s*$fileInfoWriter\s*\(") { return $true }
     }
 
-    if ($scan -match 'new\s+(?:System\s*\.\s*IO\s*\.\s*)?StreamWriter\s*\(') {
-        return $true
+    $memoryStreamVariables = @(
+        [regex]::Matches(
+            $scan,
+            '(?:var|(?:System\s*\.\s*IO\s*\.\s*)?MemoryStream)\s+' +
+            '(?<name>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*new\s+' +
+            '(?:System\s*\.\s*IO\s*\.\s*)?MemoryStream\s*\(') |
+            ForEach-Object { $_.Groups['name'].Value }
+    )
+    $streamWriterPattern =
+        '(?s)new\s+(?:System\s*\.\s*IO\s*\.\s*)?StreamWriter\s*\((?<args>.*?)\)'
+    foreach ($match in [regex]::Matches($scan, $streamWriterPattern)) {
+        $firstArgument = ($match.Groups['args'].Value -split ',', 2)[0].Trim()
+        $constructsMemoryStream =
+            $firstArgument -match '^new\s+(?:System\s*\.\s*IO\s*\.\s*)?MemoryStream\s*\('
+        if (-not $constructsMemoryStream -and $memoryStreamVariables -notcontains $firstArgument) {
+            return $true
+        }
     }
 
     return $false
@@ -175,8 +196,10 @@ private static void ReadOnly(string path)
             "$validSource`nprivate static void Bypass(string path) { File.OpenWrite(path); }",
             "$validSource`nprivate static void Bypass(string path) { File.Open(path, FileMode.Create); }",
             "$validSource`nprivate static void Bypass(string path) { File.Open(path, FileMode.Open, FileAccess.Write); }",
+            "$validSource`nprivate static void Bypass(string path) { File.Open(path, FileMode.Open); }",
             "$validSource`nprivate static void Bypass(string path) { new FileStream(path, FileMode.Create, FileAccess.Write); }",
             "$validSource`nprivate static void Bypass(string path) { new FileStream(path, FileMode.Open, FileAccess.Write); }",
+            "$validSource`nprivate static void Bypass(string path) { new FileStream(path, FileMode.Open); }",
             "$validSource`nprivate static void Bypass(string path) { new FileInfo(path).OpenWrite(); }",
             "$validSource`nprivate static void Bypass(string path) { var info = new FileInfo(path); info.Create(); }",
             "$validSource`nprivate static void Bypass(string path) { new StreamWriter(path); }",
@@ -186,6 +209,29 @@ private static void ReadOnly(string path)
         foreach ($mutation in $mutations) {
             (Test-UsesOnlyGuardedResourceWrites $mutation) | Should Be $false
         }
+    }
+
+    It 'allows StreamWriter when its target is a known MemoryStream' {
+        $memoryWriterSource = @'
+public static bool WriteIfMissing(string path, byte[] bytes)
+{
+    if (File.Exists(path)) return false;
+    File.WriteAllBytes(path, bytes);
+    return true;
+}
+private static byte[] GenerateEnemyPng() { return null; }
+private static byte[] BuildText()
+{
+    using (var memoryStream = new MemoryStream())
+    using (var writer = new StreamWriter(memoryStream))
+    {
+        writer.Write("placeholder");
+        writer.Flush();
+        return memoryStream.ToArray();
+    }
+}
+'@
+        (Test-UsesOnlyGuardedResourceWrites $memoryWriterSource) | Should Be $true
     }
 
     It 'uses distinct imported Sprite resources for Archer and Elite' {
