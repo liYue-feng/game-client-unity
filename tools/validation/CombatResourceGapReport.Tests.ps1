@@ -1,5 +1,6 @@
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $reportPath = Join-Path $projectRoot 'docs/combat-resource-gap-report.md'
+$scriptsRoot = Join-Path $projectRoot 'Assets/Scripts'
 
 function Get-GapRows {
     return @(Get-Content -Encoding UTF8 $reportPath |
@@ -57,7 +58,17 @@ Describe 'Combat resource gap report handoff' {
 
     It 'states the LegacyRuntime reality and the future shared font provider contract' {
         $report = Get-Content -Raw -Encoding UTF8 $reportPath
+        $scriptFiles = @(Get-ChildItem $scriptsRoot -Recurse -Filter '*.cs' -File)
+        $legacyMatches = @(Select-String -Path $scriptFiles.FullName `
+            -Pattern 'Resources\.GetBuiltinResource<Font>\("LegacyRuntime\.ttf"\)' `
+            -AllMatches)
+        $directCallCount = ($legacyMatches | ForEach-Object { $_.Matches.Count } |
+            Measure-Object -Sum).Sum
+        $uniqueFileCount = @($legacyMatches.Path | Sort-Object -Unique).Count
+        $derivedInventoryPhrase =
+            "$directCallCount direct call sites across $uniqueFileCount files"
 
+        $report.Contains($derivedInventoryPhrase) | Should Be $true
         $report | Should Match 'Resources\.GetBuiltinResource<Font>\("LegacyRuntime\.ttf"\)'
         $report | Should Match 'Assets/Scripts/UI/Common/CombatUiFontProvider\.cs'
         $report | Should Match 'Resources\.Load<Font>\("Fonts/ZhetianUIFont"\)'
