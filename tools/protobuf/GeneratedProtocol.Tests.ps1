@@ -1,10 +1,80 @@
-$generatedPath = Join-Path $PSScriptRoot 'generated\Messages.cs'
+$generatedPath = Join-Path $PSScriptRoot 'generated\Game.cs'
+$generatorPath = Join-Path $PSScriptRoot 'Generate-Protocol.ps1'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+
+function Get-RawSha256([string]$Path) {
+    return (Get-FileHash -Algorithm SHA256 -LiteralPath $Path).Hash
+}
+
+function Get-CrlfNormalizedFingerprint([string]$Path) {
+    [byte[]]$source = [IO.File]::ReadAllBytes($Path)
+    $normalized = New-Object 'System.Collections.Generic.List[byte]'
+    for ($index = 0; $index -lt $source.Length; $index++) {
+        if ($source[$index] -eq 0x0D -and $index + 1 -lt $source.Length -and $source[$index + 1] -eq 0x0A) {
+            continue
+        }
+        $normalized.Add($source[$index])
+    }
+
+    return [Convert]::ToBase64String($normalized.ToArray())
+}
+
+$repoParent = Split-Path $repoRoot -Parent
+$isWorktree = (Split-Path $repoParent -Leaf) -eq '.worktrees'
+$workspaceRoot = if ($isWorktree) {
+    Split-Path (Split-Path $repoParent -Parent) -Parent
+}
+else {
+    $repoParent
+}
+$worktreeName = Split-Path $repoRoot -Leaf
+$backendCandidates = if ($isWorktree) {
+    @(
+        (Join-Path $workspaceRoot "game-server-go\.worktrees\$worktreeName"),
+        (Join-Path $workspaceRoot 'game-server-go')
+    )
+}
+else {
+    @((Join-Path $workspaceRoot 'game-server-go'))
+}
+$backendRoot = $backendCandidates | Where-Object { Test-Path -LiteralPath $_ -PathType Container } | Select-Object -First 1
+
+if ([string]::IsNullOrWhiteSpace($backendRoot)) {
+    throw 'A sibling game-server-go checkout is required for schema hash tests.'
+}
+$backendRoot = (Resolve-Path $backendRoot).Path
+
+Describe 'Canonical schema ownership' {
+    It 'owns one local game.proto and rejects the old source names' {
+        Test-Path (Join-Path $repoRoot 'proto\game.proto') | Should Be $true
+        @(Get-ChildItem (Join-Path $repoRoot 'proto') -Recurse -Filter '*.proto').Count | Should Be 1
+        Test-Path (Join-Path $repoRoot ('proto\game\v1\' + 'messages' + '.proto')) | Should Be $false
+        Test-Path (Join-Path $repoRoot 'tools\protobuf\generated\Game.cs') | Should Be $true
+        Test-Path (Join-Path $repoRoot 'Assets\Scripts\Protocol\Generated\Game.cs') | Should Be $true
+        Test-Path (Join-Path $repoRoot ('tools\protobuf\generated\' + 'Messages' + '.cs')) | Should Be $false
+        Test-Path (Join-Path $repoRoot ('Assets\Scripts\Protocol\Generated\' + 'Messages' + '.cs')) | Should Be $false
+    }
+
+    It 'matches the sibling server schema byte-for-byte' {
+        $clientSchema = Join-Path $repoRoot 'proto\game.proto'
+        $serverSchema = Join-Path $backendRoot 'proto\game.proto'
+        Test-Path -LiteralPath $clientSchema -PathType Leaf | Should Be $true
+        Test-Path -LiteralPath $serverSchema -PathType Leaf | Should Be $true
+        (Get-RawSha256 -Path $clientSchema) | Should Be (Get-RawSha256 -Path $serverSchema)
+    }
+
+    It 'keeps staging and runtime Game.cs equal after CRLF-only normalization' {
+        $stagingPath = Join-Path $repoRoot 'tools\protobuf\generated\Game.cs'
+        $runtimePath = Join-Path $repoRoot 'Assets\Scripts\Protocol\Generated\Game.cs'
+        (Get-CrlfNormalizedFingerprint -Path $stagingPath) | Should Be (Get-CrlfNormalizedFingerprint -Path $runtimePath)
+    }
+}
 
 Describe 'Generated protobuf protocol staging contract' {
     It 'stages the generated Game.Protocol source outside Assets' {
         (Test-Path -LiteralPath $generatedPath -PathType Leaf) | Should Be $true
         $generatedPath | Should Not Match '[\\/]Assets[\\/]'
+        (Test-Path -LiteralPath $generatorPath -PathType Leaf) | Should Be $true
     }
 
     It 'uses Google.Protobuf generated messages without JsonUtility annotations' {
@@ -18,9 +88,10 @@ Describe 'Generated protobuf protocol staging contract' {
     It 'rejects a runtime generated source that differs from staging' {
         $fixtureRoot = Join-Path ([IO.Path]::GetTempPath()) ("GeneratedProtocolFixture-{0}" -f [guid]::NewGuid())
         $fixtureToolsPath = Join-Path $fixtureRoot 'tools\protobuf'
-        $fixtureGeneratedPath = Join-Path $fixtureToolsPath 'generated\Messages.cs'
-        $fixtureRuntimePath = Join-Path $fixtureRoot 'Assets\Scripts\Protocol\Generated\Messages.cs'
+        $fixtureGeneratedPath = Join-Path $fixtureToolsPath 'generated\Game.cs'
+        $fixtureRuntimePath = Join-Path $fixtureRoot 'Assets\Scripts\Protocol\Generated\Game.cs'
         $fixtureVerifier = Join-Path $fixtureToolsPath 'Verify-GeneratedProtocol.ps1'
+        $fixtureSchemaPath = Join-Path $fixtureRoot 'proto\game.proto'
         $fixtureSource = @'
 using Google.Protobuf;
 namespace Game.Protocol {
@@ -31,7 +102,9 @@ namespace Game.Protocol {
         try {
             New-Item -ItemType Directory -Path (Split-Path -Parent $fixtureGeneratedPath) -Force | Out-Null
             New-Item -ItemType Directory -Path (Split-Path -Parent $fixtureRuntimePath) -Force | Out-Null
+            New-Item -ItemType Directory -Path (Split-Path -Parent $fixtureSchemaPath) -Force | Out-Null
             Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Verify-GeneratedProtocol.ps1') -Destination $fixtureVerifier
+            Copy-Item -LiteralPath (Join-Path $repoRoot 'proto\game.proto') -Destination $fixtureSchemaPath
             [IO.File]::WriteAllText($fixtureGeneratedPath, $fixtureSource)
             [IO.File]::WriteAllText($fixtureRuntimePath, "$fixtureSource// stale runtime source`n")
 
@@ -45,9 +118,10 @@ namespace Game.Protocol {
     It 'rejects a runtime generated source with a standalone carriage return' {
         $fixtureRoot = Join-Path ([IO.Path]::GetTempPath()) ("GeneratedProtocolFixture-{0}" -f [guid]::NewGuid())
         $fixtureToolsPath = Join-Path $fixtureRoot 'tools\protobuf'
-        $fixtureGeneratedPath = Join-Path $fixtureToolsPath 'generated\Messages.cs'
-        $fixtureRuntimePath = Join-Path $fixtureRoot 'Assets\Scripts\Protocol\Generated\Messages.cs'
+        $fixtureGeneratedPath = Join-Path $fixtureToolsPath 'generated\Game.cs'
+        $fixtureRuntimePath = Join-Path $fixtureRoot 'Assets\Scripts\Protocol\Generated\Game.cs'
         $fixtureVerifier = Join-Path $fixtureToolsPath 'Verify-GeneratedProtocol.ps1'
+        $fixtureSchemaPath = Join-Path $fixtureRoot 'proto\game.proto'
         $fixtureSource = @'
 using Google.Protobuf;
 namespace Game.Protocol {
@@ -58,7 +132,9 @@ namespace Game.Protocol {
         try {
             New-Item -ItemType Directory -Path (Split-Path -Parent $fixtureGeneratedPath) -Force | Out-Null
             New-Item -ItemType Directory -Path (Split-Path -Parent $fixtureRuntimePath) -Force | Out-Null
+            New-Item -ItemType Directory -Path (Split-Path -Parent $fixtureSchemaPath) -Force | Out-Null
             Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Verify-GeneratedProtocol.ps1') -Destination $fixtureVerifier
+            Copy-Item -LiteralPath (Join-Path $repoRoot 'proto\game.proto') -Destination $fixtureSchemaPath
             [IO.File]::WriteAllText($fixtureGeneratedPath, $fixtureSource, (New-Object Text.UTF8Encoding($false)))
             $firstLineFeed = $fixtureSource.IndexOf("`n")
             $firstLineFeed | Should BeGreaterThan -1
@@ -75,9 +151,10 @@ namespace Game.Protocol {
     It 'rejects a runtime generated source with a UTF-8 BOM' {
         $fixtureRoot = Join-Path ([IO.Path]::GetTempPath()) ("GeneratedProtocolFixture-{0}" -f [guid]::NewGuid())
         $fixtureToolsPath = Join-Path $fixtureRoot 'tools\protobuf'
-        $fixtureGeneratedPath = Join-Path $fixtureToolsPath 'generated\Messages.cs'
-        $fixtureRuntimePath = Join-Path $fixtureRoot 'Assets\Scripts\Protocol\Generated\Messages.cs'
+        $fixtureGeneratedPath = Join-Path $fixtureToolsPath 'generated\Game.cs'
+        $fixtureRuntimePath = Join-Path $fixtureRoot 'Assets\Scripts\Protocol\Generated\Game.cs'
         $fixtureVerifier = Join-Path $fixtureToolsPath 'Verify-GeneratedProtocol.ps1'
+        $fixtureSchemaPath = Join-Path $fixtureRoot 'proto\game.proto'
         $fixtureSource = @'
 using Google.Protobuf;
 namespace Game.Protocol {
@@ -88,7 +165,9 @@ namespace Game.Protocol {
         try {
             New-Item -ItemType Directory -Path (Split-Path -Parent $fixtureGeneratedPath) -Force | Out-Null
             New-Item -ItemType Directory -Path (Split-Path -Parent $fixtureRuntimePath) -Force | Out-Null
+            New-Item -ItemType Directory -Path (Split-Path -Parent $fixtureSchemaPath) -Force | Out-Null
             Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Verify-GeneratedProtocol.ps1') -Destination $fixtureVerifier
+            Copy-Item -LiteralPath (Join-Path $repoRoot 'proto\game.proto') -Destination $fixtureSchemaPath
             [IO.File]::WriteAllText($fixtureGeneratedPath, $fixtureSource, (New-Object Text.UTF8Encoding($false)))
             $content = [IO.File]::ReadAllBytes($fixtureGeneratedPath)
             $withBom = New-Object byte[] ($content.Length + 3)
@@ -107,7 +186,8 @@ namespace Game.Protocol {
 
     It 'does not introduce a client-side proto source of truth' {
         $clientProtoFiles = @(Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot '..\..') -Recurse -Filter '*.proto')
-        $clientProtoFiles.Count | Should Be 0
+        $clientProtoFiles.Count | Should Be 1
+        $clientProtoFiles[0].FullName | Should Be (Join-Path $repoRoot 'proto\game.proto')
     }
 
     It 'tracks the vendored protobuf runtime binaries' {

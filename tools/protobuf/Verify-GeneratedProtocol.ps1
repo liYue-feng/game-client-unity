@@ -1,10 +1,37 @@
 [CmdletBinding()]
-param()
+param([string]$BackendRoot)
 
 $ErrorActionPreference = 'Stop'
-$generatedPath = Join-Path $PSScriptRoot 'generated\Messages.cs'
+$projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+$schemaPath = Join-Path $projectRoot 'proto\game.proto'
+$generatedPath = Join-Path $PSScriptRoot 'generated\Game.cs'
+$runtimeGeneratedPath = Join-Path $projectRoot 'Assets\Scripts\Protocol\Generated\Game.cs'
+
+function Get-RawSha256([string]$Path) {
+    return (Get-FileHash -Algorithm SHA256 -LiteralPath $Path).Hash
+}
+
+if (-not (Test-Path -LiteralPath $schemaPath -PathType Leaf)) {
+    throw "Canonical schema is missing: $schemaPath"
+}
+$protoFiles = @(Get-ChildItem -LiteralPath (Join-Path $projectRoot 'proto') -Recurse -Filter '*.proto')
+if ($protoFiles.Count -ne 1 -or $protoFiles[0].FullName -ne $schemaPath) {
+    throw "Client must own only proto/game.proto: $($protoFiles.FullName -join ', ')"
+}
+
+$legacyStagingPath = Join-Path $projectRoot ('tools\protobuf\generated\' + 'Messages' + '.cs')
+$legacyRuntimePath = Join-Path $projectRoot ('Assets\Scripts\Protocol\Generated\' + 'Messages' + '.cs')
+foreach ($legacyPath in @($legacyStagingPath, $legacyRuntimePath)) {
+    if (Test-Path -LiteralPath $legacyPath) {
+        throw "Old generated C# source must be removed: $legacyPath"
+    }
+}
+
 if (-not (Test-Path -LiteralPath $generatedPath -PathType Leaf)) {
     throw "Generated C# protocol is missing: $generatedPath"
+}
+if (-not (Test-Path -LiteralPath $runtimeGeneratedPath -PathType Leaf)) {
+    throw "Unity runtime generated C# protocol is missing: $runtimeGeneratedPath"
 }
 
 $content = Get-Content -LiteralPath $generatedPath -Raw
@@ -17,12 +44,6 @@ foreach ($forbidden in @('JsonUtility', '[Serializable]')) {
     if ($content -match [regex]::Escape($forbidden)) {
         throw "Generated C# protocol contains forbidden handwritten JSON text: $forbidden"
     }
-}
-
-$projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
-$runtimeGeneratedPath = Join-Path $projectRoot 'Assets\Scripts\Protocol\Generated\Messages.cs'
-if (-not (Test-Path -LiteralPath $runtimeGeneratedPath -PathType Leaf)) {
-    throw "Unity runtime generated C# protocol is missing: $runtimeGeneratedPath"
 }
 
 function Get-NormalizedGeneratedFingerprint {
@@ -44,9 +65,41 @@ if ((Get-NormalizedGeneratedFingerprint -Path $generatedPath) -cne (Get-Normaliz
     throw "Unity runtime generated C# protocol differs from staging: $runtimeGeneratedPath"
 }
 
-$protoFiles = @(Get-ChildItem -LiteralPath $projectRoot -Recurse -Filter '*.proto')
-if ($protoFiles.Count -ne 0) {
-    throw "Client must not own a duplicate .proto source: $($protoFiles.FullName -join ', ')"
+if ([string]::IsNullOrWhiteSpace($BackendRoot)) {
+    $clientParent = Split-Path $projectRoot -Parent
+    $isWorktree = (Split-Path $clientParent -Leaf) -eq '.worktrees'
+    $workspaceRoot = if ($isWorktree) {
+        Split-Path (Split-Path $clientParent -Parent) -Parent
+    }
+    else {
+        $clientParent
+    }
+    $worktreeName = Split-Path $projectRoot -Leaf
+    $candidates = if ($isWorktree) {
+        @(
+            (Join-Path $workspaceRoot "game-server-go\.worktrees\$worktreeName"),
+            (Join-Path $workspaceRoot 'game-server-go')
+        )
+    }
+    else {
+        @((Join-Path $workspaceRoot 'game-server-go'))
+    }
+    $BackendRoot = $candidates | Where-Object { Test-Path -LiteralPath $_ -PathType Container } | Select-Object -First 1
 }
 
+if (-not [string]::IsNullOrWhiteSpace($BackendRoot)) {
+    $BackendRoot = (Resolve-Path $BackendRoot).Path
+    $serverSchemaPath = Join-Path $BackendRoot 'proto\game.proto'
+    if (-not (Test-Path -LiteralPath $serverSchemaPath -PathType Leaf)) {
+        throw "Sibling server schema is missing: $serverSchemaPath"
+    }
+    if ((Get-RawSha256 -Path $schemaPath) -ne (Get-RawSha256 -Path $serverSchemaPath)) {
+        throw "Client and server schema SHA256 values differ: '$schemaPath' versus '$serverSchemaPath'."
+    }
+}
+
+& (Join-Path $PSScriptRoot 'Generate-Protocol.ps1') -Check
+if ($LASTEXITCODE -ne 0) { throw 'Generated C# protocol drift check failed.' }
+
+Write-Output "Schema SHA256=$(Get-RawSha256 -Path $schemaPath)"
 Write-Output "C# output SHA256=$((Get-FileHash -Algorithm SHA256 -LiteralPath $generatedPath).Hash)"

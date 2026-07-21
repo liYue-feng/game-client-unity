@@ -31,7 +31,7 @@ game_client_unity/
 │   ├── Scripts/
 │   │   ├── Protocol/          # 通信协议（与服务器一一对应）
 │   │   │   ├── Protocol.cs    #   消息ID + 错误码
-│   │   │   ├── Generated/Messages.cs # protoc 生成的请求/响应消息
+│   │   │   ├── Generated/Game.cs # protoc 生成的请求/响应消息
 │   │   │   └── Codec.cs       #   二进制帧编解码
 │   │   ├── Network/           # 网络层
 │   │   │   └── NetworkClient.cs         # WebSocket 客户端
@@ -72,7 +72,7 @@ game_client_unity/
 - Phase A2 跨场景服务的 `Instance` 只返回 `GameApplication` 已安装实例，不得自行创建 GameObject；仅 `[GameApplication]` 使用 `DontDestroyOnLoad`
 - WebSocket 回调在工作线程，UI 操作必须通过 MainThreadDispatcher 切回主线程
 - 网络消息通过 On<T>() 注册监听，不直接在 NetworkClient 中写业务逻辑
-- 协议消息只使用 `Generated/Messages.cs` 中的生成类型；不得手改生成文件或添加 JSON 兼容别名
+- 协议消息只使用 `Generated/Game.cs` 中的生成类型；不得手改生成文件或添加 JSON 兼容别名
 
 ## 关键依赖
 

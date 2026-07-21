@@ -1,8 +1,8 @@
 # Protocol
 
-`Protocol.cs` contains the canonical 32 WebSocket route IDs. Generated protobuf
-messages live in `Generated/Messages.cs`; do not edit that file or add partial
-lowercase compatibility aliases.
+`proto/game.proto` is the byte-identical shared schema for all 32 WebSocket
+route IDs. Generated protobuf messages live in `Generated/Game.cs`; regenerate
+them with `tools/protobuf/Generate-Protocol.ps1` and do not edit them by hand.
 
 `Codec` owns only the six-byte little-endian envelope:
 
