@@ -60,3 +60,11 @@ Both suites failed for the intended missing-feature reason: `proto/game.proto` d
 
 - Unity Editor compilation was not run; Task 1 verification is limited to pinned protoc generation, Pester contracts, generated-output drift, and the server Go suite.
 - No independent review agent was available because all agent slots were occupied; the implementation received a rename-aware staged self-review and fresh verification.
+
+## Review fix: local toolchain ownership
+
+- Server commit: `b7b2bab` (`docs: clarify local protobuf toolchains`).
+- Updated only the server `README.md` toolchain paragraph: the server local generator validates `protoc 35.0` and `protoc-gen-go v1.36.11` and writes only Go; `Google.Protobuf 3.35.1` and NuGet input verification belong to the Unity local generator and cross-repository toolchain.
+- Verification command: `rg -n "服务端本地生成器|Google\.Protobuf 3\.35\.1|NuGet|protoc-gen-go v1\.36\.11" README.md`.
+- Verification result: one accurate match at server `README.md:155`.
+- Whitespace validation: `git diff --check` passed before commit.
