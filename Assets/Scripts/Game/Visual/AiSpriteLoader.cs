@@ -19,6 +19,8 @@ public static class AiSpriteLoader
     // 缓存的Sprite
     private static Sprite _playerSprite;
     private static Sprite _gruntSprite;
+    private static Sprite _archerSprite;
+    private static Sprite _eliteSprite;
     private static Sprite _bossSprite;
     private static Sprite _titleCharacterSprite;
 
@@ -32,6 +34,8 @@ public static class AiSpriteLoader
         // 尝试从 Resources 加载
         _playerSprite = TryLoadSprite("Sprites/Characters/Player");
         _gruntSprite = TryLoadSprite("Sprites/Enemies/Grunt");
+        _archerSprite = TryLoadSprite("Sprites/Enemies/Archer");
+        _eliteSprite = TryLoadSprite("Sprites/Enemies/Elite");
         _bossSprite = TryLoadSprite("Sprites/Enemies/Boss");
         _titleCharacterSprite = TryLoadSprite("Sprites/Characters/TitleCharacter");
 
@@ -63,7 +67,7 @@ public static class AiSpriteLoader
     public static Sprite ArcherSprite()
     {
         if (!_resourcesLoaded) PreloadAllSprites();
-        return _gruntSprite != null ? _gruntSprite : PlaceholderSpriteFactory.ArcherSprite();
+        return _archerSprite != null ? _archerSprite : PlaceholderSpriteFactory.ArcherSprite();
     }
 
     /// <summary>
@@ -72,7 +76,7 @@ public static class AiSpriteLoader
     public static Sprite EliteSprite()
     {
         if (!_resourcesLoaded) PreloadAllSprites();
-        return _bossSprite != null ? _bossSprite : PlaceholderSpriteFactory.EliteSprite();
+        return _eliteSprite != null ? _eliteSprite : PlaceholderSpriteFactory.EliteSprite();
     }
 
     /// <summary>
@@ -116,14 +120,6 @@ public static class AiSpriteLoader
 
     private static Sprite TryLoadSprite(string path)
     {
-        var tex = Resources.Load<Texture2D>(path);
-        if (tex == null)
-        {
-            Debug.LogWarning($"[AiSpriteLoader] 资源加载失败: {path}，回退到占位符");
-            return null;
-        }
-
-        // 把Texture2D转成Sprite，pivot在底部中心
-        return Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), new Vector2(0.5f, 0f), 100f);
+        return Resources.Load<Sprite>(path);
     }
 }
