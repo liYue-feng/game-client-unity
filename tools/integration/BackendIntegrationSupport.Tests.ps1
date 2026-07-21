@@ -9,6 +9,17 @@ Describe 'Backend integration support behavior' {
         Assert-MockCalled Get-IntegrationPortListeners 1
     }
 
+    It 'requires only the owned backend listener while health is ready' {
+        Mock Get-IntegrationPortListeners { @([pscustomobject]@{ Port = 8080 }) }
+        { Assert-OwnedIntegrationPortsReady } | Should Not Throw
+
+        Mock Get-IntegrationPortListeners { @([pscustomobject]@{ Port = 8080 }, [pscustomobject]@{ Port = 8081 }) }
+        { Assert-OwnedIntegrationPortsReady } | Should Throw
+
+        Mock Get-IntegrationPortListeners { @() }
+        { Assert-OwnedIntegrationPortsReady } | Should Throw
+    }
+
     It 'restores PATH and GAME_BACKEND_INTEGRATION' {
         $savedPath = $env:PATH
         $savedIntegration = [Environment]::GetEnvironmentVariable('GAME_BACKEND_INTEGRATION', 'Process')

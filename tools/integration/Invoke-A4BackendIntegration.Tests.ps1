@@ -33,6 +33,7 @@ Describe 'Invoke-A4BackendIntegration runner ownership' {
         $runner | Should Match 'Stop-Process -Id \$probeProcess\.Id -Force'
         $runner | Should Match 'Restore-IntegrationEnvironment -OriginalPath \$originalPathEnvironment'
         $runner | Should Match 'Get-IntegrationPortListeners'
+        $runner | Should Match 'Wait-ForHealth -Process \$serverProcess\s*\r?\n\s*Assert-OwnedIntegrationPortsReady'
         $runner | Should Match 'Remove-Item -LiteralPath \$temporaryExecutable -Force'
     }
 

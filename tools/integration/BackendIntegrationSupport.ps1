@@ -8,6 +8,16 @@ function Assert-IntegrationPortsFree {
     }
 }
 
+function Assert-OwnedIntegrationPortsReady {
+    $ports = @(Get-IntegrationPortListeners | ForEach-Object { $_.Port })
+    if ($ports -notcontains 8080) {
+        throw 'Owned backend health is ready but port 8080 is not listening.'
+    }
+    if ($ports -contains 8081) {
+        throw 'Payment callback port 8081 must not be listening.'
+    }
+}
+
 function Restore-IntegrationEnvironment {
     param(
         [AllowNull()][string]$OriginalPath,

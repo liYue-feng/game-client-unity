@@ -46,6 +46,43 @@ namespace Game.Tests.EditMode.Online
         }
 
         [Test]
+        public void PaymentDisabledErrorCompletesOnlyMatchingRequestOnce()
+        {
+            var client = CreateConnectedClient(out _);
+            using (var service = new PaymentSessionService(client))
+            {
+                var successes = 0;
+                var failures = 0;
+                var failureReason = string.Empty;
+                var pushes = 0;
+                service.PaymentResult += _ => pushes++;
+
+                Assert.That(service.CreateOrder(1, _ => successes++, reason =>
+                {
+                    failures++;
+                    failureReason = reason;
+                }, out var seq), Is.True);
+
+                ReceiveUnknown(client, MsgID.Error, seq + 1,
+                    new ErrorResp { Code = 60001, Msg = "payment is disabled" });
+                Assert.That(failures, Is.Zero);
+
+                client.ReceiveFrame(Codec.Encode(MsgID.Error, seq,
+                    new ErrorResp { Code = 60001, Msg = "payment is disabled" }));
+                Assert.That(failures, Is.EqualTo(1));
+                Assert.That(failureReason, Is.EqualTo("[60001] payment is disabled"));
+                Assert.That(successes, Is.Zero);
+                Assert.That(pushes, Is.Zero);
+
+                ReceiveUnknown(client, MsgID.Error, seq,
+                    new ErrorResp { Code = 60001, Msg = "payment is disabled" });
+                Assert.That(failures, Is.EqualTo(1));
+                Assert.That(successes, Is.Zero);
+                Assert.That(pushes, Is.Zero);
+            }
+        }
+
+        [Test]
         public void PaymentNotificationUsesZeroSeqPush()
         {
             var client = CreateConnectedClient(out _);

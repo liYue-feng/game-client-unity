@@ -241,6 +241,7 @@ try {
         -WindowStyle Hidden
     Write-Host "BACKEND_PID=$($serverProcess.Id)"
     Wait-ForHealth -Process $serverProcess
+    Assert-OwnedIntegrationPortsReady
 
     $probeProcess = Start-Process `
         -FilePath $probeExecutable `
