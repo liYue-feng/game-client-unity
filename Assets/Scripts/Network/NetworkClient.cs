@@ -13,9 +13,13 @@ namespace Game.Network
 
         private readonly Dictionary<ushort, List<Subscription>> _handlers =
             new Dictionary<ushort, List<Subscription>>();
+        private readonly object _pendingGate = new object();
+        private readonly Dictionary<uint, PendingRequest> _pending =
+            new Dictionary<uint, PendingRequest>();
 
         private INetworkConnectionGateway _connectionGateway = NoOpNetworkConnectionGateway.Instance;
         private IWebSocketTransport _transport;
+        private uint _nextSeq = 1;
         private long _uid;
         private string _token;
         private bool _disposed;
@@ -129,6 +133,17 @@ namespace Game.Network
                 return false;
             }
 
+            byte[] body;
+            try
+            {
+                body = payload.ToByteArray();
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning($"[NetworkClient] Send serialization failed. msgId={msgId}: {exception.Message}");
+                return false;
+            }
+
             var transport = _transport;
             if (transport == null || !transport.IsAlive)
             {
@@ -136,7 +151,137 @@ namespace Game.Network
                 return false;
             }
 
-            transport.Send(Codec.Encode(msgId, payload));
+            uint seq;
+            lock (_pendingGate)
+            {
+                if (_disposed || !ReferenceEquals(_transport, transport) || !transport.IsAlive)
+                {
+                    LogDisconnectedSend(msgId);
+                    return false;
+                }
+
+                seq = AllocateSequenceLocked();
+            }
+
+            try
+            {
+                transport.Send(Codec.Encode(msgId, seq, body));
+                return true;
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning($"[NetworkClient] Send failed. msgId={msgId} seq={seq}: {exception.Message}");
+                return false;
+            }
+        }
+
+        public bool Request<TRequest, TResponse>(
+            ushort requestId,
+            ushort responseId,
+            TRequest payload,
+            Action<TResponse> onSuccess,
+            Action<string> onFailure,
+            out uint seq)
+            where TRequest : class, IMessage<TRequest>
+            where TResponse : class, IMessage<TResponse>
+        {
+            seq = 0;
+            byte[] body;
+            try
+            {
+                body = payload.ToByteArray();
+            }
+            catch (Exception exception)
+            {
+                InvokeFailure(onFailure, $"Request serialization failed: {exception.Message}");
+                return false;
+            }
+
+            if (!ProtocolMessageRegistry.IsRegistered<TRequest>(requestId))
+            {
+                InvokeFailure(onFailure,
+                    $"Request message type {typeof(TRequest).Name} does not match msgId={requestId}.");
+                return false;
+            }
+
+            if (!ProtocolMessageRegistry.IsRegistered<TResponse>(responseId))
+            {
+                InvokeFailure(onFailure,
+                    $"Response message type {typeof(TResponse).Name} does not match msgId={responseId}.");
+                return false;
+            }
+
+            var transport = _transport;
+            if (transport == null || !transport.IsAlive)
+            {
+                LogDisconnectedSend(requestId);
+                InvokeFailure(onFailure, "Transport is disconnected.");
+                return false;
+            }
+
+            PendingRequest pending = null;
+            string unavailableReason = null;
+            lock (_pendingGate)
+            {
+                if (_disposed)
+                {
+                    unavailableReason = "Network client is disposed.";
+                }
+                else if (!ReferenceEquals(_transport, transport) || !transport.IsAlive)
+                {
+                    unavailableReason = "Transport is disconnected.";
+                }
+                else
+                {
+                    seq = AllocateSequenceLocked();
+                    pending = new PendingRequest(
+                        responseId,
+                        responseBody =>
+                        {
+                            if (!ProtocolMessageRegistry.TryParse(responseId, responseBody, out TResponse response))
+                            {
+                                return false;
+                            }
+
+                            onSuccess?.Invoke(response);
+                            return true;
+                        },
+                        onFailure);
+                    _pending.Add(seq, pending);
+                }
+            }
+
+            if (unavailableReason != null)
+            {
+                InvokeFailure(onFailure, unavailableReason);
+                return false;
+            }
+
+            try
+            {
+                var frame = Codec.Encode(requestId, seq, body);
+                transport.Send(frame);
+                return true;
+            }
+            catch (Exception exception)
+            {
+                if (TryTakePending(seq, pending))
+                {
+                    CompleteFailure(pending, $"Request send failed: {exception.Message}");
+                }
+
+                return false;
+            }
+        }
+
+        public bool CancelRequest(uint seq)
+        {
+            if (!TryTakePending(seq, out var pending))
+            {
+                return false;
+            }
+
+            CompleteFailure(pending, "Request cancelled.");
             return true;
         }
 
@@ -152,17 +297,29 @@ namespace Game.Network
 
         public void Disconnect()
         {
+            FailAllPending("Transport disconnected.");
             _connectionGateway.Disconnect();
         }
 
         public void ReceiveFrame(byte[] frame)
         {
-            if (!Codec.TryDecode(frame, out var msgId, out var body))
+            if (!Codec.TryDecode(frame, out var msgId, out var seq, out var body))
             {
                 Debug.LogWarning("[NetworkClient] Dropped malformed frame.");
                 return;
             }
 
+            if (seq != 0)
+            {
+                ReceiveResponse(msgId, seq, body);
+                return;
+            }
+
+            DispatchPush(msgId, body);
+        }
+
+        private void DispatchPush(ushort msgId, byte[] body)
+        {
             if (!_handlers.TryGetValue(msgId, out var handlers))
             {
                 return;
@@ -206,12 +363,20 @@ namespace Game.Network
 
         public void Dispose()
         {
-            if (_disposed)
+            List<PendingRequest> pending;
+            lock (_pendingGate)
             {
-                return;
+                if (_disposed)
+                {
+                    return;
+                }
+
+                _disposed = true;
+                pending = new List<PendingRequest>(_pending.Values);
+                _pending.Clear();
             }
 
-            _disposed = true;
+            CompleteFailures(pending, "Network client disposed.");
             foreach (var handlers in _handlers.Values)
             {
                 foreach (var subscription in handlers)
@@ -236,6 +401,7 @@ namespace Game.Network
 
         internal void NotifyDisconnected()
         {
+            FailAllPending("Transport disconnected.");
             OnDisconnected?.Invoke();
         }
 
@@ -323,6 +489,157 @@ namespace Game.Network
         {
             Debug.LogWarning(
                 $"[NetworkClient] Send dropped because transport is disconnected. msgId={msgId}");
+        }
+
+        private uint AllocateSequenceLocked()
+        {
+            var candidate = _nextSeq == 0 ? 1u : _nextSeq;
+            var start = candidate;
+            while (_pending.ContainsKey(candidate))
+            {
+                candidate = NextSequence(candidate);
+                if (candidate == start)
+                {
+                    throw new InvalidOperationException("No request sequence is available.");
+                }
+            }
+
+            _nextSeq = NextSequence(candidate);
+            return candidate;
+        }
+
+        private static uint NextSequence(uint seq)
+        {
+            return seq == uint.MaxValue ? 1u : seq + 1u;
+        }
+
+        private bool TryTakePending(uint seq, out PendingRequest pending)
+        {
+            lock (_pendingGate)
+            {
+                if (!_pending.TryGetValue(seq, out pending))
+                {
+                    return false;
+                }
+
+                _pending.Remove(seq);
+                return true;
+            }
+        }
+
+        private bool TryTakePending(uint seq, PendingRequest expected)
+        {
+            lock (_pendingGate)
+            {
+                if (!_pending.TryGetValue(seq, out var pending) || !ReferenceEquals(pending, expected))
+                {
+                    return false;
+                }
+
+                _pending.Remove(seq);
+                return true;
+            }
+        }
+
+        private void ReceiveResponse(ushort msgId, uint seq, byte[] body)
+        {
+            if (!TryTakePending(seq, out var pending))
+            {
+                Debug.LogWarning($"[NetworkClient] Dropped response for unknown seq={seq}. msgId={msgId}");
+                return;
+            }
+
+            if (msgId == MsgID.Error)
+            {
+                if (!ProtocolMessageRegistry.TryParse(MsgID.Error, body, out ErrorResp error))
+                {
+                    CompleteFailure(pending, "Malformed protobuf error response.");
+                    return;
+                }
+
+                CompleteFailure(pending, $"[{error.Code}] {error.Msg}");
+                return;
+            }
+
+            if (msgId != pending.ResponseId)
+            {
+                CompleteFailure(pending,
+                    $"Unexpected response message ID {msgId}; expected {pending.ResponseId}.");
+                return;
+            }
+
+            try
+            {
+                if (!pending.TryCompleteSuccess(body))
+                {
+                    CompleteFailure(pending, "Malformed protobuf response body.");
+                }
+            }
+            catch (Exception exception)
+            {
+                Debug.LogError($"[NetworkClient] Response callback failed for seq={seq}: {exception.Message}");
+            }
+        }
+
+        private void FailAllPending(string reason)
+        {
+            List<PendingRequest> pending;
+            lock (_pendingGate)
+            {
+                if (_pending.Count == 0)
+                {
+                    return;
+                }
+
+                pending = new List<PendingRequest>(_pending.Values);
+                _pending.Clear();
+            }
+
+            CompleteFailures(pending, reason);
+        }
+
+        private static void CompleteFailures(IEnumerable<PendingRequest> pending, string reason)
+        {
+            foreach (var request in pending)
+            {
+                CompleteFailure(request, reason);
+            }
+        }
+
+        private static void CompleteFailure(PendingRequest pending, string reason)
+        {
+            InvokeFailure(pending.OnFailure, reason);
+        }
+
+        private static void InvokeFailure(Action<string> onFailure, string reason)
+        {
+            try
+            {
+                onFailure?.Invoke(reason);
+            }
+            catch (Exception exception)
+            {
+                Debug.LogError($"[NetworkClient] Failure callback failed: {exception.Message}");
+            }
+        }
+
+        private sealed class PendingRequest
+        {
+            internal PendingRequest(
+                ushort responseId,
+                Func<byte[], bool> tryCompleteSuccess,
+                Action<string> onFailure)
+            {
+                ResponseId = responseId;
+                TryCompleteSuccess = tryCompleteSuccess;
+                OnFailure = onFailure;
+            }
+
+            internal ushort ResponseId { get; }
+
+            internal Func<byte[], bool> TryCompleteSuccess { get; }
+
+            internal Action<string> OnFailure { get; }
         }
 
         private sealed class Subscription : IDisposable

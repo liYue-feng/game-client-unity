@@ -5,21 +5,20 @@ namespace Game.Protocol
 {
     public static class Codec
     {
-        public const int HeaderSize = 6;
+        public const int HeaderSize = 10;
         public const int MaxFrameSize = 64 * 1024;
 
-        public static byte[] Encode(ushort msgID, IMessage message)
+        public static byte[] Encode(ushort msgID, uint seq, byte[] body)
         {
-            if (message == null)
+            if (body == null)
             {
-                throw new ArgumentNullException(nameof(message));
+                throw new ArgumentNullException(nameof(body));
             }
 
-            var body = message.ToByteArray();
             var totalLength = HeaderSize + body.Length;
             if (totalLength > MaxFrameSize)
             {
-                throw new ArgumentOutOfRangeException(nameof(message), "Frame exceeds the 64 KiB protocol limit.");
+                throw new ArgumentOutOfRangeException(nameof(body), "Frame exceeds the 64 KiB protocol limit.");
             }
 
             var frame = new byte[totalLength];
@@ -29,6 +28,10 @@ namespace Game.Protocol
             frame[3] = (byte)(totalLength >> 24);
             frame[4] = (byte)msgID;
             frame[5] = (byte)(msgID >> 8);
+            frame[6] = (byte)seq;
+            frame[7] = (byte)(seq >> 8);
+            frame[8] = (byte)(seq >> 16);
+            frame[9] = (byte)(seq >> 24);
             if (body.Length > 0)
             {
                 Array.Copy(body, 0, frame, HeaderSize, body.Length);
@@ -37,9 +40,13 @@ namespace Game.Protocol
             return frame;
         }
 
-        public static bool TryDecode(byte[] data, out ushort msgID, out byte[] body)
+        public static byte[] Encode(ushort msgID, uint seq, IMessage message)
+            => Encode(msgID, seq, message.ToByteArray());
+
+        public static bool TryDecode(byte[] data, out ushort msgID, out uint seq, out byte[] body)
         {
             msgID = 0;
+            seq = 0;
             body = null;
             if (data == null || data.Length < HeaderSize)
             {
@@ -53,6 +60,7 @@ namespace Game.Protocol
             }
 
             msgID = (ushort)(data[4] | (data[5] << 8));
+            seq = (uint)(data[6] | (data[7] << 8) | (data[8] << 16) | (data[9] << 24));
             var bodyLength = data.Length - HeaderSize;
             body = new byte[bodyLength];
             if (bodyLength > 0)
@@ -61,6 +69,17 @@ namespace Game.Protocol
             }
 
             return true;
+        }
+
+        // Kept only so later migration tasks can compile before updating their call sites.
+        public static byte[] Encode(ushort msgID, IMessage message)
+            => throw new InvalidOperationException("A protocol sequence is required.");
+
+        public static bool TryDecode(byte[] data, out ushort msgID, out byte[] body)
+        {
+            msgID = 0;
+            body = null;
+            throw new InvalidOperationException("The protocol sequence must be decoded.");
         }
     }
 }

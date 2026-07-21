@@ -16,24 +16,26 @@ namespace Game.Tests.EditMode.Protocol
         [Test]
         public void LoginRequestEncodesToCanonicalLittleEndianProtobufFrame()
         {
-            var frame = Codec.Encode(MsgID.LoginReq, new LoginReq { Code = "abc" });
+            var frame = Codec.Encode(MsgID.LoginReq, 1, new LoginReq { Code = "abc" });
 
             CollectionAssert.AreEqual(
-                new byte[] { 0x0B, 0x00, 0x00, 0x00, 0xE9, 0x03, 0x0A, 0x03, 0x61, 0x62, 0x63 },
+                new byte[] { 0x0F, 0, 0, 0, 0xE9, 0x03, 1, 0, 0, 0, 0x0A, 0x03, 0x61, 0x62, 0x63 },
                 frame);
         }
 
         [Test]
         public void DecoderReturnsRawProtobufBytesAndRejectsOversizedFrames()
         {
-            var frame = Codec.Encode(MsgID.LoginReq, new LoginReq { Code = "abc" });
+            var frame = Codec.Encode(MsgID.LoginReq, 77, new LoginReq { Code = "abc" });
 
-            Assert.That(Codec.TryDecode(frame, out var id, out byte[] body), Is.True);
+            Assert.That(Codec.TryDecode(frame, out var id, out var seq, out byte[] body), Is.True);
             Assert.That(id, Is.EqualTo(MsgID.LoginReq));
+            Assert.That(seq, Is.EqualTo(77));
             CollectionAssert.AreEqual(new byte[] { 0x0A, 0x03, 0x61, 0x62, 0x63 }, body);
 
             var oversized = new byte[Codec.MaxFrameSize + 1];
-            Assert.That(Codec.TryDecode(oversized, out _, out byte[] _), Is.False);
+            Assert.That(Codec.TryDecode(oversized, out _, out _, out byte[] _), Is.False);
+            Assert.That(Codec.TryDecode(new byte[] { 6, 0, 0, 0, 0xEB, 0x03 }, out _, out _, out _), Is.False);
         }
 
         [Test]
@@ -100,9 +102,9 @@ namespace Game.Tests.EditMode.Protocol
             client.ReceiveFrame(new byte[] { 7, 0, 0, 0, 0xEA, 0x03, 0xFF });
 
             NetworkClient.RegisterInstance(client);
-            client.ReceiveFrame(Codec.Encode(MsgID.LoginResp, new LoginResp { Uid = 7, Token = "session" }));
+            client.ReceiveFrame(Codec.Encode(MsgID.LoginResp, 0, new LoginResp { Uid = 7, Token = "session" }));
             subscription.Dispose();
-            client.ReceiveFrame(Codec.Encode(MsgID.LoginResp, new LoginResp { Uid = 7, Token = "late" }));
+            client.ReceiveFrame(Codec.Encode(MsgID.LoginResp, 0, new LoginResp { Uid = 7, Token = "late" }));
 
             Assert.That(received, Is.EqualTo(1));
         }

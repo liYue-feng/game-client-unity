@@ -144,7 +144,7 @@ namespace Game.Tests.EditMode.Network
                 fixture.Controller.Connect(fixture.Settings.ServerUrl);
                 var first = fixture.Factory.LastTransport;
                 first.RaiseOpened();
-                first.RaiseMessage(Codec.Encode(MsgID.HeartbeatResp, new HeartbeatResp()));
+                first.RaiseMessage(Codec.Encode(MsgID.HeartbeatResp, 0, new HeartbeatResp()));
                 fixture.Controller.Disconnect();
                 fixture.Dispatcher.PumpAll();
                 Assert.That(fixture.Controller.State, Is.EqualTo(NetworkConnectionState.Disconnected));
@@ -193,7 +193,7 @@ namespace Game.Tests.EditMode.Network
 
                 fixture.Controller.Connect("ws://replacement.example/ws");
                 first.RaiseOpened();
-                first.RaiseMessage(Codec.Encode(MsgID.HeartbeatResp, new HeartbeatResp()));
+                first.RaiseMessage(Codec.Encode(MsgID.HeartbeatResp, 0, new HeartbeatResp()));
                 first.RaiseClosed();
                 first.RaiseError("stale error");
                 fixture.Dispatcher.PumpAll();
@@ -315,11 +315,32 @@ namespace Game.Tests.EditMode.Network
             }
         }
 
+        [Test]
+        public void RemoteCloseFailsPendingOnce()
+        {
+            using (var fixture = ControllerFixture.Create())
+            {
+                fixture.Controller.Connect(fixture.Settings.ServerUrl);
+                var transport = fixture.Factory.LastTransport;
+                transport.RaiseOpened();
+                fixture.Dispatcher.PumpAll();
+                var failures = 0;
+                fixture.Client.Request<LoginReq, LoginResp>(
+                    MsgID.LoginReq, MsgID.LoginResp, new LoginReq { Code = "pending" },
+                    _ => { }, _ => failures++, out _);
+
+                transport.RaiseClosed();
+                fixture.Dispatcher.PumpAll();
+
+                Assert.That(failures, Is.EqualTo(1));
+            }
+        }
+
         private static ushort[] DecodeIds(IEnumerable<byte[]> payloads)
         {
             return payloads.Select(payload =>
             {
-                Assert.That(Codec.TryDecode(payload, out var msgId, out _), Is.True);
+                Assert.That(Codec.TryDecode(payload, out var msgId, out _, out _), Is.True);
                 return msgId;
             }).ToArray();
         }

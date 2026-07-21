@@ -15,6 +15,10 @@ namespace Game.Tests.EditMode.Network.TestDoubles
 
         public List<NetworkCloseInfo> CloseCalls { get; } = new List<NetworkCloseInfo>();
 
+        public Action<byte[]> SendAction { get; set; }
+
+        public Exception SendException { get; set; }
+
         public int ConnectCalls { get; private set; }
 
         public int DisposeCalls { get; private set; }
@@ -28,7 +32,13 @@ namespace Game.Tests.EditMode.Network.TestDoubles
 
         public void Send(byte[] payload)
         {
+            if (SendException != null)
+            {
+                throw SendException;
+            }
+
             SentPayloads.Add(payload);
+            SendAction?.Invoke(payload);
         }
 
         public void Close(ushort code, string reason)
