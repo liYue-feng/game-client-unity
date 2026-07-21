@@ -23,6 +23,9 @@ namespace Game.Network
         private float _reconnectDelayRemaining;
         private float _nextBackoffSeconds;
         private float _heartbeatRemaining;
+        private uint _heartbeatSeq;
+        private int _heartbeatAttempt;
+        private bool _heartbeatActive;
         private bool _disposed;
 
         public NetworkConnectionController(
@@ -62,9 +65,11 @@ namespace Game.Network
 
             var replacingOpenTransport = _transport != null && _transport.IsAlive;
             _generation++;
+            IWebSocketTransport replacedTransport = null;
             if (_transport != null)
             {
-                CloseAndDisposeTransport(1000, "Connection replaced");
+                CancelHeartbeatRequest();
+                replacedTransport = CloseAndDisposeTransport(1000, "Connection replaced");
             }
 
             _url = url;
@@ -86,9 +91,9 @@ namespace Game.Network
             transport.Error += message =>
                 _dispatcher.Enqueue(() => HandleError(callbackGeneration, message));
             transport.ConnectAsync();
-            if (replacingOpenTransport)
+            if (replacedTransport != null)
             {
-                _client.NotifyDisconnected();
+                _client.NotifyTransportTerminated(replacedTransport, replacingOpenTransport);
             }
         }
 
@@ -103,14 +108,15 @@ namespace Game.Network
             _intentionalClose = true;
             _generation++;
             _terminalHandledForGeneration = true;
-            CloseAndDisposeTransport(1000, "Client disconnect");
+            CancelHeartbeatRequest();
+            var transport = CloseAndDisposeTransport(1000, "Client disconnect");
             _timeoutRemaining = 0f;
             _reconnectDelayRemaining = 0f;
             _heartbeatRemaining = 0f;
             SetState(NetworkConnectionState.Disconnected);
-            if (wasConnected)
+            if (transport != null)
             {
-                _client.NotifyDisconnected();
+                _client.NotifyTransportTerminated(transport, wasConnected);
             }
         }
 
@@ -150,16 +156,7 @@ namespace Game.Network
 
             if (deltaSeconds >= _heartbeatRemaining)
             {
-                _client.Request<HeartbeatReq, HeartbeatResp>(
-                    MsgID.HeartbeatReq,
-                    MsgID.HeartbeatResp,
-                    new HeartbeatReq
-                    {
-                        Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
-                    },
-                    _ => { },
-                    _ => { },
-                    out _);
+                SendHeartbeat();
                 _heartbeatRemaining = _settings.HeartbeatIntervalSeconds;
                 return;
             }
@@ -261,7 +258,9 @@ namespace Game.Network
 
             _terminalHandledForGeneration = true;
             _generation++;
-            CloseAndDisposeTransport(1001, "Connection timeout");
+            CancelHeartbeatRequest();
+            var transport = CloseAndDisposeTransport(1001, "Connection timeout");
+            _client.NotifyTransportTerminated(transport, false);
             ScheduleReconnectOrFail("Connection timeout");
         }
 
@@ -276,11 +275,9 @@ namespace Game.Network
             var wasConnected = IsConnected;
             _terminalHandledForGeneration = true;
             _generation++;
-            DisposeTransport();
-            if (wasConnected)
-            {
-                _client.NotifyDisconnected();
-            }
+            CancelHeartbeatRequest();
+            var transport = DisposeTransport();
+            _client.NotifyTransportTerminated(transport, wasConnected);
 
             ScheduleReconnectOrFail(errorMessage);
         }
@@ -305,27 +302,91 @@ namespace Game.Network
             SetState(NetworkConnectionState.Reconnecting);
         }
 
-        private void CloseAndDisposeTransport(ushort code, string reason)
+        private IWebSocketTransport CloseAndDisposeTransport(ushort code, string reason)
         {
             var transport = _transport;
             if (transport == null)
             {
                 _client.SetTransport(null);
-                return;
+                return null;
             }
 
             _transport = null;
             transport.Close(code, reason);
             transport.Dispose();
             _client.SetTransport(null);
+            return transport;
         }
 
-        private void DisposeTransport()
+        private IWebSocketTransport DisposeTransport()
         {
             var transport = _transport;
             _transport = null;
             transport?.Dispose();
             _client.SetTransport(null);
+            return transport;
+        }
+
+        private void SendHeartbeat()
+        {
+            if (_heartbeatActive)
+            {
+                return;
+            }
+
+            var attempt = ++_heartbeatAttempt;
+            _heartbeatActive = true;
+            var sent = _client.Request<HeartbeatReq, HeartbeatResp>(
+                MsgID.HeartbeatReq,
+                MsgID.HeartbeatResp,
+                new HeartbeatReq
+                {
+                    Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+                },
+                _ => CompleteHeartbeat(attempt),
+                _ => CompleteHeartbeat(attempt),
+                out var seq);
+            if (sent && IsActiveHeartbeat(attempt))
+            {
+                _heartbeatSeq = seq;
+            }
+            else if (!sent)
+            {
+                CompleteHeartbeat(attempt);
+            }
+        }
+
+        private bool IsActiveHeartbeat(int attempt)
+        {
+            return _heartbeatActive && attempt == _heartbeatAttempt;
+        }
+
+        private void CompleteHeartbeat(int attempt)
+        {
+            if (!IsActiveHeartbeat(attempt))
+            {
+                return;
+            }
+
+            _heartbeatActive = false;
+            _heartbeatSeq = 0;
+        }
+
+        private void CancelHeartbeatRequest()
+        {
+            if (!_heartbeatActive)
+            {
+                return;
+            }
+
+            var seq = _heartbeatSeq;
+            _heartbeatActive = false;
+            _heartbeatSeq = 0;
+            _heartbeatAttempt++;
+            if (seq != 0)
+            {
+                _client.CancelRequest(seq);
+            }
         }
 
         private void SetState(NetworkConnectionState state)

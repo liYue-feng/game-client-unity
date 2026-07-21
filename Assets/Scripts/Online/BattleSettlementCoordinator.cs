@@ -229,7 +229,7 @@ namespace Game.Online
                         return;
                     }
 
-                    HandleCombatFailure(attempt);
+                    HandleCombatFailure(attempt, reason);
                 },
                 out var seq);
             requestReturned = true;
@@ -250,7 +250,7 @@ namespace Game.Online
             }
             else if (synchronousFailure != null)
             {
-                HandleCombatFailure(attempt);
+                HandleCombatFailure(attempt, synchronousFailure);
             }
 
             return true;
@@ -356,7 +356,7 @@ namespace Game.Online
             }
         }
 
-        private void HandleCombatFailure(int attempt)
+        private void HandleCombatFailure(int attempt, string reason)
         {
             if (!IsActiveCombatAttempt(attempt))
             {
@@ -364,6 +364,11 @@ namespace Game.Online
             }
 
             _combatSeq = 0;
+            if (_client.IsTransportTerminationFailure(reason))
+            {
+                return;
+            }
+
             _awaitingCombat = false;
             Fail();
         }

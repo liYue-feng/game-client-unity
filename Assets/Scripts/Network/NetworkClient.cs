@@ -8,6 +8,7 @@ namespace Game.Network
 {
     public sealed class NetworkClient : IDisposable
     {
+        private const string TransportDisconnectedError = "Transport disconnected.";
         private static NetworkClient _facade = new NetworkClient();
         private static NetworkClient _registeredInstance;
 
@@ -71,6 +72,12 @@ namespace Game.Network
         public string Token => _token;
 
         public string serverUrl { get; set; } = "ws://localhost:8080/ws";
+
+        public bool IsTransportTerminationFailure(string reason)
+        {
+            return (_transport == null || !_transport.IsAlive) &&
+                   string.Equals(reason, TransportDisconnectedError, StringComparison.Ordinal);
+        }
 
         public event Action OnConnected;
 
@@ -235,6 +242,7 @@ namespace Game.Network
                 {
                     seq = AllocateSequenceLocked();
                     pending = new PendingRequest(
+                        transport,
                         responseId,
                         responseBody =>
                         {
@@ -297,7 +305,7 @@ namespace Game.Network
 
         public void Disconnect()
         {
-            FailAllPending("Transport disconnected.");
+            FailAllPending(TransportDisconnectedError);
             _connectionGateway.Disconnect();
         }
 
@@ -401,8 +409,19 @@ namespace Game.Network
 
         internal void NotifyDisconnected()
         {
-            FailAllPending("Transport disconnected.");
+            FailAllPending(TransportDisconnectedError);
             OnDisconnected?.Invoke();
+        }
+
+        internal void NotifyTransportTerminated(
+            IWebSocketTransport transport,
+            bool notifyDisconnected)
+        {
+            FailPendingForTransport(transport, TransportDisconnectedError);
+            if (notifyDisconnected)
+            {
+                OnDisconnected?.Invoke();
+            }
         }
 
         internal void NotifyError(string message)
@@ -598,6 +617,37 @@ namespace Game.Network
             CompleteFailures(pending, reason);
         }
 
+        private void FailPendingForTransport(IWebSocketTransport transport, string reason)
+        {
+            if (transport == null)
+            {
+                return;
+            }
+
+            var pending = new List<PendingRequest>();
+            var sequences = new List<uint>();
+            lock (_pendingGate)
+            {
+                foreach (var entry in _pending)
+                {
+                    if (!ReferenceEquals(entry.Value.Transport, transport))
+                    {
+                        continue;
+                    }
+
+                    sequences.Add(entry.Key);
+                    pending.Add(entry.Value);
+                }
+
+                foreach (var seq in sequences)
+                {
+                    _pending.Remove(seq);
+                }
+            }
+
+            CompleteFailures(pending, reason);
+        }
+
         private static void CompleteFailures(IEnumerable<PendingRequest> pending, string reason)
         {
             foreach (var request in pending)
@@ -626,14 +676,18 @@ namespace Game.Network
         private sealed class PendingRequest
         {
             internal PendingRequest(
+                IWebSocketTransport transport,
                 ushort responseId,
                 Func<byte[], bool> tryCompleteSuccess,
                 Action<string> onFailure)
             {
+                Transport = transport;
                 ResponseId = responseId;
                 TryCompleteSuccess = tryCompleteSuccess;
                 OnFailure = onFailure;
             }
+
+            internal IWebSocketTransport Transport { get; }
 
             internal ushort ResponseId { get; }
 

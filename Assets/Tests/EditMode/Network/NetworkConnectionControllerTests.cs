@@ -197,6 +197,48 @@ namespace Game.Tests.EditMode.Network
         }
 
         [Test]
+        public void DirectCloseBeforeQueuedOpenDispatchDrainsPendingExactlyOnce()
+        {
+            using (var fixture = ControllerFixture.Create())
+            {
+                fixture.Controller.Connect(fixture.Settings.ServerUrl);
+                var transport = fixture.Factory.LastTransport;
+                transport.RaiseOpened();
+                var failures = 0;
+                Assert.That(fixture.Client.Request<LoginReq, LoginResp>(
+                    MsgID.LoginReq, MsgID.LoginResp, new LoginReq { Code = "pending" },
+                    _ => { }, _ => failures++, out _), Is.True);
+
+                transport.RaiseClosed();
+                fixture.Dispatcher.PumpLast();
+                Assert.That(failures, Is.EqualTo(1));
+
+                fixture.Dispatcher.PumpAll();
+                Assert.That(failures, Is.EqualTo(1));
+            }
+        }
+
+        [Test]
+        public void TimeoutBeforeQueuedOpenDispatchDrainsPendingExactlyOnce()
+        {
+            using (var fixture = ControllerFixture.Create(timeout: 5f))
+            {
+                fixture.Controller.Connect(fixture.Settings.ServerUrl);
+                fixture.Factory.LastTransport.RaiseOpened();
+                var failures = 0;
+                Assert.That(fixture.Client.Request<LoginReq, LoginResp>(
+                    MsgID.LoginReq, MsgID.LoginResp, new LoginReq { Code = "pending" },
+                    _ => { }, _ => failures++, out _), Is.True);
+
+                fixture.Controller.Tick(5f);
+                Assert.That(failures, Is.EqualTo(1));
+
+                fixture.Dispatcher.PumpAll();
+                Assert.That(failures, Is.EqualTo(1));
+            }
+        }
+
+        [Test]
         public void ConnectWhileReadyNotifiesDisconnectAndIgnoresReplacedTransportCallbacks()
         {
             using (var fixture = ControllerFixture.Create())
@@ -290,9 +332,11 @@ namespace Game.Tests.EditMode.Network
                 Assert.That(transport.SentPayloads, Is.Empty);
                 fixture.Controller.Tick(0.01f);
                 Assert.That(DecodeIds(transport.SentPayloads), Is.EqualTo(new[] { MsgID.HeartbeatReq }));
+                CompleteLastHeartbeat(fixture.Client, transport);
 
                 fixture.Controller.BeginAuthentication();
                 fixture.Controller.Tick(3f);
+                CompleteLastHeartbeat(fixture.Client, transport);
                 fixture.Controller.MarkReady();
                 fixture.Controller.Tick(3f);
                 Assert.That(DecodeIds(transport.SentPayloads), Is.EqualTo(new[]
@@ -319,14 +363,24 @@ namespace Game.Tests.EditMode.Network
                 fixture.Controller.Tick(1f);
                 fixture.Controller.Tick(1f);
 
-                Assert.That(transport.SentPayloads, Has.Count.EqualTo(2));
+                Assert.That(transport.SentPayloads, Has.Count.EqualTo(1));
                 Assert.That(Codec.TryDecode(
                     transport.SentPayloads[0], out _, out var firstSeq, out _), Is.True);
+                Assert.That(firstSeq, Is.Not.Zero);
+
+                LogAssert.Expect(LogType.Warning, new Regex("unknown seq"));
+                fixture.Client.ReceiveFrame(Codec.Encode(
+                    MsgID.HeartbeatResp, firstSeq + 1, new HeartbeatResp()));
+                fixture.Controller.Tick(1f);
+                Assert.That(transport.SentPayloads, Has.Count.EqualTo(1));
+
+                fixture.Client.ReceiveFrame(Codec.Encode(
+                    MsgID.HeartbeatResp, firstSeq, new HeartbeatResp()));
+                fixture.Controller.Tick(1f);
+                Assert.That(transport.SentPayloads, Has.Count.EqualTo(2));
                 Assert.That(Codec.TryDecode(
                     transport.SentPayloads[1], out _, out var secondSeq, out _), Is.True);
-                Assert.That(firstSeq, Is.Not.Zero);
                 Assert.That(secondSeq, Is.Not.Zero.And.Not.EqualTo(firstSeq));
-                Assert.That(fixture.Client.CancelRequest(firstSeq), Is.True);
                 Assert.That(fixture.Client.CancelRequest(secondSeq), Is.True);
             }
         }
@@ -389,6 +443,16 @@ namespace Game.Tests.EditMode.Network
                 Assert.That(Codec.TryDecode(payload, out var msgId, out _, out _), Is.True);
                 return msgId;
             }).ToArray();
+        }
+
+        private static void CompleteLastHeartbeat(
+            NetworkClient client,
+            FakeWebSocketTransport transport)
+        {
+            Assert.That(Codec.TryDecode(
+                transport.SentPayloads.Last(), out var messageId, out var seq, out _), Is.True);
+            Assert.That(messageId, Is.EqualTo(MsgID.HeartbeatReq));
+            client.ReceiveFrame(Codec.Encode(MsgID.HeartbeatResp, seq, new HeartbeatResp()));
         }
 
         private static void ExpectWebSocketError(

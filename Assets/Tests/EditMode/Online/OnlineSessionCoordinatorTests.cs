@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using Game.Gameplay;
 using Game.Network;
 using Game.Online;
 using Game.Protocol;
@@ -604,6 +605,85 @@ namespace Game.Tests.EditMode.Online
                 new LoadArchiveResp { Found = true, Archive = archive }));
         }
 
+        [Test]
+        public void ActiveCombatSurvivesActualDisconnectReconnectingAndReadyWithSameRunId()
+        {
+            var root = new GameObject("combat-disconnect-recovery-test-root");
+            var client = new NetworkClient();
+            var factory = new FakeWebSocketTransportFactory();
+            var dispatcher = new FakeNetworkDispatcher();
+            var settings = NetworkTestSettings.Create(initialBackoff: 1f);
+            var host = NetworkConnectionControllerHost.Install(
+                root.transform, client, factory, settings, dispatcher);
+            var controller = (NetworkConnectionController)typeof(NetworkConnectionControllerHost)
+                .GetField("_controller", BindingFlags.Instance | BindingFlags.NonPublic)
+                .GetValue(host);
+            var adapter = new OnlineConnectionAdapter(client, host);
+            var provider = new FakeLoginCodeProvider();
+            var login = new LoginSessionService(client);
+            var archive = new ArchiveSessionService(client);
+            var coordinator = new OnlineSessionCoordinator(
+                adapter, provider, login, archive, client, settings.ServerUrl);
+            var battle = new BattleSettlementCoordinator(client, archive);
+            coordinator.StateChanged += state =>
+                battle.SetSessionState(state, coordinator.Generation);
+
+            try
+            {
+                host.Initialize();
+                coordinator.Start();
+                var firstTransport = factory.LastTransport;
+                firstTransport.RaiseOpened();
+                dispatcher.PumpAll();
+                provider.Succeed(0, "dev:first");
+                firstTransport.RaiseMessage(EncodeResponse(firstTransport, MsgID.LoginResp,
+                    new LoginResp { Uid = 1, Nickname = "first", Token = "first-token" }));
+                dispatcher.PumpAll();
+                firstTransport.RaiseMessage(EncodeResponse(firstTransport, MsgID.LoadArchiveResp,
+                    new LoadArchiveResp { Found = true, Archive = new PlayerArchive() }));
+                dispatcher.PumpAll();
+                Assert.That(coordinator.State, Is.EqualTo(OnlineSessionState.Ready));
+
+                battle.Settle(BattleRunOutcome.Victory,
+                    new CombatResultData { killCount = 2, survivalTime = 3, playerLevel = 4 },
+                    _ => { });
+                var firstRequest = DecodeLastCombatRequest(firstTransport);
+
+                firstTransport.RaiseClosed();
+                dispatcher.PumpAll();
+                Assert.That(coordinator.State, Is.EqualTo(OnlineSessionState.Reconnecting));
+                Assert.That(battle.State, Is.EqualTo(BattleSettlementState.Pending));
+
+                controller.Tick(1f);
+                var retryTransport = factory.LastTransport;
+                retryTransport.RaiseOpened();
+                dispatcher.PumpAll();
+                provider.Succeed(1, "dev:retry");
+                retryTransport.RaiseMessage(EncodeResponse(retryTransport, MsgID.LoginResp,
+                    new LoginResp { Uid = 1, Nickname = "retry", Token = "retry-token" }));
+                dispatcher.PumpAll();
+                retryTransport.RaiseMessage(EncodeResponse(retryTransport, MsgID.LoadArchiveResp,
+                    new LoadArchiveResp { Found = true, Archive = new PlayerArchive() }));
+                dispatcher.PumpAll();
+
+                Assert.That(coordinator.State, Is.EqualTo(OnlineSessionState.Ready));
+                var retriedRequest = DecodeLastCombatRequest(retryTransport);
+                Assert.That(retriedRequest.RunId, Is.EqualTo(firstRequest.RunId));
+            }
+            finally
+            {
+                battle.Dispose();
+                coordinator.Dispose();
+                archive.Dispose();
+                login.Dispose();
+                adapter.Dispose();
+                host.Shutdown();
+                client.Dispose();
+                Object.DestroyImmediate(root);
+                Object.DestroyImmediate(settings);
+            }
+        }
+
         private byte[] EncodeResponse<T>(ushort responseId, T response)
             where T : class, Google.Protobuf.IMessage<T>
         {
@@ -642,6 +722,21 @@ namespace Game.Tests.EditMode.Online
             Assert.That(Codec.TryDecode(
                 transport.SentPayloads.Last(), out var requestId, out _, out _), Is.True);
             return requestId;
+        }
+
+        private static CombatResultReq DecodeLastCombatRequest(FakeWebSocketTransport transport)
+        {
+            for (var index = transport.SentPayloads.Count - 1; index >= 0; index--)
+            {
+                Assert.That(Codec.TryDecode(
+                    transport.SentPayloads[index], out var messageId, out _, out var body), Is.True);
+                if (messageId == MsgID.CombatResultReq)
+                {
+                    return CombatResultReq.Parser.ParseFrom(body);
+                }
+            }
+
+            throw new InvalidOperationException("No combat request found.");
         }
 
         private ushort DecodeLastMessageId()

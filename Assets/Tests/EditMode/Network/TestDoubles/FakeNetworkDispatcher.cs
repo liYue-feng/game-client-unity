@@ -21,6 +21,18 @@ namespace Game.Tests.EditMode.Network.TestDoubles
             _queue.Dequeue().Invoke();
         }
 
+        public void PumpLast()
+        {
+            var pending = _queue.ToArray();
+            _queue.Clear();
+            for (var index = 0; index < pending.Length - 1; index++)
+            {
+                _queue.Enqueue(pending[index]);
+            }
+
+            pending[pending.Length - 1].Invoke();
+        }
+
         public void PumpAll()
         {
             while (_queue.Count > 0)
