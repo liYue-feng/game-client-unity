@@ -6,6 +6,8 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot '..\protobuf\PeerRootResolver.ps1')
+. (Join-Path $PSScriptRoot 'BackendIntegrationSupport.ps1')
 
 function Resolve-ExistingDirectory {
     param(
@@ -25,11 +27,6 @@ function Resolve-ExistingDirectory {
 function Get-RawSha256 {
     param([Parameter(Mandatory = $true)][string]$Path)
     return (Get-FileHash -Algorithm SHA256 -LiteralPath $Path).Hash
-}
-
-function Get-IntegrationPortListeners {
-    $networkProperties = [System.Net.NetworkInformation.IPGlobalProperties]::GetIPGlobalProperties()
-    return @($networkProperties.GetActiveTcpListeners() | Where-Object { $_.Port -in @(8080, 8081) })
 }
 
 function Wait-ForHealth {
@@ -120,19 +117,12 @@ function Quote-CommandLineArgument {
 
 $clientRoot = Resolve-ExistingDirectory -Path (Join-Path $PSScriptRoot '..\..') -Description 'Unity client root'
 if ([string]::IsNullOrWhiteSpace($BackendRoot)) {
-    $clientParent = Split-Path $clientRoot -Parent
-    $isWorktree = (Split-Path $clientParent -Leaf) -eq '.worktrees'
-    if ($isWorktree) {
-        $workspaceRoot = Split-Path (Split-Path $clientParent -Parent) -Parent
-        $worktreeName = Split-Path $clientRoot -Leaf
-        $BackendRoot = Join-Path $workspaceRoot "game-server-go\.worktrees\$worktreeName"
-        if (-not (Test-Path -LiteralPath $BackendRoot -PathType Container)) {
-            throw "Matching backend coordination worktree does not exist: $BackendRoot"
-        }
-    }
-    else {
-        $BackendRoot = Join-Path $clientParent 'game-server-go'
-    }
+    $BackendRoot = Resolve-PeerRepositoryRoot -CurrentRoot $clientRoot `
+        -PeerRepositoryName 'game-server-go' -PeerDescription 'server'
+}
+else {
+    $BackendRoot = Resolve-PeerRepositoryRoot -CurrentRoot $clientRoot -ExplicitPeerRoot $BackendRoot `
+        -PeerRepositoryName 'game-server-go' -PeerDescription 'server'
 }
 
 $backendRoot = Resolve-ExistingDirectory -Path $BackendRoot -Description 'Go backend root'
@@ -145,9 +135,7 @@ if (-not (Test-Path -LiteralPath (Join-Path $backendRoot 'go.mod') -PathType Lea
 if (-not (Test-Path -LiteralPath $UnityEditor -PathType Leaf)) {
     throw "Unity editor does not exist: $UnityEditor"
 }
-if (@(Get-IntegrationPortListeners).Count -ne 0) {
-    throw 'Port 8080 or 8081 is already in use; refusing to stop or reuse an unowned process.'
-}
+Assert-IntegrationPortsFree
 
 $backendLogs = Join-Path $backendRoot 'logs'
 New-Item -ItemType Directory -Force -Path $backendLogs | Out-Null
@@ -179,6 +167,7 @@ $probeEvidence = 0
 $archiveRoundTripEvidence = 0
 $victoryPersistenceEvidence = 0
 $defeatSettlementEvidence = 0
+$sequencedFrameEvidence = 0
 $protoSchemaSha256 = $null
 
 try {
@@ -301,12 +290,12 @@ try {
 
     Wait-ForCompleteUnityXml -Path $unityResults
 
-    [xml]$testDocument = Get-Content -Raw -LiteralPath $unityResults
-    $testRun = $testDocument.'test-run'
-    $total = [int]$testRun.total
-    $passed = [int]$testRun.passed
-    $failed = [int]$testRun.failed
-    $skipped = [int]$testRun.skipped
+    $unityResult = Read-UnityTestResult -Path $unityResults
+    $testDocument = $unityResult.Document
+    $total = $unityResult.Total
+    $passed = $unityResult.Passed
+    $failed = $unityResult.Failed
+    $skipped = $unityResult.Skipped
     if ($total -ne 3 -or $passed -ne 3 -or $failed -ne 0 -or $skipped -ne 0) {
         $failureText = @($testDocument.SelectNodes('//failure/message') | ForEach-Object { $_.InnerText }) -join ' | '
         throw "Unity integration result was total=$total passed=$passed failed=$failed skipped=$skipped. $failureText"
@@ -325,10 +314,14 @@ try {
     $defeatSettlementEvidence = ([regex]::Matches(
         $unityOutput,
         [regex]::Escape('[REAL_BACKEND] DEFEAT_SETTLEMENT_OK'))).Count
+    $sequencedFrameEvidence = ([regex]::Matches(
+        $unityOutput,
+        [regex]::Escape('[REAL_BACKEND] SEQUENCED_FRAMES_OK'))).Count
     if ($archiveRoundTripEvidence -ne 1 -or
         $victoryPersistenceEvidence -ne 1 -or
-        $defeatSettlementEvidence -ne 1) {
-        throw "Unity completion evidence was archive=$archiveRoundTripEvidence victory=$victoryPersistenceEvidence defeat=$defeatSettlementEvidence; expected each marker exactly once."
+        $defeatSettlementEvidence -ne 1 -or
+        $sequencedFrameEvidence -ne 3) {
+        throw "Unity completion evidence was archive=$archiveRoundTripEvidence victory=$victoryPersistenceEvidence defeat=$defeatSettlementEvidence sequenced_frames=$sequencedFrameEvidence; expected business markers once and sequenced frames three times."
     }
 
     if (-not (Test-Path -LiteralPath $serverStandardOutput -PathType Leaf)) {
@@ -349,20 +342,11 @@ catch {
 }
 finally {
     try {
-        $env:PATH = $originalPathEnvironment
+        Restore-IntegrationEnvironment -OriginalPath $originalPathEnvironment `
+            -OriginalIntegrationEnvironment $originalIntegrationEnvironment
     }
     catch {
         [void]$cleanupErrors.Add("Restore PATH: $($_.Exception.Message)")
-    }
-
-    try {
-        [Environment]::SetEnvironmentVariable(
-            'GAME_BACKEND_INTEGRATION',
-            $originalIntegrationEnvironment,
-            'Process')
-    }
-    catch {
-        [void]$cleanupErrors.Add("Restore GAME_BACKEND_INTEGRATION: $($_.Exception.Message)")
     }
 
     if ($unityProcess -ne $null) {
@@ -447,6 +431,7 @@ Write-Host "PROTO_SCHEMA_SHA256=$protoSchemaSha256"
 Write-Host "UNITY_RESULT=total=$total passed=$passed failed=$failed skipped=$skipped"
 Write-Host "DEVPROBE_EVIDENCE=sequenced_protobuf_archive_and_combat:$probeEvidence"
 Write-Host "UNITY_EVIDENCE=archive:$archiveRoundTripEvidence victory:$victoryPersistenceEvidence defeat:$defeatSettlementEvidence"
+Write-Host "UNITY_FRAME_EVIDENCE=sequenced_flows:$sequencedFrameEvidence"
 Write-Host "SERVER_EVIDENCE=archive_login:$archiveLoginEvidence victory_login:$victoryLoginEvidence defeat_login:$defeatLoginEvidence"
 Write-Host "UNITY_XML=$unityResults"
 Write-Host "UNITY_LOG=$unityLog"

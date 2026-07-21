@@ -217,6 +217,7 @@ namespace Game.Network
             try
             {
                 var frame = Codec.Encode(requestId, seq, body);
+                NetworkFrameDiagnostics.Publish(NetworkFrameDirection.Outbound, frame);
                 transport.Send(frame);
                 return true;
             }
@@ -260,6 +261,7 @@ namespace Game.Network
 
         public void ReceiveFrame(byte[] frame)
         {
+            NetworkFrameDiagnostics.Publish(NetworkFrameDirection.Inbound, frame);
             if (!Codec.TryDecode(frame, out var msgId, out var seq, out var body))
             {
                 Debug.LogWarning("[NetworkClient] Dropped malformed frame.");

@@ -1,6 +1,7 @@
 $generatedPath = Join-Path $PSScriptRoot 'generated\Game.cs'
 $generatorPath = Join-Path $PSScriptRoot 'Generate-Protocol.ps1'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+. (Join-Path $PSScriptRoot 'PeerRootResolver.ps1')
 
 function Get-RawSha256([string]$Path) {
     return (Get-FileHash -Algorithm SHA256 -LiteralPath $Path).Hash
@@ -21,28 +22,9 @@ function Get-CrlfNormalizedFingerprint([string]$Path) {
 
 $repoParent = Split-Path $repoRoot -Parent
 $isWorktree = (Split-Path $repoParent -Leaf) -eq '.worktrees'
-$workspaceRoot = if ($isWorktree) {
-    Split-Path (Split-Path $repoParent -Parent) -Parent
-}
-else {
-    $repoParent
-}
-$worktreeName = Split-Path $repoRoot -Leaf
-$backendCandidates = if ($isWorktree) {
-    @(
-        (Join-Path $workspaceRoot "game-server-go\.worktrees\$worktreeName"),
-        (Join-Path $workspaceRoot 'game-server-go')
-    )
-}
-else {
-    @((Join-Path $workspaceRoot 'game-server-go'))
-}
-$backendRoot = $backendCandidates | Where-Object { Test-Path -LiteralPath $_ -PathType Container } | Select-Object -First 1
-
-if ([string]::IsNullOrWhiteSpace($backendRoot)) {
-    throw 'A sibling game-server-go checkout is required for schema hash tests.'
-}
-$backendRoot = (Resolve-Path $backendRoot).Path
+$explicitBackendRoot = if ($isWorktree) { $null } else { Join-Path $repoParent 'game-server-go' }
+$backendRoot = Resolve-PeerRepositoryRoot -CurrentRoot $repoRoot -ExplicitPeerRoot $explicitBackendRoot `
+    -PeerRepositoryName 'game-server-go' -PeerDescription 'server'
 
 Describe 'Canonical schema ownership' {
     It 'owns one local game.proto and rejects the old source names' {

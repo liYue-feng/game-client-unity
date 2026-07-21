@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Text.RegularExpressions;
@@ -122,6 +123,36 @@ namespace Game.Tests.EditMode.Network
             token.Dispose();
             explicitClient.ReceiveFrame(frame);
             Assert.That(count, Is.EqualTo(1));
+        }
+
+        [Test]
+        public void FrameObserversReceiveIsolatedRawOutboundAndInboundFrames()
+        {
+            var observed = new List<Tuple<NetworkFrameDirection, byte[]>>();
+            using (NetworkFrameDiagnostics.Observe((_, payload) =>
+                   {
+                       payload[0] = 0;
+                       throw new InvalidOperationException("observer failed");
+                   }))
+            using (NetworkFrameDiagnostics.Observe((direction, payload) =>
+                   observed.Add(Tuple.Create(direction, payload))))
+            {
+                var client = CreateConnectedClient(out var transport);
+                LogAssert.Expect(LogType.Error, new Regex("Frame observer failed: observer failed"));
+                Assert.That(RequestLogin(client, "wire", _ => { }, _ => { }, out var seq), Is.True);
+                var response = Codec.Encode(MsgID.LoginResp, seq, new LoginResp { Uid = 7, Token = "t" });
+                LogAssert.Expect(LogType.Error, new Regex("Frame observer failed: observer failed"));
+                client.ReceiveFrame(response);
+
+                Assert.That(observed, Has.Count.EqualTo(2));
+                Assert.That(observed[0].Item1, Is.EqualTo(NetworkFrameDirection.Outbound));
+                Assert.That(observed[1].Item1, Is.EqualTo(NetworkFrameDirection.Inbound));
+                Assert.That(Codec.TryDecode(observed[0].Item2, out var requestId, out var requestSeq, out _), Is.True);
+                Assert.That(requestId, Is.EqualTo(MsgID.LoginReq));
+                Assert.That(requestSeq, Is.EqualTo(seq).And.Not.Zero);
+                CollectionAssert.AreEqual(response, observed[1].Item2);
+                CollectionAssert.AreEqual(transport.SentPayloads.Single(), observed[0].Item2);
+            }
         }
 
         [Test]

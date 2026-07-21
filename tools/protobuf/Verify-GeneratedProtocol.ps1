@@ -6,6 +6,7 @@ $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $schemaPath = Join-Path $projectRoot 'proto\game.proto'
 $generatedPath = Join-Path $PSScriptRoot 'generated\Game.cs'
 $runtimeGeneratedPath = Join-Path $projectRoot 'Assets\Scripts\Protocol\Generated\Game.cs'
+. (Join-Path $PSScriptRoot 'PeerRootResolver.ps1')
 
 function Get-RawSha256([string]$Path) {
     return (Get-FileHash -Algorithm SHA256 -LiteralPath $Path).Hash
@@ -65,37 +66,14 @@ if ((Get-NormalizedGeneratedFingerprint -Path $generatedPath) -cne (Get-Normaliz
     throw "Unity runtime generated C# protocol differs from staging: $runtimeGeneratedPath"
 }
 
-if ([string]::IsNullOrWhiteSpace($BackendRoot)) {
-    $clientParent = Split-Path $projectRoot -Parent
-    $isWorktree = (Split-Path $clientParent -Leaf) -eq '.worktrees'
-    $workspaceRoot = if ($isWorktree) {
-        Split-Path (Split-Path $clientParent -Parent) -Parent
-    }
-    else {
-        $clientParent
-    }
-    $worktreeName = Split-Path $projectRoot -Leaf
-    $candidates = if ($isWorktree) {
-        @(
-            (Join-Path $workspaceRoot "game-server-go\.worktrees\$worktreeName"),
-            (Join-Path $workspaceRoot 'game-server-go')
-        )
-    }
-    else {
-        @((Join-Path $workspaceRoot 'game-server-go'))
-    }
-    $BackendRoot = $candidates | Where-Object { Test-Path -LiteralPath $_ -PathType Container } | Select-Object -First 1
+$BackendRoot = Resolve-PeerRepositoryRoot -CurrentRoot $projectRoot -ExplicitPeerRoot $BackendRoot `
+    -PeerRepositoryName 'game-server-go' -PeerDescription 'server'
+$serverSchemaPath = Join-Path $BackendRoot 'proto\game.proto'
+if (-not (Test-Path -LiteralPath $serverSchemaPath -PathType Leaf)) {
+    throw "Sibling server schema is missing: $serverSchemaPath"
 }
-
-if (-not [string]::IsNullOrWhiteSpace($BackendRoot)) {
-    $BackendRoot = (Resolve-Path $BackendRoot).Path
-    $serverSchemaPath = Join-Path $BackendRoot 'proto\game.proto'
-    if (-not (Test-Path -LiteralPath $serverSchemaPath -PathType Leaf)) {
-        throw "Sibling server schema is missing: $serverSchemaPath"
-    }
-    if ((Get-RawSha256 -Path $schemaPath) -ne (Get-RawSha256 -Path $serverSchemaPath)) {
-        throw "Client and server schema SHA256 values differ: '$schemaPath' versus '$serverSchemaPath'."
-    }
+if ((Get-RawSha256 -Path $schemaPath) -ne (Get-RawSha256 -Path $serverSchemaPath)) {
+    throw "Client and server schema SHA256 values differ: '$schemaPath' versus '$serverSchemaPath'."
 }
 
 & (Join-Path $PSScriptRoot 'Generate-Protocol.ps1') -Check

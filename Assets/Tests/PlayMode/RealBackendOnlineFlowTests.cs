@@ -36,13 +36,13 @@ namespace Game.Tests.PlayMode
             var archiveReloaded = false;
             PlayerArchive reloadedArchive = null;
             var expectedArchive = CreateExpectedArchive();
+            var frameTracker = new SequencedFrameTracker();
 
             try
             {
                 yield return StartOnlineSession("integration-client");
                 host = _onlineHost;
                 AssertNewOnlineSession(host);
-                AssertLiveRequestsUseNonZeroSequences();
 
                 archiveSavedHandler = () => archiveSaved = true;
                 archiveReloadedHandler = () =>
@@ -59,7 +59,7 @@ namespace Game.Tests.PlayMode
                 yield return WaitUntilRealtime(() => archiveReloaded, "ArchiveReloaded response event");
 
                 Assert.That(ArchiveMatches(reloadedArchive, expectedArchive), Is.True);
-                AssertLiveRequestsUseNonZeroSequences();
+                frameTracker.AssertContract("archive");
                 Debug.Log("[REAL_BACKEND] ARCHIVE_ROUND_TRIP_OK");
             }
             finally
@@ -77,6 +77,7 @@ namespace Game.Tests.PlayMode
                     }
                 }
 
+                frameTracker.Dispose();
                 RestoreOfflineRuntime();
             }
 
@@ -92,13 +93,13 @@ namespace Game.Tests.PlayMode
             Action archiveReloadedHandler = null;
             var archiveSaveCount = 0;
             var archiveReloaded = false;
+            var frameTracker = new SequencedFrameTracker();
 
             try
             {
                 yield return StartOnlineSession("integration-battle-victory");
                 host = _onlineHost;
                 AssertNewOnlineSession(host);
-                AssertLiveRequestsUseNonZeroSequences();
                 var client = NetworkClient.Instance;
                 var uid = client.UID;
                 var token = client.Token;
@@ -158,7 +159,7 @@ namespace Game.Tests.PlayMode
                 AssertSettlementMetadata(host.Progress);
                 Assert.That(NetworkClient.Instance.UID, Is.EqualTo(uid));
                 Assert.That(NetworkClient.Instance.Token, Is.EqualTo(token));
-                AssertLiveRequestsUseNonZeroSequences();
+                frameTracker.AssertContract("victory");
                 Debug.Log("[REAL_BACKEND] VICTORY_PERSISTENCE_OK");
             }
             finally
@@ -176,6 +177,7 @@ namespace Game.Tests.PlayMode
                     }
                 }
 
+                frameTracker.Dispose();
                 RestoreOfflineRuntime();
             }
 
@@ -189,13 +191,13 @@ namespace Game.Tests.PlayMode
             OnlineSessionHost host = null;
             Action archiveSavedHandler = null;
             var archiveSaveCount = 0;
+            var frameTracker = new SequencedFrameTracker();
 
             try
             {
                 yield return StartOnlineSession("integration-battle-defeat");
                 host = _onlineHost;
                 AssertNewOnlineSession(host);
-                AssertLiveRequestsUseNonZeroSequences();
                 archiveSavedHandler = () => archiveSaveCount++;
                 host.ArchiveSaved += archiveSavedHandler;
 
@@ -226,7 +228,7 @@ namespace Game.Tests.PlayMode
                 Assert.That(archiveSaveCount, Is.EqualTo(1), "Defeat must persist exactly one settlement archive.");
                 AssertProgress(host.Progress, 0, 0, 0, 0, 1, 0);
                 AssertSavedRewardUi(gameOver, 0, 0);
-                AssertLiveRequestsUseNonZeroSequences();
+                frameTracker.AssertContract("defeat");
                 Debug.Log("[REAL_BACKEND] DEFEAT_SETTLEMENT_OK");
             }
             finally
@@ -236,6 +238,7 @@ namespace Game.Tests.PlayMode
                     host.ArchiveSaved -= archiveSavedHandler;
                 }
 
+                frameTracker.Dispose();
                 RestoreOfflineRuntime();
             }
 
@@ -288,25 +291,6 @@ namespace Game.Tests.PlayMode
             Assert.That(NetworkClient.Instance.Token, Is.Not.Null.And.Not.Empty);
             Assert.That(host.Nickname, Is.Not.Null.And.Not.Empty);
             AssertProgress(host.Progress, 0, 0, 0, 0, 0, 0);
-        }
-
-        private static void AssertLiveRequestsUseNonZeroSequences()
-        {
-            var client = NetworkClient.Instance;
-            var nextSequence = (uint)typeof(NetworkClient)
-                .GetField("_nextSeq", InstanceFlags)
-                ?.GetValue(client);
-            Assert.That(nextSequence, Is.Not.Zero, "The live request allocator must reserve seq=0 for pushes.");
-
-            var pending = typeof(NetworkClient)
-                .GetField("_pending", InstanceFlags)
-                ?.GetValue(client) as IDictionary;
-            Assert.That(pending, Is.Not.Null);
-            foreach (DictionaryEntry entry in pending)
-            {
-                Assert.That((uint)entry.Key, Is.Not.Zero,
-                    "Every ordinary request pending against the real backend must use a nonzero seq.");
-            }
         }
 
         private static IEnumerator ResetRunningWaves(Component spawner, Component setup)
@@ -781,6 +765,85 @@ namespace Game.Tests.PlayMode
                 var field = target.GetType().GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic);
                 Assert.That(field, Is.Not.Null, $"Expected serialized field {fieldName}.");
                 return field;
+            }
+        }
+
+        private sealed class SequencedFrameTracker : IDisposable
+        {
+            private readonly object _gate = new object();
+            private readonly HashSet<uint> _outstanding = new HashSet<uint>();
+            private readonly List<string> _errors = new List<string>();
+            private readonly IDisposable _subscription;
+            private int _outboundCount;
+            private int _responseCount;
+            private int _pushCount;
+
+            public SequencedFrameTracker()
+            {
+                _subscription = NetworkFrameDiagnostics.Observe(Observe);
+            }
+
+            private void Observe(NetworkFrameDirection direction, byte[] frame)
+            {
+                if (!Codec.TryDecode(frame, out var msgId, out var seq, out _))
+                {
+                    lock (_gate)
+                    {
+                        _errors.Add($"{direction} frame could not be decoded.");
+                    }
+                    return;
+                }
+
+                lock (_gate)
+                {
+                    if (direction == NetworkFrameDirection.Outbound)
+                    {
+                        _outboundCount++;
+                        if (seq == 0)
+                        {
+                            _errors.Add($"Outbound ordinary request {msgId} used seq=0.");
+                        }
+                        else if (!_outstanding.Add(seq))
+                        {
+                            _errors.Add($"Outbound request reused outstanding seq={seq}.");
+                        }
+                        return;
+                    }
+
+                    if (seq == 0)
+                    {
+                        _pushCount++;
+                        if (msgId != MsgID.PayResultNotify && msgId != MsgID.GMCommandResp)
+                        {
+                            _errors.Add($"Inbound seq=0 frame {msgId} is not an intentional push message.");
+                        }
+                        return;
+                    }
+
+                    _responseCount++;
+                    if (!_outstanding.Remove(seq))
+                    {
+                        _errors.Add($"Inbound response {msgId} used unknown or already completed seq={seq}.");
+                    }
+                }
+            }
+
+            public void AssertContract(string flow)
+            {
+                lock (_gate)
+                {
+                    Assert.That(_errors, Is.Empty, string.Join(" | ", _errors));
+                    Assert.That(_outboundCount, Is.GreaterThan(0));
+                    Assert.That(_responseCount, Is.GreaterThan(0));
+                    Debug.Log(
+                        $"[REAL_BACKEND] SEQUENCED_FRAMES_OK flow={flow} outbound={_outboundCount} " +
+                        $"responses={_responseCount} pushes={_pushCount}");
+                }
+            }
+
+            public void Dispose()
+            {
+                _subscription.Dispose();
             }
         }
     }

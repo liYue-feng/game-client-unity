@@ -31,15 +31,12 @@ Describe 'Invoke-A4BackendIntegration runner ownership' {
         $runner | Should Match 'Stop-Process -Id \$unityProcess\.Id -Force'
         $runner | Should Match 'Stop-Process -Id \$serverProcess\.Id -Force'
         $runner | Should Match 'Stop-Process -Id \$probeProcess\.Id -Force'
-        $runner | Should Match 'SetEnvironmentVariable\(\s*''GAME_BACKEND_INTEGRATION'',\s*\$originalIntegrationEnvironment'
-        $runner | Should Match '\$env:PATH\s*=\s*\$originalPathEnvironment'
+        $runner | Should Match 'Restore-IntegrationEnvironment -OriginalPath \$originalPathEnvironment'
         $runner | Should Match 'Get-IntegrationPortListeners'
         $runner | Should Match 'Remove-Item -LiteralPath \$temporaryExecutable -Force'
     }
 
-    It 'derives matching coordination roots and verifies both generated protocols before execution' {
-        $runner | Should Match '\$isWorktree\s*=\s*\(Split-Path \$clientParent -Leaf\) -eq ''\.worktrees'''
-        $runner | Should Match 'game-server-go\\\.worktrees\\\$worktreeName'
+    It 'runs both generated protocol checks before execution' {
         $runner | Should Match 'Join-Path \$clientRoot ''tools\\protobuf\\Generate-Protocol.ps1'''
         $runner | Should Match 'Join-Path \$backendRoot ''tools\\protobuf\\Generate-Protocol.ps1'''
         $runner | Should Match 'Generate-Protocol\.ps1''\) -Check'
@@ -69,10 +66,10 @@ Describe 'Invoke-A4BackendIntegration runner ownership' {
     }
 
     It 'requires executable server frame and sequence evidence' {
-        $serverVerifier | Should Match ([regex]::Escape(
-            'FRAME_EVIDENCE=header=10 little_endian=1 request_seq_nonzero=1 response_seq_echo=1 pushes_seq_zero=1'))
-        $serverVerifier | Should Match ([regex]::Escape('binary.LittleEndian.PutUint32(frame[6:10], seq)'))
-        $serverVerifier | Should Match ([regex]::Escape('binary.LittleEndian.Uint32(data[6:10])'))
+        $output = @(& $serverVerifierPath -ClientRoot $clientRoot)
+        $LASTEXITCODE | Should Be 0
+        ($output -contains 'FRAME_TESTS=PASS') | Should Be $true
+        ($output -contains 'FRAME_EVIDENCE=header=10 little_endian=1 request_seq_nonzero=1 response_seq_echo=1 pushes_seq_zero=1') | Should Be $true
     }
 
     It 'requires all Unity completion markers exactly once' {
@@ -86,6 +83,7 @@ Describe 'Invoke-A4BackendIntegration runner ownership' {
         $runner | Should Match '\$archiveRoundTripEvidence -ne 1'
         $runner | Should Match '\$victoryPersistenceEvidence -ne 1'
         $runner | Should Match '\$defeatSettlementEvidence -ne 1'
+        $runner | Should Match '\$sequencedFrameEvidence -ne 3'
     }
 
     It 'requires backend login evidence for all fixed test identities while the server remains alive' {
