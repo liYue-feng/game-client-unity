@@ -26,6 +26,17 @@ $explicitBackendRoot = if ($isWorktree) { $null } else { Join-Path $repoParent '
 $backendRoot = Resolve-PeerRepositoryRoot -CurrentRoot $repoRoot -ExplicitPeerRoot $explicitBackendRoot `
     -PeerRepositoryName 'game-server-go' -PeerDescription 'server'
 
+$transportContract = 'Transport contract: 10-byte little-endian [Length uint32][MsgID uint16][Seq uint32]; Length includes the 10-byte header; request seq is nonzero; responses and errors echo the exact request seq; pushes use seq 0; Body is protobuf binary.'
+
+Describe 'Authoritative transport documentation' {
+    It 'documents the sequenced protobuf frame in CLAUDE.md' {
+        $content = [IO.File]::ReadAllText((Join-Path $repoRoot 'CLAUDE.md'))
+        $content | Should Match ([regex]::Escape($transportContract))
+        $content | Should Not Match '(?i)6[- ]byte|six[- ]byte|6\s*字节|六字节|Length\s*=\s*6\s*\+|4B长度\s*\+\s*2B'
+        $content | Should Not Match '(?im)^(?=.*Length)(?=.*MsgID)(?!.*Seq).*$'
+    }
+}
+
 Describe 'Canonical schema ownership' {
     It 'owns one local game.proto and rejects the old source names' {
         Test-Path (Join-Path $repoRoot 'proto\game.proto') | Should Be $true
