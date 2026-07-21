@@ -15,6 +15,49 @@ using UnityEngine.UI;
 
 namespace Game.Tests.PlayMode
 {
+    public sealed class SequencedFrameTrackerContractTests
+    {
+        [Test]
+        public void ContractBoundaryRejectsAnUnmatchedOutboundRequest()
+        {
+            var trackerType = typeof(RealBackendOnlineFlowTests).GetNestedType(
+                "SequencedFrameTracker",
+                BindingFlags.NonPublic);
+            Assert.That(trackerType, Is.Not.Null);
+            var tracker = (IDisposable)Activator.CreateInstance(trackerType);
+            try
+            {
+                var observe = trackerType.GetMethod("Observe", BindingFlags.Instance | BindingFlags.NonPublic);
+                var assertContract = trackerType.GetMethod("AssertContract", BindingFlags.Instance | BindingFlags.Public);
+                Assert.That(observe, Is.Not.Null);
+                Assert.That(assertContract, Is.Not.Null);
+                observe.Invoke(tracker, new object[]
+                {
+                    NetworkFrameDirection.Outbound,
+                    new byte[] { 10, 0, 0, 0, 0xEB, 0x03, 41, 0, 0, 0 }
+                });
+                observe.Invoke(tracker, new object[]
+                {
+                    NetworkFrameDirection.Inbound,
+                    new byte[] { 10, 0, 0, 0, 0xEC, 0x03, 41, 0, 0, 0 }
+                });
+                observe.Invoke(tracker, new object[]
+                {
+                    NetworkFrameDirection.Outbound,
+                    new byte[] { 10, 0, 0, 0, 0xEB, 0x03, 42, 0, 0, 0 }
+                });
+
+                var invocation = Assert.Throws<TargetInvocationException>(
+                    () => assertContract.Invoke(tracker, new object[] { "unmatched" }));
+                Assert.That(invocation.InnerException, Is.TypeOf<AssertionException>());
+            }
+            finally
+            {
+                tracker.Dispose();
+            }
+        }
+    }
+
     public sealed class RealBackendOnlineFlowTests
     {
         private const string IntegrationEnvironmentVariable = "GAME_BACKEND_INTEGRATION";
@@ -835,6 +878,9 @@ namespace Game.Tests.PlayMode
                     Assert.That(_errors, Is.Empty, string.Join(" | ", _errors));
                     Assert.That(_outboundCount, Is.GreaterThan(0));
                     Assert.That(_responseCount, Is.GreaterThan(0));
+                    Assert.That(_outstanding, Is.Empty, "Every observed outbound request must complete.");
+                    Assert.That(_outboundCount, Is.EqualTo(_responseCount),
+                        "Observed outbound request and inbound response counts must match.");
                     Debug.Log(
                         $"[REAL_BACKEND] SEQUENCED_FRAMES_OK flow={flow} outbound={_outboundCount} " +
                         $"responses={_responseCount} pushes={_pushCount}");
