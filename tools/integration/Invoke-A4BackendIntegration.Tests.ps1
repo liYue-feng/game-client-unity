@@ -1,8 +1,21 @@
 $runnerPath = Join-Path $PSScriptRoot 'Invoke-A4BackendIntegration.ps1'
+$clientRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+$clientParent = Split-Path $clientRoot -Parent
+$isWorktree = (Split-Path $clientParent -Leaf) -eq '.worktrees'
+$serverRoot = if ($isWorktree) {
+    $workspaceRoot = Split-Path (Split-Path $clientParent -Parent) -Parent
+    $worktreeName = Split-Path $clientRoot -Leaf
+    Join-Path $workspaceRoot "game-server-go\.worktrees\$worktreeName"
+}
+else {
+    Join-Path $clientParent 'game-server-go'
+}
+$serverVerifierPath = Join-Path $serverRoot 'tools\protobuf\Verify-Protocol.ps1'
 
 Describe 'Invoke-A4BackendIntegration runner ownership' {
     BeforeAll {
         $runner = Get-Content -Raw -LiteralPath $runnerPath
+        $serverVerifier = Get-Content -Raw -LiteralPath $serverVerifierPath
     }
 
     It 'captures, reports, waits for, and cleans up every owned process' {
@@ -19,16 +32,47 @@ Describe 'Invoke-A4BackendIntegration runner ownership' {
         $runner | Should Match 'Stop-Process -Id \$serverProcess\.Id -Force'
         $runner | Should Match 'Stop-Process -Id \$probeProcess\.Id -Force'
         $runner | Should Match 'SetEnvironmentVariable\(\s*''GAME_BACKEND_INTEGRATION'',\s*\$originalIntegrationEnvironment'
+        $runner | Should Match '\$env:PATH\s*=\s*\$originalPathEnvironment'
         $runner | Should Match 'Get-IntegrationPortListeners'
         $runner | Should Match 'Remove-Item -LiteralPath \$temporaryExecutable -Force'
     }
 
+    It 'derives matching coordination roots and verifies both generated protocols before execution' {
+        $runner | Should Match '\$isWorktree\s*=\s*\(Split-Path \$clientParent -Leaf\) -eq ''\.worktrees'''
+        $runner | Should Match 'game-server-go\\\.worktrees\\\$worktreeName'
+        $runner | Should Match 'Join-Path \$clientRoot ''tools\\protobuf\\Generate-Protocol.ps1'''
+        $runner | Should Match 'Join-Path \$backendRoot ''tools\\protobuf\\Generate-Protocol.ps1'''
+        $runner | Should Match 'Generate-Protocol\.ps1''\) -Check'
+        $runner | Should Match 'Get-RawSha256'
+        $runner | Should Match 'Join-Path \$backendRoot ''tools\\protobuf\\Verify-Protocol.ps1'''
+        $runner | Should Match 'Join-Path \$clientRoot ''tools\\protobuf\\Verify-GeneratedProtocol.ps1'''
+        $runner | Should Match '& go test ./\.\.\. -count=1'
+        $runner | Should Match '& go vet ./\.\.\.'
+        $runner | Should Match '& go build ./\.\.\.'
+    }
+
     It 'runs the complete three-test Unity fixture after the complete devprobe contract' {
         $runner | Should Match ([regex]::Escape(
-            'development session probe passed: protobuf login found=false typed save typed reload combat duplicate'))
+            'development session probe passed: sequenced protobuf login found=false typed save typed reload combat duplicate'))
         $runner | Should Match "'-testFilter',\s*'Game\.Tests\.PlayMode\.RealBackendOnlineFlowTests'"
         $runner | Should Match '\$total -ne 3 -or \$passed -ne 3 -or \$failed -ne 0 -or \$skipped -ne 0'
         $runner | Should Not Match 'dataLen'
+        $runner | Should Not Match "'-nographics'"
+        $runner | Should Not Match "'-quit'"
+    }
+
+    It 'publishes exactly the sequenced protocol evidence families' {
+        $runner | Should Match 'Write-Host "PROTO_SCHEMA_SHA256_MATCH=1"'
+        $runner | Should Match 'Write-Host "DEVPROBE_EVIDENCE=sequenced_protobuf_archive_and_combat:\$probeEvidence"'
+        $runner | Should Match 'Write-Host "UNITY_RESULT=total=\$total passed=\$passed failed=\$failed skipped=\$skipped"'
+        $runner | Should Not Match 'DEVPROBE_EVIDENCE=protobuf_archive_and_combat'
+    }
+
+    It 'requires executable server frame and sequence evidence' {
+        $serverVerifier | Should Match ([regex]::Escape(
+            'FRAME_EVIDENCE=header=10 little_endian=1 request_seq_nonzero=1 response_seq_echo=1 pushes_seq_zero=1'))
+        $serverVerifier | Should Match ([regex]::Escape('binary.LittleEndian.PutUint32(frame[6:10], seq)'))
+        $serverVerifier | Should Match ([regex]::Escape('binary.LittleEndian.Uint32(data[6:10])'))
     }
 
     It 'requires all Unity completion markers exactly once' {

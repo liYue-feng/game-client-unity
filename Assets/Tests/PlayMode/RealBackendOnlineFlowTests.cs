@@ -42,6 +42,7 @@ namespace Game.Tests.PlayMode
                 yield return StartOnlineSession("integration-client");
                 host = _onlineHost;
                 AssertNewOnlineSession(host);
+                AssertLiveRequestsUseNonZeroSequences();
 
                 archiveSavedHandler = () => archiveSaved = true;
                 archiveReloadedHandler = () =>
@@ -58,6 +59,7 @@ namespace Game.Tests.PlayMode
                 yield return WaitUntilRealtime(() => archiveReloaded, "ArchiveReloaded response event");
 
                 Assert.That(ArchiveMatches(reloadedArchive, expectedArchive), Is.True);
+                AssertLiveRequestsUseNonZeroSequences();
                 Debug.Log("[REAL_BACKEND] ARCHIVE_ROUND_TRIP_OK");
             }
             finally
@@ -96,6 +98,7 @@ namespace Game.Tests.PlayMode
                 yield return StartOnlineSession("integration-battle-victory");
                 host = _onlineHost;
                 AssertNewOnlineSession(host);
+                AssertLiveRequestsUseNonZeroSequences();
                 var client = NetworkClient.Instance;
                 var uid = client.UID;
                 var token = client.Token;
@@ -155,6 +158,7 @@ namespace Game.Tests.PlayMode
                 AssertSettlementMetadata(host.Progress);
                 Assert.That(NetworkClient.Instance.UID, Is.EqualTo(uid));
                 Assert.That(NetworkClient.Instance.Token, Is.EqualTo(token));
+                AssertLiveRequestsUseNonZeroSequences();
                 Debug.Log("[REAL_BACKEND] VICTORY_PERSISTENCE_OK");
             }
             finally
@@ -191,6 +195,7 @@ namespace Game.Tests.PlayMode
                 yield return StartOnlineSession("integration-battle-defeat");
                 host = _onlineHost;
                 AssertNewOnlineSession(host);
+                AssertLiveRequestsUseNonZeroSequences();
                 archiveSavedHandler = () => archiveSaveCount++;
                 host.ArchiveSaved += archiveSavedHandler;
 
@@ -221,6 +226,7 @@ namespace Game.Tests.PlayMode
                 Assert.That(archiveSaveCount, Is.EqualTo(1), "Defeat must persist exactly one settlement archive.");
                 AssertProgress(host.Progress, 0, 0, 0, 0, 1, 0);
                 AssertSavedRewardUi(gameOver, 0, 0);
+                AssertLiveRequestsUseNonZeroSequences();
                 Debug.Log("[REAL_BACKEND] DEFEAT_SETTLEMENT_OK");
             }
             finally
@@ -282,6 +288,25 @@ namespace Game.Tests.PlayMode
             Assert.That(NetworkClient.Instance.Token, Is.Not.Null.And.Not.Empty);
             Assert.That(host.Nickname, Is.Not.Null.And.Not.Empty);
             AssertProgress(host.Progress, 0, 0, 0, 0, 0, 0);
+        }
+
+        private static void AssertLiveRequestsUseNonZeroSequences()
+        {
+            var client = NetworkClient.Instance;
+            var nextSequence = (uint)typeof(NetworkClient)
+                .GetField("_nextSeq", InstanceFlags)
+                ?.GetValue(client);
+            Assert.That(nextSequence, Is.Not.Zero, "The live request allocator must reserve seq=0 for pushes.");
+
+            var pending = typeof(NetworkClient)
+                .GetField("_pending", InstanceFlags)
+                ?.GetValue(client) as IDictionary;
+            Assert.That(pending, Is.Not.Null);
+            foreach (DictionaryEntry entry in pending)
+            {
+                Assert.That((uint)entry.Key, Is.Not.Zero,
+                    "Every ordinary request pending against the real backend must use a nonzero seq.");
+            }
         }
 
         private static IEnumerator ResetRunningWaves(Component spawner, Component setup)
