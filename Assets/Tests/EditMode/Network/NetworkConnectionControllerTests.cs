@@ -176,6 +176,27 @@ namespace Game.Tests.EditMode.Network
         }
 
         [Test]
+        public void ReplacingAliveTransportBeforeQueuedOpenDrainsPendingExactlyOnce()
+        {
+            using (var fixture = ControllerFixture.Create())
+            {
+                fixture.Controller.Connect(fixture.Settings.ServerUrl);
+                var first = fixture.Factory.LastTransport;
+                first.RaiseOpened();
+                var failures = 0;
+                Assert.That(fixture.Client.Request<LoginReq, LoginResp>(
+                    MsgID.LoginReq, MsgID.LoginResp, new LoginReq { Code = "pending" },
+                    _ => { }, _ => failures++, out _), Is.True);
+
+                fixture.Controller.Connect("ws://replacement.example/ws");
+                first.RaiseClosed();
+                fixture.Dispatcher.PumpAll();
+
+                Assert.That(failures, Is.EqualTo(1));
+            }
+        }
+
+        [Test]
         public void ConnectWhileReadyNotifiesDisconnectAndIgnoresReplacedTransportCallbacks()
         {
             using (var fixture = ControllerFixture.Create())
@@ -282,6 +303,31 @@ namespace Game.Tests.EditMode.Network
                 fixture.Controller.Disconnect();
                 fixture.Controller.Tick(30f);
                 Assert.That(transport.SentPayloads.Count, Is.EqualTo(3));
+            }
+        }
+
+        [Test]
+        public void HeartbeatUsesNonZeroSeqWithoutRequestTimer()
+        {
+            using (var fixture = ControllerFixture.Create(heartbeat: 1f))
+            {
+                fixture.Controller.Connect(fixture.Settings.ServerUrl);
+                var transport = fixture.Factory.LastTransport;
+                transport.RaiseOpened();
+                fixture.Dispatcher.PumpAll();
+
+                fixture.Controller.Tick(1f);
+                fixture.Controller.Tick(1f);
+
+                Assert.That(transport.SentPayloads, Has.Count.EqualTo(2));
+                Assert.That(Codec.TryDecode(
+                    transport.SentPayloads[0], out _, out var firstSeq, out _), Is.True);
+                Assert.That(Codec.TryDecode(
+                    transport.SentPayloads[1], out _, out var secondSeq, out _), Is.True);
+                Assert.That(firstSeq, Is.Not.Zero);
+                Assert.That(secondSeq, Is.Not.Zero.And.Not.EqualTo(firstSeq));
+                Assert.That(fixture.Client.CancelRequest(firstSeq), Is.True);
+                Assert.That(fixture.Client.CancelRequest(secondSeq), Is.True);
             }
         }
 

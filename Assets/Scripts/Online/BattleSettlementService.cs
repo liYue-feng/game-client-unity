@@ -32,9 +32,25 @@ namespace Game.Online
             };
         }
 
-        public bool Send(CombatResultReq request)
+        public bool Send(
+            CombatResultReq request,
+            Action<CombatResultResp> onSuccess,
+            Action<string> onFailure,
+            out uint seq)
         {
-            return request != null && _client.Send(MsgID.CombatResultReq, request);
+            if (request == null)
+            {
+                seq = 0;
+                return false;
+            }
+
+            return _client.Request<CombatResultReq, CombatResultResp>(
+                MsgID.CombatResultReq,
+                MsgID.CombatResultResp,
+                request,
+                onSuccess,
+                onFailure,
+                out seq);
         }
     }
 }

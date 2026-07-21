@@ -121,7 +121,7 @@ namespace Game.Tests.EditMode.Online
             _coordinator.Retry();
             _connection.RaiseConnected();
             _provider.Succeed(1);
-            _client.ReceiveFrame(Codec.Encode(MsgID.Error,
+            _client.ReceiveFrame(EncodeResponse(MsgID.Error,
                 new ErrorResp { Code = 9999, Msg = "login denied" }));
 
             Assert.That(_coordinator.State, Is.EqualTo(OnlineSessionState.Failed));
@@ -172,7 +172,7 @@ namespace Game.Tests.EditMode.Online
             ReceiveLogin("ink-user");
             Assert.That(_coordinator.State, Is.EqualTo(OnlineSessionState.LoadingArchive));
 
-            _client.ReceiveFrame(Codec.Encode(MsgID.Error,
+            _client.ReceiveFrame(EncodeResponse(MsgID.Error,
                 new ErrorResp { Code = 9999, Msg = "archive unavailable" }));
 
             Assert.That(_coordinator.State, Is.EqualTo(OnlineSessionState.Failed));
@@ -217,7 +217,7 @@ namespace Game.Tests.EditMode.Online
             _coordinator.Stop();
             var changesAfterStop = stateChanges;
 
-            _client.ReceiveFrame(Codec.Encode(MsgID.LoginResp,
+            _client.ReceiveFrame(EncodeResponse(MsgID.LoginResp,
                 new LoginResp { Uid = 7, Nickname = "stale", Token = "stale-token" }));
             _connection.RaiseConnected();
             _connection.RaiseDisconnected();
@@ -256,14 +256,14 @@ namespace Game.Tests.EditMode.Online
             Assert.That(_coordinator.SaveArchive(new PlayerArchive { Gold = 2 }), Is.True);
             Assert.That(_coordinator.State, Is.EqualTo(OnlineSessionState.Ready));
             Assert.That(DecodeLastMessageId(), Is.EqualTo(MsgID.SaveArchiveReq));
-            _client.ReceiveFrame(Codec.Encode(MsgID.SaveArchiveResp,
+            _client.ReceiveFrame(EncodeResponse(MsgID.SaveArchiveResp,
                 new SaveArchiveResp { Success = true }));
             Assert.That(saved, Is.EqualTo(1));
 
             Assert.That(_coordinator.ReloadArchive(), Is.True);
             Assert.That(_coordinator.State, Is.EqualTo(OnlineSessionState.Ready));
             Assert.That(DecodeLastMessageId(), Is.EqualTo(MsgID.LoadArchiveReq));
-            _client.ReceiveFrame(Codec.Encode(MsgID.LoadArchiveResp,
+            _client.ReceiveFrame(EncodeResponse(MsgID.LoadArchiveResp,
                 new LoadArchiveResp { Found = true, Archive = new PlayerArchive { Gold = 2 } }));
 
             Assert.That(_coordinator.State, Is.EqualTo(OnlineSessionState.Ready));
@@ -287,7 +287,7 @@ namespace Game.Tests.EditMode.Online
             Assert.That(_coordinator.ReloadArchive(), Is.True);
             Assert.That(reloads, Is.Zero, "reload completion waits for the matching response");
 
-            var response = Codec.Encode(MsgID.LoadArchiveResp,
+            var response = EncodeResponse(MsgID.LoadArchiveResp,
                 new LoadArchiveResp { Found = true, Archive = new PlayerArchive { Gold = 9 } });
             _client.ReceiveFrame(response);
 
@@ -308,9 +308,9 @@ namespace Game.Tests.EditMode.Online
 
             Assert.That(_coordinator.SaveArchive(new PlayerArchive { Gold = 2 }), Is.True);
             Assert.That(_coordinator.ReloadArchive(), Is.False, "the archive service is busy saving");
-            _client.ReceiveFrame(Codec.Encode(MsgID.LoadArchiveResp,
+            _client.ReceiveFrame(EncodeResponse(MsgID.LoadArchiveResp,
                 new LoadArchiveResp { Found = true, Archive = new PlayerArchive { Gold = 99 } }));
-            _client.ReceiveFrame(Codec.Encode(MsgID.SaveArchiveResp,
+            _client.ReceiveFrame(EncodeResponse(MsgID.SaveArchiveResp,
                 new SaveArchiveResp { Success = true }));
 
             Assert.That(reloads, Is.Zero);
@@ -326,7 +326,7 @@ namespace Game.Tests.EditMode.Online
             Assert.That(_coordinator.ReloadArchive(), Is.True);
 
             _coordinator.Stop();
-            _client.ReceiveFrame(Codec.Encode(MsgID.LoadArchiveResp,
+            _client.ReceiveFrame(EncodeResponse(MsgID.LoadArchiveResp,
                 new LoadArchiveResp { Found = true, Archive = new PlayerArchive { Gold = 9 } }));
 
             Assert.That(reloads, Is.Zero);
@@ -351,7 +351,7 @@ namespace Game.Tests.EditMode.Online
 
             Assert.That(_coordinator.SaveArchive(new PlayerArchive { Gold = 11, UnlockedStyles = { 2, 4 } }), Is.True);
             Assert.That(_coordinator.Progress.Gold, Is.EqualTo(7), "progress changes only after save success");
-            _client.ReceiveFrame(Codec.Encode(MsgID.SaveArchiveResp, new SaveArchiveResp { Success = true }));
+            _client.ReceiveFrame(EncodeResponse(MsgID.SaveArchiveResp, new SaveArchiveResp { Success = true }));
             Assert.That(_coordinator.Progress.Gold, Is.EqualTo(11));
             Assert.That(_coordinator.Progress.UnlockedStyles, Is.EqualTo(new[] { 2, 4 }));
         }
@@ -440,7 +440,7 @@ namespace Game.Tests.EditMode.Online
                 failedTransport.RaiseOpened();
                 dispatcher.PumpAll();
                 provider.Succeed(0, "dev:first");
-                failedTransport.RaiseMessage(Codec.Encode(MsgID.Error,
+                failedTransport.RaiseMessage(EncodeResponse(failedTransport, MsgID.Error,
                     new ErrorResp { Code = 9999, Msg = "login denied" }));
                 dispatcher.PumpAll();
 
@@ -463,9 +463,11 @@ namespace Game.Tests.EditMode.Online
                 Assert.That(provider.RequestCount, Is.EqualTo(2));
                 provider.Succeed(1, "dev:retry");
 
-                failedTransport.RaiseMessage(Codec.Encode(MsgID.LoginResp,
+                failedTransport.RaiseMessage(EncodeResponse(failedTransport, MsgID.LoginResp,
                     new LoginResp { Uid = 1, Nickname = "stale", Token = "stale-token" }));
-                failedTransport.RaiseMessage(Codec.Encode(MsgID.LoadArchiveResp,
+                Assert.That(Codec.TryDecode(
+                    failedTransport.SentPayloads.Last(), out _, out var staleSeq, out _), Is.True);
+                failedTransport.RaiseMessage(Codec.Encode(MsgID.LoadArchiveResp, staleSeq,
                     new LoadArchiveResp { Found = true, Archive = new PlayerArchive { SchemaVersion = 1 } }));
                 dispatcher.PumpAll();
 
@@ -474,10 +476,10 @@ namespace Game.Tests.EditMode.Online
                 Assert.That(DecodeMessageIds(retryTransport.SentPayloads),
                     Is.EqualTo(new[] { MsgID.LoginReq }));
 
-                retryTransport.RaiseMessage(Codec.Encode(MsgID.LoginResp,
+                retryTransport.RaiseMessage(EncodeResponse(retryTransport, MsgID.LoginResp,
                     new LoginResp { Uid = 2, Nickname = "retry-user", Token = "retry-token" }));
                 dispatcher.PumpAll();
-                retryTransport.RaiseMessage(Codec.Encode(MsgID.LoadArchiveResp,
+                retryTransport.RaiseMessage(EncodeResponse(retryTransport, MsgID.LoadArchiveResp,
                     new LoadArchiveResp { Found = true, Archive = new PlayerArchive { SchemaVersion = 2 } }));
                 dispatcher.PumpAll();
 
@@ -592,19 +594,59 @@ namespace Game.Tests.EditMode.Online
 
         private void ReceiveLogin(string nickname)
         {
-            _client.ReceiveFrame(Codec.Encode(MsgID.LoginResp,
+            _client.ReceiveFrame(EncodeResponse(MsgID.LoginResp,
                 new LoginResp { Uid = 42, Nickname = nickname, Token = "session-token" }));
         }
 
         private void ReceiveArchive(PlayerArchive archive)
         {
-            _client.ReceiveFrame(Codec.Encode(MsgID.LoadArchiveResp,
+            _client.ReceiveFrame(EncodeResponse(MsgID.LoadArchiveResp,
                 new LoadArchiveResp { Found = true, Archive = archive }));
+        }
+
+        private byte[] EncodeResponse<T>(ushort responseId, T response)
+            where T : class, Google.Protobuf.IMessage<T>
+        {
+            return EncodeResponse(_transport, responseId, response);
+        }
+
+        private static byte[] EncodeResponse<T>(
+            FakeWebSocketTransport transport,
+            ushort responseId,
+            T response)
+            where T : class, Google.Protobuf.IMessage<T>
+        {
+            var requestId = responseId == MsgID.LoginResp
+                ? MsgID.LoginReq
+                : responseId == MsgID.LoadArchiveResp
+                    ? MsgID.LoadArchiveReq
+                    : responseId == MsgID.SaveArchiveResp
+                        ? MsgID.SaveArchiveReq
+                        : LastRequestId(transport);
+            for (var index = transport.SentPayloads.Count - 1; index >= 0; index--)
+            {
+                Assert.That(Codec.TryDecode(
+                    transport.SentPayloads[index], out var messageId, out var seq, out _), Is.True);
+                if (messageId == requestId)
+                {
+                    return Codec.Encode(responseId, seq, response);
+                }
+            }
+
+            throw new InvalidOperationException($"No request found for response {responseId}.");
+        }
+
+        private static ushort LastRequestId(FakeWebSocketTransport transport)
+        {
+            Assert.That(transport.SentPayloads, Is.Not.Empty);
+            Assert.That(Codec.TryDecode(
+                transport.SentPayloads.Last(), out var requestId, out _, out _), Is.True);
+            return requestId;
         }
 
         private ushort DecodeLastMessageId()
         {
-            Assert.That(Codec.TryDecode(_transport.SentPayloads.Last(), out var msgId, out _), Is.True);
+            Assert.That(Codec.TryDecode(_transport.SentPayloads.Last(), out var msgId, out _, out _), Is.True);
             return msgId;
         }
 
@@ -612,7 +654,7 @@ namespace Game.Tests.EditMode.Online
         {
             return payloads.Select(payload =>
             {
-                Assert.That(Codec.TryDecode(payload, out var msgId, out _), Is.True);
+                Assert.That(Codec.TryDecode(payload, out var msgId, out _, out _), Is.True);
                 return msgId;
             }).ToArray();
         }

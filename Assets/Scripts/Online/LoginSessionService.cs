@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using Game.Network;
 using Game.Protocol;
 
@@ -9,15 +8,14 @@ namespace Game.Online
     {
         private const string DisconnectedError = "Network client is not connected.";
         private readonly NetworkClient _client;
-        private readonly List<IDisposable> _subscriptions = new List<IDisposable>();
+        private uint _activeSeq;
+        private int _attempt;
         private bool _loginActive;
         private bool _disposed;
 
         public LoginSessionService(NetworkClient client = null)
         {
             _client = client ?? NetworkClient.Instance;
-            _subscriptions.Add(_client.On<LoginResp>(MsgID.LoginResp, HandleLoginResponse));
-            _subscriptions.Add(_client.On<ErrorResp>(MsgID.Error, HandleErrorResponse));
         }
 
         public event Action<LoginResp> Succeeded;
@@ -42,15 +40,42 @@ namespace Game.Online
                 return false;
             }
 
+            var attempt = ++_attempt;
             _loginActive = true;
-            if (_client.Send(MsgID.LoginReq, new LoginReq { Code = code }))
+            var requestReturned = false;
+            string synchronousFailure = null;
+            var sent = _client.Request<LoginReq, LoginResp>(
+                MsgID.LoginReq,
+                MsgID.LoginResp,
+                new LoginReq { Code = code },
+                response => HandleLoginResponse(attempt, response),
+                reason =>
+                {
+                    if (!requestReturned)
+                    {
+                        synchronousFailure = reason;
+                        return;
+                    }
+
+                    HandleFailure(attempt, reason);
+                },
+                out var seq);
+            requestReturned = true;
+            if (sent && IsActiveAttempt(attempt))
             {
-                return true;
+                _activeSeq = seq;
             }
 
-            _loginActive = false;
-            Failed?.Invoke(DisconnectedError);
-            return false;
+            if (synchronousFailure != null && IsActiveAttempt(attempt))
+            {
+                HandleFailure(attempt, sent ? synchronousFailure : DisconnectedError);
+            }
+            else if (!sent && IsActiveAttempt(attempt))
+            {
+                HandleFailure(attempt, DisconnectedError);
+            }
+
+            return sent;
         }
 
         public void Dispose()
@@ -61,43 +86,51 @@ namespace Game.Online
             }
 
             _disposed = true;
-            _loginActive = false;
-            foreach (var subscription in _subscriptions)
-            {
-                subscription.Dispose();
-            }
-
-            _subscriptions.Clear();
+            CancelActiveOperation();
             Succeeded = null;
             Failed = null;
         }
 
         internal void CancelActiveOperation()
         {
+            var seq = _activeSeq;
             _loginActive = false;
+            _activeSeq = 0;
+            _attempt++;
+            if (seq != 0)
+            {
+                _client.CancelRequest(seq);
+            }
         }
 
-        private void HandleLoginResponse(LoginResp response)
+        private bool IsActiveAttempt(int attempt)
         {
-            if (!_loginActive)
+            return !_disposed && _loginActive && attempt == _attempt;
+        }
+
+        private void HandleLoginResponse(int attempt, LoginResp response)
+        {
+            if (!IsActiveAttempt(attempt))
             {
                 return;
             }
 
             _loginActive = false;
+            _activeSeq = 0;
             _client.SetLoginInfo(response.Uid, response.Token);
             Succeeded?.Invoke(response);
         }
 
-        private void HandleErrorResponse(ErrorResp response)
+        private void HandleFailure(int attempt, string reason)
         {
-            if (!_loginActive)
+            if (!IsActiveAttempt(attempt))
             {
                 return;
             }
 
             _loginActive = false;
-            Failed?.Invoke($"[{response.Code}] {response.Msg}");
+            _activeSeq = 0;
+            Failed?.Invoke(reason);
         }
     }
 }

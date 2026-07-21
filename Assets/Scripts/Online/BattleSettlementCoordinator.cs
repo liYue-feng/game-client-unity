@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using Game.Gameplay;
 using Game.Network;
 using Game.Protocol;
@@ -9,20 +8,23 @@ namespace Game.Online
 {
     public sealed class BattleSettlementCoordinator : IBattleSettlementGateway, IDisposable
     {
+        private readonly NetworkClient _client;
         private readonly ArchiveSessionService _archiveService;
         private readonly BattleSettlementService _service;
         private readonly Action<PlayerArchive> _applyArchive;
         private readonly Func<bool> _recoverSession;
-        private readonly List<IDisposable> _subscriptions = new List<IDisposable>();
         private OnlineSessionState _sessionState;
         private int _generation;
         private int _lastSentGeneration = int.MinValue;
+        private int _combatAttempt;
+        private uint _combatSeq;
         private CombatResultReq _request;
         private CombatResultResp _response;
         private Action<BattleSettlementResult> _completed;
         private bool _awaitingCombat;
         private bool _awaitingSave;
         private bool _saveOnReady;
+        private bool _cancellingCombat;
         private bool _disposed;
 
         public BattleSettlementCoordinator(
@@ -36,12 +38,11 @@ namespace Game.Online
                 throw new ArgumentNullException(nameof(client));
             }
 
+            _client = client;
             _archiveService = archiveService ?? throw new ArgumentNullException(nameof(archiveService));
             _service = new BattleSettlementService(client);
             _applyArchive = applyArchive ?? (_ => { });
             _recoverSession = recoverSession;
-            _subscriptions.Add(client.On<CombatResultResp>(MsgID.CombatResultResp, HandleCombatResponse));
-            _subscriptions.Add(client.On<ErrorResp>(MsgID.Error, HandleErrorResponse));
             _archiveService.Saved += HandleArchiveSaved;
             _archiveService.Failed += HandleArchiveFailed;
         }
@@ -178,15 +179,9 @@ namespace Game.Online
             }
 
             _disposed = true;
-            _awaitingCombat = false;
+            CancelActiveCombatRequest();
             _awaitingSave = false;
             _saveOnReady = false;
-            foreach (var subscription in _subscriptions)
-            {
-                subscription.Dispose();
-            }
-
-            _subscriptions.Clear();
             _archiveService.Saved -= HandleArchiveSaved;
             _archiveService.Failed -= HandleArchiveFailed;
             _completed = null;
@@ -204,22 +199,93 @@ namespace Game.Online
                 return true;
             }
 
-            if (!_service.Send(_request))
+            if (_combatSeq != 0)
+            {
+                CancelActiveCombatRequest();
+                _awaitingCombat = true;
+            }
+
+            var attempt = ++_combatAttempt;
+            var requestReturned = false;
+            CombatResultResp synchronousResponse = null;
+            string synchronousFailure = null;
+            var sent = _service.Send(
+                _request,
+                response =>
+                {
+                    if (!requestReturned)
+                    {
+                        synchronousResponse = response;
+                        return;
+                    }
+
+                    HandleCombatResponse(attempt, response);
+                },
+                reason =>
+                {
+                    if (!requestReturned)
+                    {
+                        synchronousFailure = reason;
+                        return;
+                    }
+
+                    HandleCombatFailure(attempt);
+                },
+                out var seq);
+            requestReturned = true;
+            if (!sent)
             {
                 return false;
             }
 
+            if (IsActiveCombatAttempt(attempt))
+            {
+                _combatSeq = seq;
+            }
+
             _lastSentGeneration = _generation;
+            if (synchronousResponse != null)
+            {
+                HandleCombatResponse(attempt, synchronousResponse);
+            }
+            else if (synchronousFailure != null)
+            {
+                HandleCombatFailure(attempt);
+            }
+
             return true;
         }
 
-        private void HandleCombatResponse(CombatResultResp response)
+        private bool IsActiveCombatAttempt(int attempt)
         {
-            if (_disposed || !_awaitingCombat || _request == null || response == null || response.RunId != _request.RunId)
+            return !_disposed && !_cancellingCombat && _awaitingCombat && attempt == _combatAttempt;
+        }
+
+        private void CancelActiveCombatRequest()
+        {
+            var seq = _combatSeq;
+            _awaitingCombat = false;
+            _combatSeq = 0;
+            _combatAttempt++;
+            if (seq == 0)
             {
                 return;
             }
 
+            _cancellingCombat = true;
+            _client.CancelRequest(seq);
+            _cancellingCombat = false;
+        }
+
+        private void HandleCombatResponse(int attempt, CombatResultResp response)
+        {
+            if (!IsActiveCombatAttempt(attempt) || _request == null || response == null ||
+                response.RunId != _request.RunId)
+            {
+                return;
+            }
+
+            _combatSeq = 0;
             if (!response.Success || response.Archive == null)
             {
                 Fail();
@@ -290,14 +356,16 @@ namespace Game.Online
             }
         }
 
-        private void HandleErrorResponse(ErrorResp response)
+        private void HandleCombatFailure(int attempt)
         {
-            if (!_disposed && (_awaitingCombat || _awaitingSave))
+            if (!IsActiveCombatAttempt(attempt))
             {
-                _awaitingCombat = false;
-                _awaitingSave = false;
-                Fail();
+                return;
             }
+
+            _combatSeq = 0;
+            _awaitingCombat = false;
+            Fail();
         }
 
         private void Fail()
@@ -329,6 +397,7 @@ namespace Game.Online
             _awaitingCombat = false;
             _awaitingSave = false;
             _saveOnReady = false;
+            _combatSeq = 0;
             _lastSentGeneration = int.MinValue;
         }
     }

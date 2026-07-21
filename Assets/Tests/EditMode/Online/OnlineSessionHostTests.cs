@@ -78,9 +78,9 @@ namespace Game.Tests.EditMode.Online
             _host.StartSession();
             _connection.RaiseConnected();
             _provider.Succeed(0);
-            _client.ReceiveFrame(Codec.Encode(MsgID.LoginResp,
+            _client.ReceiveFrame(EncodeResponse(MsgID.LoginResp,
                 new LoginResp { Uid = 42, Nickname = "ink-user", Token = "session-token" }));
-            _client.ReceiveFrame(Codec.Encode(MsgID.LoadArchiveResp,
+            _client.ReceiveFrame(EncodeResponse(MsgID.LoadArchiveResp,
                 new LoadArchiveResp { Found = true, Archive = new PlayerArchive { Gold = 7, UnlockedStyles = { 1, 3 } } }));
 
             Assert.That(_host.State, Is.EqualTo(OnlineSessionState.Ready));
@@ -106,7 +106,7 @@ namespace Game.Tests.EditMode.Online
             Assert.That(laterObservers, Is.Zero);
             LogAssert.Expect(LogType.Exception, new Regex("reload observer failed"));
 
-            var response = Codec.Encode(MsgID.LoadArchiveResp,
+            var response = EncodeResponse(MsgID.LoadArchiveResp,
                 new LoadArchiveResp { Found = true, Archive = new PlayerArchive { Gold = 44 } });
             _client.ReceiveFrame(response);
 
@@ -127,7 +127,7 @@ namespace Game.Tests.EditMode.Online
             Assert.That(_host.ReloadArchive(), Is.True);
 
             _host.Shutdown();
-            _client.ReceiveFrame(Codec.Encode(MsgID.LoadArchiveResp,
+            _client.ReceiveFrame(EncodeResponse(MsgID.LoadArchiveResp,
                 new LoadArchiveResp { Found = true, Archive = new PlayerArchive { Gold = 44 } }));
 
             Assert.That(reloads, Is.Zero);
@@ -142,9 +142,9 @@ namespace Game.Tests.EditMode.Online
             _host.StartSession();
             _connection.RaiseConnected();
             _provider.Succeed(0);
-            _client.ReceiveFrame(Codec.Encode(MsgID.LoginResp,
+            _client.ReceiveFrame(EncodeResponse(MsgID.LoginResp,
                 new LoginResp { Uid = 42, Nickname = "ink-user", Token = "session-token" }));
-            _client.ReceiveFrame(Codec.Encode(MsgID.LoadArchiveResp,
+            _client.ReceiveFrame(EncodeResponse(MsgID.LoadArchiveResp,
                 new LoadArchiveResp { Found = true, Archive = new PlayerArchive { Gold = 7 } }));
             BattleSettlementResult result = null;
             var archiveSavedEvents = 0;
@@ -159,10 +159,10 @@ namespace Game.Tests.EditMode.Online
                 BattleRunOutcome.Victory,
                 new CombatResultData { killCount = 2, playerLevel = 1 },
                 value => result = value);
-            Assert.That(Codec.TryDecode(_transport.SentPayloads.Last(), out var messageId, out var body), Is.True);
+            Assert.That(Codec.TryDecode(_transport.SentPayloads.Last(), out var messageId, out _, out var body), Is.True);
             Assert.That(messageId, Is.EqualTo(MsgID.CombatResultReq));
             var request = CombatResultReq.Parser.ParseFrom(body);
-            _client.ReceiveFrame(Codec.Encode(MsgID.CombatResultResp, new CombatResultResp
+            _client.ReceiveFrame(EncodeResponse(MsgID.CombatResultResp, new CombatResultResp
             {
                 Success = true,
                 RunId = request.RunId,
@@ -170,7 +170,7 @@ namespace Game.Tests.EditMode.Online
             }));
 
             Assert.That(_host.Progress.Gold, Is.EqualTo(7));
-            _client.ReceiveFrame(Codec.Encode(MsgID.SaveArchiveResp, new SaveArchiveResp { Success = true }));
+            _client.ReceiveFrame(EncodeResponse(MsgID.SaveArchiveResp, new SaveArchiveResp { Success = true }));
 
             Assert.That(result?.State, Is.EqualTo(BattleSettlementState.Saved));
             Assert.That(_host.Progress.Gold, Is.EqualTo(44));
@@ -203,9 +203,9 @@ namespace Game.Tests.EditMode.Online
 
             _connection.RaiseConnected();
             _provider.Succeed(1);
-            _client.ReceiveFrame(Codec.Encode(MsgID.LoginResp,
+            _client.ReceiveFrame(EncodeResponse(MsgID.LoginResp,
                 new LoginResp { Uid = 42, Nickname = "ink-user", Token = "new-session-token" }));
-            _client.ReceiveFrame(Codec.Encode(MsgID.LoadArchiveResp,
+            _client.ReceiveFrame(EncodeResponse(MsgID.LoadArchiveResp,
                 new LoadArchiveResp { Found = true, Archive = new PlayerArchive { Gold = 7 } }));
 
             Assert.That(_host.State, Is.EqualTo(OnlineSessionState.Ready));
@@ -220,9 +220,9 @@ namespace Game.Tests.EditMode.Online
             _host.StartSession();
             _connection.RaiseConnected();
             _provider.Succeed(0);
-            _client.ReceiveFrame(Codec.Encode(MsgID.LoginResp,
+            _client.ReceiveFrame(EncodeResponse(MsgID.LoginResp,
                 new LoginResp { Uid = 42, Nickname = "ink-user", Token = "session-token" }));
-            _client.ReceiveFrame(Codec.Encode(MsgID.LoadArchiveResp,
+            _client.ReceiveFrame(EncodeResponse(MsgID.LoadArchiveResp,
                 new LoadArchiveResp { Found = true, Archive = new PlayerArchive { Gold = 7 } }));
             BattleSettlementResult result = null;
 
@@ -230,33 +230,33 @@ namespace Game.Tests.EditMode.Online
                 BattleRunOutcome.Victory,
                 new CombatResultData { killCount = 2, playerLevel = 1 },
                 value => result = value);
-            Assert.That(Codec.TryDecode(_transport.SentPayloads.Last(), out var messageId, out var body), Is.True);
+            Assert.That(Codec.TryDecode(_transport.SentPayloads.Last(), out var messageId, out _, out var body), Is.True);
             Assert.That(messageId, Is.EqualTo(MsgID.CombatResultReq));
             var request = CombatResultReq.Parser.ParseFrom(body);
-            _client.ReceiveFrame(Codec.Encode(MsgID.CombatResultResp, new CombatResultResp
+            _client.ReceiveFrame(EncodeResponse(MsgID.CombatResultResp, new CombatResultResp
             {
                 Success = true,
                 RunId = request.RunId,
                 Archive = new PlayerArchive { Gold = 44 }
             }));
 
-            _client.ReceiveFrame(Codec.Encode(MsgID.SaveArchiveResp, new SaveArchiveResp { Success = false }));
+            _client.ReceiveFrame(EncodeResponse(MsgID.SaveArchiveResp, new SaveArchiveResp { Success = false }));
 
             Assert.That(result?.State, Is.EqualTo(BattleSettlementState.Failed));
             Assert.That(_host.State, Is.EqualTo(OnlineSessionState.Ready));
             Assert.That(_connection.DisconnectCalls, Is.Zero);
             var combatRequestsBeforeRetry = _transport.SentPayloads.Count(frame =>
             {
-                Codec.TryDecode(frame, out var id, out _);
+                Codec.TryDecode(frame, out var id, out _, out _);
                 return id == MsgID.CombatResultReq;
             });
 
             Assert.That(_host.BattleSettlement.Retry(), Is.True);
-            Assert.That(Codec.TryDecode(_transport.SentPayloads.Last(), out messageId, out _), Is.True);
+            Assert.That(Codec.TryDecode(_transport.SentPayloads.Last(), out messageId, out _, out _), Is.True);
             Assert.That(messageId, Is.EqualTo(MsgID.SaveArchiveReq));
             Assert.That(_transport.SentPayloads.Count(frame =>
             {
-                Codec.TryDecode(frame, out var id, out _);
+                Codec.TryDecode(frame, out var id, out _, out _);
                 return id == MsgID.CombatResultReq;
             }), Is.EqualTo(combatRequestsBeforeRetry));
         }
@@ -271,7 +271,7 @@ namespace Game.Tests.EditMode.Online
             _host.BattleSettlement.Settle(BattleRunOutcome.Victory,
                 new CombatResultData { killCount = 2, playerLevel = 1 }, value => battleResult = value);
             var request = DecodeLastCombatRequest();
-            _client.ReceiveFrame(Codec.Encode(MsgID.CombatResultResp, new CombatResultResp
+            _client.ReceiveFrame(EncodeResponse(MsgID.CombatResultResp, new CombatResultResp
             {
                 Success = true,
                 RunId = request.RunId,
@@ -281,14 +281,14 @@ namespace Game.Tests.EditMode.Online
             Assert.That(battleResult?.State, Is.EqualTo(BattleSettlementState.Failed));
             Assert.That(_host.State, Is.EqualTo(OnlineSessionState.Ready));
             Assert.That(SaveRequestCount(), Is.EqualTo(1));
-            _client.ReceiveFrame(Codec.Encode(MsgID.SaveArchiveResp, new SaveArchiveResp { Success = true }));
+            _client.ReceiveFrame(EncodeResponse(MsgID.SaveArchiveResp, new SaveArchiveResp { Success = true }));
             Assert.That(_host.Progress.Gold, Is.EqualTo(21));
 
             var combatRequestsBeforeRetry = CombatRequestCount();
             Assert.That(_host.BattleSettlement.Retry(), Is.True);
             Assert.That(CombatRequestCount(), Is.EqualTo(combatRequestsBeforeRetry));
             Assert.That(SaveRequestCount(), Is.EqualTo(2));
-            _client.ReceiveFrame(Codec.Encode(MsgID.SaveArchiveResp, new SaveArchiveResp { Success = true }));
+            _client.ReceiveFrame(EncodeResponse(MsgID.SaveArchiveResp, new SaveArchiveResp { Success = true }));
 
             Assert.That(battleResult?.State, Is.EqualTo(BattleSettlementState.Saved));
             Assert.That(_host.Progress.Gold, Is.EqualTo(44));
@@ -303,7 +303,7 @@ namespace Game.Tests.EditMode.Online
             _host.BattleSettlement.Settle(BattleRunOutcome.Victory,
                 new CombatResultData { killCount = 2, playerLevel = 1 }, value => battleResult = value);
             var request = DecodeLastCombatRequest();
-            _client.ReceiveFrame(Codec.Encode(MsgID.CombatResultResp, new CombatResultResp
+            _client.ReceiveFrame(EncodeResponse(MsgID.CombatResultResp, new CombatResultResp
             {
                 Success = true,
                 RunId = request.RunId,
@@ -314,7 +314,7 @@ namespace Game.Tests.EditMode.Online
             Assert.That(_host.State, Is.EqualTo(OnlineSessionState.Ready));
             Assert.That(_host.Progress.Gold, Is.EqualTo(7));
             Assert.That(SaveRequestCount(), Is.EqualTo(1));
-            _client.ReceiveFrame(Codec.Encode(MsgID.SaveArchiveResp, new SaveArchiveResp { Success = true }));
+            _client.ReceiveFrame(EncodeResponse(MsgID.SaveArchiveResp, new SaveArchiveResp { Success = true }));
 
             Assert.That(battleResult?.State, Is.EqualTo(BattleSettlementState.Saved));
             Assert.That(_host.Progress.Gold, Is.EqualTo(44));
@@ -335,13 +335,13 @@ namespace Game.Tests.EditMode.Online
             _host.BattleSettlement.Settle(BattleRunOutcome.Victory,
                 new CombatResultData { killCount = 2, playerLevel = 1 }, value => firstResult = value);
             var first = DecodeLastCombatRequest();
-            _client.ReceiveFrame(Codec.Encode(MsgID.CombatResultResp, new CombatResultResp
+            _client.ReceiveFrame(EncodeResponse(MsgID.CombatResultResp, new CombatResultResp
             {
                 Success = true,
                 RunId = first.RunId,
                 Archive = new PlayerArchive { Gold = 44 }
             }));
-            _client.ReceiveFrame(Codec.Encode(MsgID.SaveArchiveResp, new SaveArchiveResp { Success = true }));
+            _client.ReceiveFrame(EncodeResponse(MsgID.SaveArchiveResp, new SaveArchiveResp { Success = true }));
 
             Assert.That(laterObservers, Is.EqualTo(1));
             Assert.That(firstResult?.State, Is.EqualTo(BattleSettlementState.Saved));
@@ -520,25 +520,58 @@ namespace Game.Tests.EditMode.Online
             _host.StartSession();
             _connection.RaiseConnected();
             _provider.Succeed(0);
-            _client.ReceiveFrame(Codec.Encode(MsgID.LoginResp,
+            _client.ReceiveFrame(EncodeResponse(MsgID.LoginResp,
                 new LoginResp { Uid = 42, Nickname = "ink-user", Token = "session-token" }));
-            _client.ReceiveFrame(Codec.Encode(MsgID.LoadArchiveResp,
+            _client.ReceiveFrame(EncodeResponse(MsgID.LoadArchiveResp,
                 new LoadArchiveResp { Found = true, Archive = archive }));
             Assert.That(_host.State, Is.EqualTo(OnlineSessionState.Ready));
         }
 
         private CombatResultReq DecodeLastCombatRequest()
         {
-            Assert.That(Codec.TryDecode(_transport.SentPayloads.Last(), out var messageId, out var body), Is.True);
+            Assert.That(Codec.TryDecode(_transport.SentPayloads.Last(), out var messageId, out _, out var body), Is.True);
             Assert.That(messageId, Is.EqualTo(MsgID.CombatResultReq));
             return CombatResultReq.Parser.ParseFrom(body);
+        }
+
+        private byte[] EncodeResponse<T>(ushort responseId, T response)
+            where T : class, Google.Protobuf.IMessage<T>
+        {
+            var requestId = responseId == MsgID.LoginResp
+                ? MsgID.LoginReq
+                : responseId == MsgID.LoadArchiveResp
+                    ? MsgID.LoadArchiveReq
+                    : responseId == MsgID.SaveArchiveResp
+                        ? MsgID.SaveArchiveReq
+                        : responseId == MsgID.CombatResultResp
+                            ? MsgID.CombatResultReq
+                            : LastRequestId();
+            for (var index = _transport.SentPayloads.Count - 1; index >= 0; index--)
+            {
+                Assert.That(Codec.TryDecode(
+                    _transport.SentPayloads[index], out var messageId, out var seq, out _), Is.True);
+                if (messageId == requestId)
+                {
+                    return Codec.Encode(responseId, seq, response);
+                }
+            }
+
+            throw new InvalidOperationException($"No request found for response {responseId}.");
+        }
+
+        private ushort LastRequestId()
+        {
+            Assert.That(_transport.SentPayloads, Is.Not.Empty);
+            Assert.That(Codec.TryDecode(
+                _transport.SentPayloads.Last(), out var requestId, out _, out _), Is.True);
+            return requestId;
         }
 
         private int CombatRequestCount()
         {
             return _transport.SentPayloads.Count(frame =>
             {
-                Codec.TryDecode(frame, out var messageId, out _);
+                Codec.TryDecode(frame, out var messageId, out _, out _);
                 return messageId == MsgID.CombatResultReq;
             });
         }
@@ -547,7 +580,7 @@ namespace Game.Tests.EditMode.Online
         {
             return _transport.SentPayloads.Count(frame =>
             {
-                Codec.TryDecode(frame, out var messageId, out _);
+                Codec.TryDecode(frame, out var messageId, out _, out _);
                 return messageId == MsgID.SaveArchiveReq;
             });
         }

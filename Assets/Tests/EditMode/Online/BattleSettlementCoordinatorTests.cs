@@ -58,7 +58,7 @@ namespace Game.Tests.EditMode.Online
             Assert.That(CombatRequestCount(), Is.EqualTo(1));
             Assert.That(firstRequest.RunId, Is.Not.Empty);
 
-            _client.ReceiveFrame(Codec.Encode(MsgID.CombatResultResp, new CombatResultResp
+            _client.ReceiveFrame(EncodeResponse(MsgID.CombatResultResp, new CombatResultResp
             {
                 Success = true,
                 RunId = firstRequest.RunId,
@@ -74,7 +74,7 @@ namespace Game.Tests.EditMode.Online
             Assert.That(_appliedArchive, Is.Null,
                 "Progress must not change before the archive save acknowledgement.");
 
-            _client.ReceiveFrame(Codec.Encode(MsgID.SaveArchiveResp, new SaveArchiveResp { Success = true }));
+            _client.ReceiveFrame(EncodeResponse(MsgID.SaveArchiveResp, new SaveArchiveResp { Success = true }));
 
             Assert.That(results, Has.Count.EqualTo(1));
             Assert.That(results[0].State, Is.EqualTo(BattleSettlementState.Saved));
@@ -90,13 +90,18 @@ namespace Game.Tests.EditMode.Online
             var results = new List<BattleSettlementResult>();
             _coordinator.Settle(BattleRunOutcome.Victory, ResultData(), results.Add);
             var active = DecodeLastCombatRequest();
+            Assert.That(Codec.TryDecode(
+                _transport.SentPayloads.Last(), out _, out var activeSeq, out _), Is.True);
 
-            foreach (var mismatchedRunId in new[] { "old-run", "new-run", "late-run" })
+            var mismatchedRunIds = new[] { "old-run", "new-run", "late-run" };
+            for (var index = 0; index < mismatchedRunIds.Length; index++)
             {
-                _client.ReceiveFrame(Codec.Encode(MsgID.CombatResultResp, new CombatResultResp
+                LogAssert.Expect(LogType.Warning, new Regex("unknown seq"));
+                _client.ReceiveFrame(Codec.Encode(
+                    MsgID.CombatResultResp, activeSeq + (uint)index + 1, new CombatResultResp
                 {
                     Success = true,
-                    RunId = mismatchedRunId,
+                    RunId = mismatchedRunIds[index],
                     Archive = new PlayerArchive { Gold = 99 }
                 }));
             }
@@ -105,7 +110,7 @@ namespace Game.Tests.EditMode.Online
             Assert.That(results, Is.Empty);
             Assert.That(DecodeLastMessageId(), Is.EqualTo(MsgID.CombatResultReq));
 
-            _client.ReceiveFrame(Codec.Encode(MsgID.CombatResultResp, new CombatResultResp
+            _client.ReceiveFrame(EncodeResponse(MsgID.CombatResultResp, new CombatResultResp
             {
                 Success = true,
                 RunId = active.RunId,
@@ -120,13 +125,13 @@ namespace Game.Tests.EditMode.Online
         {
             _coordinator.Settle(BattleRunOutcome.Victory, ResultData(), _ => { });
             var request = DecodeLastCombatRequest();
-            _client.ReceiveFrame(Codec.Encode(MsgID.CombatResultResp, new CombatResultResp
+            _client.ReceiveFrame(EncodeResponse(MsgID.CombatResultResp, new CombatResultResp
             {
                 Success = true,
                 RunId = request.RunId,
                 Archive = new PlayerArchive { Gold = 8 }
             }));
-            _client.ReceiveFrame(Codec.Encode(MsgID.SaveArchiveResp, new SaveArchiveResp { Success = false }));
+            _client.ReceiveFrame(EncodeResponse(MsgID.SaveArchiveResp, new SaveArchiveResp { Success = false }));
 
             Assert.That(_coordinator.State, Is.EqualTo(BattleSettlementState.Failed));
             Assert.That(_coordinator.Retry(), Is.True);
@@ -162,11 +167,11 @@ namespace Game.Tests.EditMode.Online
                 Archive = new PlayerArchive { Gold = 8 }
             };
 
-            _client.ReceiveFrame(Codec.Encode(MsgID.CombatResultResp, response));
-            _client.ReceiveFrame(Codec.Encode(MsgID.CombatResultResp, response));
-            _client.ReceiveFrame(Codec.Encode(MsgID.SaveArchiveResp, new SaveArchiveResp { Success = true }));
+            _client.ReceiveFrame(EncodeResponse(MsgID.CombatResultResp, response));
+            _client.ReceiveFrame(EncodeResponse(MsgID.CombatResultResp, response));
+            _client.ReceiveFrame(EncodeResponse(MsgID.SaveArchiveResp, new SaveArchiveResp { Success = true }));
             _coordinator.Dispose();
-            _client.ReceiveFrame(Codec.Encode(MsgID.SaveArchiveResp, new SaveArchiveResp { Success = true }));
+            _client.ReceiveFrame(EncodeResponse(MsgID.SaveArchiveResp, new SaveArchiveResp { Success = true }));
 
             Assert.That(results, Has.Count.EqualTo(1));
             Assert.That(results[0].Duplicate, Is.True);
@@ -274,7 +279,7 @@ namespace Game.Tests.EditMode.Online
             _coordinator.SetSessionState(OnlineSessionState.Ready, 1);
             _coordinator.Settle(BattleRunOutcome.Victory, ResultData(), _ => { });
             var request = DecodeLastCombatRequest();
-            _client.ReceiveFrame(Codec.Encode(MsgID.CombatResultResp, new CombatResultResp
+            _client.ReceiveFrame(EncodeResponse(MsgID.CombatResultResp, new CombatResultResp
             {
                 Success = true,
                 RunId = request.RunId,
@@ -300,13 +305,51 @@ namespace Game.Tests.EditMode.Online
         {
             _coordinator.Settle(BattleRunOutcome.Defeat, ResultData(), _ => { });
             var first = DecodeLastCombatRequest();
-            _client.ReceiveFrame(Codec.Encode(MsgID.Error, new ErrorResp { Code = 4001, Msg = "failed" }));
+            _client.ReceiveFrame(EncodeResponse(MsgID.Error, new ErrorResp { Code = 4001, Msg = "failed" }));
 
             Assert.That(_coordinator.State, Is.EqualTo(BattleSettlementState.Failed));
             Assert.That(_coordinator.Retry(), Is.True);
 
             Assert.That(CombatRequestCount(), Is.EqualTo(2));
             Assert.That(DecodeLastCombatRequest().RunId, Is.EqualTo(first.RunId));
+        }
+
+        [Test]
+        public void RetryCancelsOldSeqReusesRunIdAndIgnoresLateOldSuccessOrError()
+        {
+            RecreateCoordinator(() =>
+            {
+                _coordinator.SetSessionState(OnlineSessionState.Connecting, 3);
+                _coordinator.SetSessionState(OnlineSessionState.Ready, 3);
+                return true;
+            });
+            _coordinator.SetSessionState(OnlineSessionState.Ready, 1);
+            _coordinator.Settle(BattleRunOutcome.Victory, ResultData(), _ => { });
+            Assert.That(Codec.TryDecode(
+                _transport.SentPayloads.Single(), out _, out var firstSeq, out var firstBody), Is.True);
+            var firstRequest = CombatResultReq.Parser.ParseFrom(firstBody);
+
+            _coordinator.SetSessionState(OnlineSessionState.Failed, 2);
+            Assert.That(_coordinator.Retry(), Is.True);
+            Assert.That(Codec.TryDecode(
+                _transport.SentPayloads.Last(), out _, out var secondSeq, out var secondBody), Is.True);
+            var secondRequest = CombatResultReq.Parser.ParseFrom(secondBody);
+            Assert.That(firstSeq, Is.Not.Zero);
+            Assert.That(secondSeq, Is.Not.Zero.And.Not.EqualTo(firstSeq));
+            Assert.That(secondRequest.RunId, Is.EqualTo(firstRequest.RunId));
+
+            LogAssert.Expect(LogType.Warning, new Regex("unknown seq"));
+            _client.ReceiveFrame(Codec.Encode(MsgID.CombatResultResp, firstSeq,
+                SuccessfulCombatResponse(firstRequest.RunId)));
+            LogAssert.Expect(LogType.Warning, new Regex("unknown seq"));
+            _client.ReceiveFrame(Codec.Encode(MsgID.Error, firstSeq,
+                new ErrorResp { Code = 4001, Msg = "late failure" }));
+            Assert.That(_coordinator.State, Is.EqualTo(BattleSettlementState.Pending));
+            Assert.That(SaveRequestCount(), Is.Zero);
+
+            _client.ReceiveFrame(Codec.Encode(MsgID.CombatResultResp, secondSeq,
+                SuccessfulCombatResponse(secondRequest.RunId)));
+            Assert.That(SaveRequestCount(), Is.EqualTo(1));
         }
 
         [Test]
@@ -328,7 +371,7 @@ namespace Game.Tests.EditMode.Online
         {
             _coordinator.Settle(BattleRunOutcome.Victory, ResultData(), _ => { });
             var request = DecodeLastCombatRequest();
-            _client.ReceiveFrame(Codec.Encode(MsgID.CombatResultResp, new CombatResultResp
+            _client.ReceiveFrame(EncodeResponse(MsgID.CombatResultResp, new CombatResultResp
             {
                 Success = true,
                 RunId = request.RunId,
@@ -370,21 +413,21 @@ namespace Game.Tests.EditMode.Online
 
         private CombatResultReq DecodeLastCombatRequest()
         {
-            Assert.That(Codec.TryDecode(_transport.SentPayloads.Last(), out var messageId, out var body), Is.True);
+            Assert.That(Codec.TryDecode(_transport.SentPayloads.Last(), out var messageId, out _, out var body), Is.True);
             Assert.That(messageId, Is.EqualTo(MsgID.CombatResultReq));
             return CombatResultReq.Parser.ParseFrom(body);
         }
 
         private SaveArchiveReq DecodeLastSaveRequest()
         {
-            Assert.That(Codec.TryDecode(_transport.SentPayloads.Last(), out var messageId, out var body), Is.True);
+            Assert.That(Codec.TryDecode(_transport.SentPayloads.Last(), out var messageId, out _, out var body), Is.True);
             Assert.That(messageId, Is.EqualTo(MsgID.SaveArchiveReq));
             return SaveArchiveReq.Parser.ParseFrom(body);
         }
 
         private ushort DecodeLastMessageId()
         {
-            Assert.That(Codec.TryDecode(_transport.SentPayloads.Last(), out var messageId, out _), Is.True);
+            Assert.That(Codec.TryDecode(_transport.SentPayloads.Last(), out var messageId, out _, out _), Is.True);
             return messageId;
         }
 
@@ -392,7 +435,7 @@ namespace Game.Tests.EditMode.Online
         {
             return _transport.SentPayloads.Count(frame =>
             {
-                Codec.TryDecode(frame, out var messageId, out _);
+                Codec.TryDecode(frame, out var messageId, out _, out _);
                 return messageId == MsgID.CombatResultReq;
             });
         }
@@ -401,20 +444,59 @@ namespace Game.Tests.EditMode.Online
         {
             return _transport.SentPayloads.Count(frame =>
             {
-                Codec.TryDecode(frame, out var messageId, out _);
+                Codec.TryDecode(frame, out var messageId, out _, out _);
                 return messageId == MsgID.SaveArchiveReq;
             });
         }
 
         private void CompleteSettlement(string runId)
         {
-            _client.ReceiveFrame(Codec.Encode(MsgID.CombatResultResp, new CombatResultResp
+            _client.ReceiveFrame(EncodeResponse(MsgID.CombatResultResp, new CombatResultResp
             {
                 Success = true,
                 RunId = runId,
                 Archive = new PlayerArchive()
             }));
-            _client.ReceiveFrame(Codec.Encode(MsgID.SaveArchiveResp, new SaveArchiveResp { Success = true }));
+            _client.ReceiveFrame(EncodeResponse(MsgID.SaveArchiveResp, new SaveArchiveResp { Success = true }));
+        }
+
+        private static CombatResultResp SuccessfulCombatResponse(string runId)
+        {
+            return new CombatResultResp
+            {
+                Success = true,
+                RunId = runId,
+                Archive = new PlayerArchive { Gold = 12 }
+            };
+        }
+
+        private byte[] EncodeResponse<T>(ushort responseId, T response)
+            where T : class, Google.Protobuf.IMessage<T>
+        {
+            var requestId = responseId == MsgID.CombatResultResp
+                ? MsgID.CombatResultReq
+                : responseId == MsgID.SaveArchiveResp
+                    ? MsgID.SaveArchiveReq
+                    : LastRequestId();
+            for (var index = _transport.SentPayloads.Count - 1; index >= 0; index--)
+            {
+                Assert.That(Codec.TryDecode(
+                    _transport.SentPayloads[index], out var messageId, out var seq, out _), Is.True);
+                if (messageId == requestId)
+                {
+                    return Codec.Encode(responseId, seq, response);
+                }
+            }
+
+            throw new InvalidOperationException($"No request found for response {responseId}.");
+        }
+
+        private ushort LastRequestId()
+        {
+            Assert.That(_transport.SentPayloads, Is.Not.Empty);
+            Assert.That(Codec.TryDecode(
+                _transport.SentPayloads.Last(), out var requestId, out _, out _), Is.True);
+            return requestId;
         }
 
         private void RecreateCoordinator(Func<bool> recoverSession)

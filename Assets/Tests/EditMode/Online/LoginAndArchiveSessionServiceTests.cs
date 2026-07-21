@@ -71,11 +71,37 @@ namespace Game.Tests.EditMode.Online
                 LoginResp succeeded = null;
                 service.Succeeded += response => succeeded = response;
                 Assert.That(service.Begin("dev:editor-001"), Is.True);
-                Assert.That(Codec.TryDecode(_transport.SentPayloads.Single(), out var sentId, out var body), Is.True);
+                Assert.That(Codec.TryDecode(_transport.SentPayloads.Single(), out var sentId, out _, out var body), Is.True);
                 Assert.That(sentId, Is.EqualTo(MsgID.LoginReq));
                 Assert.That(LoginReq.Parser.ParseFrom(body).Code, Is.EqualTo("dev:editor-001"));
-                _client.ReceiveFrame(Codec.Encode(MsgID.LoginResp, new LoginResp { Uid = 42, Token = "session-token" }));
+                _client.ReceiveFrame(EncodeResponse(MsgID.LoginResp, new LoginResp { Uid = 42, Token = "session-token" }));
                 Assert.That(succeeded.Uid, Is.EqualTo(42));
+                Assert.That(_client.Token, Is.EqualTo("session-token"));
+            }
+        }
+
+        [Test]
+        public void LoginRequestCompletesOnlyItsOwnSeq()
+        {
+            _transport.RaiseOpened();
+            using (var service = new LoginSessionService())
+            {
+                LoginResp succeeded = null;
+                service.Succeeded += response => succeeded = response;
+
+                Assert.That(service.Begin("dev:editor-001"), Is.True);
+                Assert.That(Codec.TryDecode(
+                    _transport.SentPayloads.Single(), out _, out var seq, out _), Is.True);
+                Assert.That(seq, Is.Not.Zero);
+
+                LogAssert.Expect(LogType.Warning, new Regex("unknown seq"));
+                _client.ReceiveFrame(Codec.Encode(MsgID.LoginResp, seq + 1,
+                    new LoginResp { Uid = 7, Token = "wrong" }));
+                Assert.That(succeeded, Is.Null);
+
+                _client.ReceiveFrame(Codec.Encode(MsgID.LoginResp, seq,
+                    new LoginResp { Uid = 42, Token = "session-token" }));
+                Assert.That(succeeded?.Uid, Is.EqualTo(42));
                 Assert.That(_client.Token, Is.EqualTo("session-token"));
             }
         }
@@ -91,7 +117,7 @@ namespace Game.Tests.EditMode.Online
                 PlayerArchive loaded = null;
                 service.Loaded += value => loaded = value;
                 Assert.That(service.Load(), Is.True);
-                _client.ReceiveFrame(Codec.Encode(MsgID.LoadArchiveResp, new LoadArchiveResp { Found = false }));
+                _client.ReceiveFrame(EncodeResponse(MsgID.LoadArchiveResp, new LoadArchiveResp { Found = false }));
                 Assert.That(service.CurrentArchive, Is.Not.Null);
                 Assert.That(loaded.Gold, Is.Zero);
             }
@@ -105,7 +131,7 @@ namespace Game.Tests.EditMode.Online
             {
                 var incoming = new PlayerArchive { Gold = 7, UnlockedStyles = { 1, 3 } };
                 Assert.That(service.Load(), Is.True);
-                _client.ReceiveFrame(Codec.Encode(MsgID.LoadArchiveResp,
+                _client.ReceiveFrame(EncodeResponse(MsgID.LoadArchiveResp,
                     new LoadArchiveResp { Found = true, Archive = incoming }));
                 incoming.Gold = 99;
                 incoming.UnlockedStyles[0] = 99;
@@ -121,7 +147,7 @@ namespace Game.Tests.EditMode.Online
                 Assert.That(service.Save(outgoing), Is.True);
                 outgoing.Gold = 99;
                 outgoing.UnlockedStyles[0] = 99;
-                Assert.That(Codec.TryDecode(_transport.SentPayloads.Last(), out _, out var body), Is.True);
+                Assert.That(Codec.TryDecode(_transport.SentPayloads.Last(), out _, out _, out var body), Is.True);
                 var sent = SaveArchiveReq.Parser.ParseFrom(body).Archive;
                 Assert.That(sent.Gold, Is.EqualTo(11));
                 Assert.That(sent.UnlockedStyles, Is.EqualTo(new[] { 2, 4 }));
@@ -137,14 +163,39 @@ namespace Game.Tests.EditMode.Online
                 var savedCount = 0;
                 service.Saved += () => savedCount++;
                 Assert.That(service.Save(new PlayerArchive { Gold = 9 }), Is.True);
-                Assert.That(Codec.TryDecode(_transport.SentPayloads.Single(), out var sentId, out var body), Is.True);
+                Assert.That(Codec.TryDecode(_transport.SentPayloads.Single(), out var sentId, out _, out var body), Is.True);
                 Assert.That(sentId, Is.EqualTo(MsgID.SaveArchiveReq));
                 Assert.That(SaveArchiveReq.Parser.ParseFrom(body).Archive.Gold, Is.EqualTo(9));
-                _client.ReceiveFrame(Codec.Encode(MsgID.SaveArchiveResp, new SaveArchiveResp { Success = false }));
+                _client.ReceiveFrame(EncodeResponse(MsgID.SaveArchiveResp, new SaveArchiveResp { Success = false }));
                 Assert.That(savedCount, Is.Zero);
                 Assert.That(service.Save(new PlayerArchive { Gold = 10 }), Is.True);
-                _client.ReceiveFrame(Codec.Encode(MsgID.SaveArchiveResp, new SaveArchiveResp { Success = true }));
+                _client.ReceiveFrame(EncodeResponse(MsgID.SaveArchiveResp, new SaveArchiveResp { Success = true }));
                 Assert.That(savedCount, Is.EqualTo(1));
+            }
+        }
+
+        [Test]
+        public void ArchiveSaveErrorCompletesOnlyActiveSeq()
+        {
+            _transport.RaiseOpened();
+            using (var service = new ArchiveSessionService())
+            {
+                string failure = null;
+                service.Failed += reason => failure = reason;
+
+                Assert.That(service.Save(new PlayerArchive { Gold = 9 }), Is.True);
+                Assert.That(Codec.TryDecode(
+                    _transport.SentPayloads.Single(), out _, out var seq, out _), Is.True);
+                Assert.That(seq, Is.Not.Zero);
+
+                LogAssert.Expect(LogType.Warning, new Regex("unknown seq"));
+                _client.ReceiveFrame(Codec.Encode(MsgID.Error, seq + 1,
+                    new ErrorResp { Code = 9998, Msg = "unrelated" }));
+                Assert.That(failure, Is.Null);
+
+                _client.ReceiveFrame(Codec.Encode(MsgID.Error, seq,
+                    new ErrorResp { Code = 9999, Msg = "archive failed" }));
+                Assert.That(failure, Is.EqualTo("[9999] archive failed"));
             }
         }
 
@@ -160,10 +211,10 @@ namespace Game.Tests.EditMode.Online
                 login.Failed += value => loginError = value;
                 archive.Failed += value => archiveError = value;
                 Assert.That(login.Begin("dev:editor-001"), Is.True);
-                _client.ReceiveFrame(Codec.Encode(MsgID.Error, new ErrorResp { Code = 9999, Msg = "login failed" }));
+                _client.ReceiveFrame(EncodeResponse(MsgID.Error, new ErrorResp { Code = 9999, Msg = "login failed" }));
                 Assert.That(loginError, Is.EqualTo("[9999] login failed"));
                 Assert.That(archive.Load(), Is.True);
-                _client.ReceiveFrame(Codec.Encode(MsgID.Error, new ErrorResp { Code = 9999, Msg = "archive failed" }));
+                _client.ReceiveFrame(EncodeResponse(MsgID.Error, new ErrorResp { Code = 9999, Msg = "archive failed" }));
                 Assert.That(archiveError, Is.EqualTo("[9999] archive failed"));
             }
         }
@@ -182,11 +233,42 @@ namespace Game.Tests.EditMode.Online
             Assert.That(archive.Load(), Is.True);
             login.Dispose();
             archive.Dispose();
-            _client.ReceiveFrame(Codec.Encode(MsgID.LoginResp, new LoginResp { Uid = 42, Token = "session-token" }));
-            _client.ReceiveFrame(Codec.Encode(MsgID.LoadArchiveResp, new LoadArchiveResp { Found = true, Archive = new PlayerArchive() }));
+            _client.ReceiveFrame(EncodeResponse(MsgID.LoginResp, new LoginResp { Uid = 42, Token = "session-token" }));
+            _client.ReceiveFrame(EncodeResponse(MsgID.LoadArchiveResp, new LoadArchiveResp { Found = true, Archive = new PlayerArchive() }));
             Assert.That(loginSuccesses, Is.Zero);
             Assert.That(archiveLoads, Is.Zero);
             Assert.That(_client.IsLoggedIn, Is.False);
+        }
+
+        private byte[] EncodeResponse<T>(ushort responseId, T response)
+            where T : class, Google.Protobuf.IMessage<T>
+        {
+            var requestId = responseId == MsgID.LoginResp
+                ? MsgID.LoginReq
+                : responseId == MsgID.LoadArchiveResp
+                    ? MsgID.LoadArchiveReq
+                    : responseId == MsgID.SaveArchiveResp
+                        ? MsgID.SaveArchiveReq
+                        : LastRequestId();
+            for (var index = _transport.SentPayloads.Count - 1; index >= 0; index--)
+            {
+                Assert.That(Codec.TryDecode(
+                    _transport.SentPayloads[index], out var messageId, out var seq, out _), Is.True);
+                if (messageId == requestId)
+                {
+                    return Codec.Encode(responseId, seq, response);
+                }
+            }
+
+            throw new InvalidOperationException($"No request found for response {responseId}.");
+        }
+
+        private ushort LastRequestId()
+        {
+            Assert.That(_transport.SentPayloads, Is.Not.Empty);
+            Assert.That(Codec.TryDecode(
+                _transport.SentPayloads.Last(), out var requestId, out _, out _), Is.True);
+            return requestId;
         }
     }
 }

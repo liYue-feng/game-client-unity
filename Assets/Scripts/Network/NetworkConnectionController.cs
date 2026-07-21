@@ -60,7 +60,7 @@ namespace Game.Network
                 _nextBackoffSeconds = _settings.InitialReconnectBackoffSeconds;
             }
 
-            var replacingOpenTransport = _transport != null && IsConnected;
+            var replacingOpenTransport = _transport != null && _transport.IsAlive;
             _generation++;
             if (_transport != null)
             {
@@ -150,10 +150,16 @@ namespace Game.Network
 
             if (deltaSeconds >= _heartbeatRemaining)
             {
-                _client.Send(MsgID.HeartbeatReq, new HeartbeatReq
-                {
-                    Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
-                });
+                _client.Request<HeartbeatReq, HeartbeatResp>(
+                    MsgID.HeartbeatReq,
+                    MsgID.HeartbeatResp,
+                    new HeartbeatReq
+                    {
+                        Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+                    },
+                    _ => { },
+                    _ => { },
+                    out _);
                 _heartbeatRemaining = _settings.HeartbeatIntervalSeconds;
                 return;
             }
