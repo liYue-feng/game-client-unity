@@ -144,7 +144,7 @@ The same PlayMode file must iterate every `SoundCatalog.Catalog` entry after a t
 
 ```powershell
 powershell.exe -NoProfile -Command "Invoke-Pester -Script tools/validation/CombatGeneratedAssets.Tests.ps1 -EnableExit"
-& 'D:\Unity_Soft\2022\Editor\Unity.exe' -batchmode -nographics -quit -projectPath 'E:\Own_project\game-client-unity' -runTests -testPlatform PlayMode -testFilter 'Game.Tests.PlayMode.GeneratedCombatResourceTests' -testResults 'Logs\generated-combat-resource-red.xml' -logFile 'Logs\generated-combat-resource-red.log'
+& 'D:\Unity_Soft\2022\Editor\Unity.exe' -batchmode -projectPath 'E:\Own_project\game-client-unity' -runTests -testPlatform PlayMode -testFilter 'Game.Tests.PlayMode.GeneratedCombatResourceTests' -testResults 'Logs\generated-combat-resource-red.xml' -logFile 'Logs\generated-combat-resource-red.log'
 ```
 
 Expected: Pester and the PlayMode test fail because the generator, distinct enemy PNGs, and committed WAV files do not exist; the PlayMode failure must name the missing Archer/Elite resource or SoundCatalog entry.
@@ -152,7 +152,7 @@ Expected: Pester and the PlayMode test fail because the generator, distinct enem
 Run the editor sentinel test in the same red cycle:
 
 ```powershell
-& 'D:\Unity_Soft\2022\Editor\Unity.exe' -batchmode -nographics -quit -projectPath 'E:\Own_project\game-client-unity' -runTests -testPlatform EditMode -testFilter 'Game.Editor.CombatAssetGeneratorTests.WriteIfMissing_DoesNotOverwriteExistingPngOrWav' -testResults 'Logs\combat-asset-generator-red.xml' -logFile 'Logs\combat-asset-generator-red.log'
+& 'D:\Unity_Soft\2022\Editor\Unity.exe' -batchmode -projectPath 'E:\Own_project\game-client-unity' -runTests -testPlatform EditMode -testFilter 'Game.Editor.CombatAssetGeneratorTests.WriteIfMissing_DoesNotOverwriteExistingPngOrWav' -testResults 'Logs\combat-asset-generator-red.xml' -logFile 'Logs\combat-asset-generator-red.log'
 ```
 
 Expected: the sentinel test is RED until `WriteIfMissing` exists; it must never create or modify a file below `Assets/Resources`.
@@ -266,8 +266,8 @@ foreach ($target in $targets) {
   if ($skipLog -notmatch [regex]::Escape("Skipped existing $target")) { throw "Missing skip log for $target" }
 }
 powershell.exe -NoProfile -Command "Invoke-Pester -Script tools/validation/CombatGeneratedAssets.Tests.ps1 -EnableExit"
-& 'D:\Unity_Soft\2022\Editor\Unity.exe' -batchmode -nographics -quit -projectPath 'E:\Own_project\game-client-unity' -runTests -testPlatform EditMode -testFilter 'Game.Editor.CombatAssetGeneratorTests.WriteIfMissing_DoesNotOverwriteExistingPngOrWav' -testResults 'Logs\combat-asset-generator-green.xml' -logFile 'Logs\combat-asset-generator-green.log'
-& 'D:\Unity_Soft\2022\Editor\Unity.exe' -batchmode -nographics -quit -projectPath 'E:\Own_project\game-client-unity' -runTests -testPlatform PlayMode -testFilter 'Game.Tests.PlayMode.GeneratedCombatResourceTests' -testResults 'Logs\generated-combat-resource-green.xml' -logFile 'Logs\generated-combat-resource-green.log'
+& 'D:\Unity_Soft\2022\Editor\Unity.exe' -batchmode -projectPath 'E:\Own_project\game-client-unity' -runTests -testPlatform EditMode -testFilter 'Game.Editor.CombatAssetGeneratorTests.WriteIfMissing_DoesNotOverwriteExistingPngOrWav' -testResults 'Logs\combat-asset-generator-green.xml' -logFile 'Logs\combat-asset-generator-green.log'
+& 'D:\Unity_Soft\2022\Editor\Unity.exe' -batchmode -projectPath 'E:\Own_project\game-client-unity' -runTests -testPlatform PlayMode -testFilter 'Game.Tests.PlayMode.GeneratedCombatResourceTests' -testResults 'Logs\generated-combat-resource-green.xml' -logFile 'Logs\generated-combat-resource-green.log'
 ```
 
 Expected: both generator runs exit 0, the second-run log contains `Skipped existing` for every target, byte hashes are identical, both `.png` and `.wav` sentinel cases remain byte-for-byte unchanged, and Pester plus EditMode and `GeneratedCombatResourceTests` pass. `GeneratedCombatResourceTests` proves `Resources.Load<Sprite>` returns Archer and Elite at 64 PPU after the create-only run.
@@ -315,7 +315,7 @@ For sprite-sheet source rows, give a reproducible prompt describing transparent-
 powershell.exe -NoProfile -Command "Invoke-Pester -Script tools/validation/UnityAssetIntegrity.Tests.ps1,tools/validation/CombatGeneratedAssets.Tests.ps1 -EnableExit"
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/validation/Test-UnityAssetIntegrity.ps1
 $runStartedUtc = [DateTime]::UtcNow
-& 'D:\Unity_Soft\2022\Editor\Unity.exe' -batchmode -nographics -quit -projectPath . -runTests -testPlatform PlayMode `
+& 'D:\Unity_Soft\2022\Editor\Unity.exe' -batchmode -projectPath . -runTests -testPlatform PlayMode `
   -testFilter 'Game.Tests.PlayMode.BattleCombatLoopTests;Game.Tests.PlayMode.BattleEnemyExperienceTests;Game.Tests.PlayMode.OnlineBattleCompletionTests;Game.Tests.PlayMode.BattleSettlementUiTests;Game.Tests.PlayMode.BattleVisualEvidenceTests;Game.Tests.PlayMode.BattleEnemyVisualEvidenceTests;Game.Tests.PlayMode.GeneratedCombatResourceTests' `
   -testResults 'Logs\combat-resource-playmode.xml' -logFile 'Logs\combat-resource-playmode.log'
 $screenshots = @('phase-b1-combat.png', 'phase-b1-result.png', 'phase-b2-wave-combat.png', 'phase-b2-boss-telegraph.png', 'task-6-ui-pending.png', 'task-6-ui-saved.png', 'task-6-ui-failed.png')
@@ -336,8 +336,8 @@ Open all seven fresh images under `Logs`. Confirm actual generated player/enemy 
 - [ ] **Step 4: Run full Unity suites after any evidence fix**
 
 ```powershell
-& 'D:\Unity_Soft\2022\Editor\Unity.exe' -batchmode -nographics -quit -projectPath . -runTests -testPlatform EditMode -testResults Logs\combat-resource-editmode.xml -logFile Logs\combat-resource-editmode.log
-& 'D:\Unity_Soft\2022\Editor\Unity.exe' -batchmode -nographics -quit -projectPath . -runTests -testPlatform PlayMode -testResults Logs\combat-resource-full-playmode.xml -logFile Logs\combat-resource-full-playmode.log
+& 'D:\Unity_Soft\2022\Editor\Unity.exe' -batchmode -projectPath . -runTests -testPlatform EditMode -testResults Logs\combat-resource-editmode.xml -logFile Logs\combat-resource-editmode.log
+& 'D:\Unity_Soft\2022\Editor\Unity.exe' -batchmode -projectPath . -runTests -testPlatform PlayMode -testResults Logs\combat-resource-full-playmode.xml -logFile Logs\combat-resource-full-playmode.log
 git diff --check
 $placeholderPattern = ('\bTO' + 'DO\b|\bT' + 'BD\b|imple' + 'ment later|fill in ' + 'details')
 $placeholderMatches = Select-String -Path docs/superpowers/plans/2026-07-21-combat-resource-engineering.md -Pattern $placeholderPattern
