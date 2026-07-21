@@ -20,6 +20,25 @@ function Get-CrlfNormalizedFingerprint([string]$Path) {
     return [Convert]::ToBase64String($normalized.ToArray())
 }
 
+function Test-ContainsStaleTransportDescription([string]$Content) {
+    foreach ($line in [regex]::Split($Content, '\r?\n')) {
+        if ($line -match '(?i)6[- ]bytes?|six[- ]bytes?|6\s*\u5B57\u8282|\u516D\u5B57\u8282|Length\s*=\s*6\s*\+') {
+            return $true
+        }
+        if ($line -match '(?i)Length.*MsgID' -and $line -notmatch '(?i)Seq') {
+            return $true
+        }
+
+        $compact = [regex]::Replace($line, '\s+', '')
+        $unsequencedTwoFieldFrame = '(?i)(?:4B|4bytes?|4\u5B57\u8282)(?:Length|(?:\u603B)?\u957F\u5EA6)\+(?:2B|2bytes?|2\u5B57\u8282)(?:MsgID|MessageID|\u6D88\u606F(?:ID|\u7F16\u53F7))'
+        if ($compact -notmatch '(?i)(?:Seq|\u5E8F\u5217)' -and $compact -match $unsequencedTwoFieldFrame) {
+            return $true
+        }
+    }
+
+    return $false
+}
+
 $repoParent = Split-Path $repoRoot -Parent
 $isWorktree = (Split-Path $repoParent -Leaf) -eq '.worktrees'
 $explicitBackendRoot = if ($isWorktree) { $null } else { Join-Path $repoParent 'game-server-go' }
@@ -32,8 +51,21 @@ Describe 'Authoritative transport documentation' {
     It 'documents the sequenced protobuf frame in CLAUDE.md' {
         $content = [IO.File]::ReadAllText((Join-Path $repoRoot 'CLAUDE.md'))
         $content | Should Match ([regex]::Escape($transportContract))
-        $content | Should Not Match '(?i)6[- ]byte|six[- ]byte|6\s*字节|六字节|Length\s*=\s*6\s*\+|4B长度\s*\+\s*2B'
-        $content | Should Not Match '(?im)^(?=.*Length)(?=.*MsgID)(?!.*Seq).*$'
+        (Test-ContainsStaleTransportDescription -Content $content) | Should Be $false
+    }
+
+    foreach ($case in @(
+        @{ Name = 'English words'; Content = 'Frame header: 4 bytes length + 2 bytes message ID.' },
+        @{ Name = 'spaced Chinese abbreviations'; Content = [regex]::Unescape('\u5E27\u5934\uFF1A4B \u957F\u5EA6 + 2B \u6D88\u606F ID\u3002') },
+        @{ Name = 'full Chinese units'; Content = [regex]::Unescape('\u5E27\u5934\uFF1A4 \u5B57\u8282\u957F\u5EA6 + 2 \u5B57\u8282\u6D88\u606F ID\u3002') }
+    )) {
+        It "rejects the $($case.Name) unsequenced frame description" {
+            (Test-ContainsStaleTransportDescription -Content $case.Content) | Should Be $true
+        }
+    }
+
+    It 'allows a complete sequenced frame description' {
+        (Test-ContainsStaleTransportDescription -Content 'Frame header: 4B Length + 2B MsgID + 4B Seq.') | Should Be $false
     }
 }
 
