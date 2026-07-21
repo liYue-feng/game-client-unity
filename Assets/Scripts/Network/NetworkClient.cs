@@ -75,8 +75,7 @@ namespace Game.Network
 
         public bool IsTransportTerminationFailure(string reason)
         {
-            return (_transport == null || !_transport.IsAlive) &&
-                   string.Equals(reason, TransportDisconnectedError, StringComparison.Ordinal);
+            return string.Equals(reason, TransportDisconnectedError, StringComparison.Ordinal);
         }
 
         public event Action OnConnected;

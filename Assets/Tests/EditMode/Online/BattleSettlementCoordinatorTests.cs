@@ -353,6 +353,55 @@ namespace Game.Tests.EditMode.Online
         }
 
         [Test]
+        public void SynchronouslyAliveReplacementKeepsOldCombatRecoverableWithSameRunAndNewSeq()
+        {
+            var client = new NetworkClient();
+            var factory = new FakeWebSocketTransportFactory();
+            var dispatcher = new FakeNetworkDispatcher();
+            var settings = NetworkTestSettings.Create();
+            var controller = new NetworkConnectionController(client, factory, dispatcher, settings);
+            var archive = new ArchiveSessionService(client);
+            var battle = new BattleSettlementCoordinator(client, archive);
+            client.OnDisconnected += () =>
+                battle.SetSessionState(OnlineSessionState.Reconnecting, 2);
+
+            try
+            {
+                controller.Connect(settings.ServerUrl);
+                var firstTransport = factory.LastTransport;
+                firstTransport.RaiseOpened();
+                dispatcher.PumpAll();
+                battle.SetSessionState(OnlineSessionState.Ready, 1);
+                battle.Settle(BattleRunOutcome.Victory, ResultData(), _ => { });
+                Assert.That(Codec.TryDecode(
+                    firstTransport.SentPayloads.Single(), out _, out var firstSeq, out var firstBody), Is.True);
+                var firstRequest = CombatResultReq.Parser.ParseFrom(firstBody);
+
+                factory.CreateAction = transport => transport.ConnectAction = transport.RaiseOpened;
+                controller.Connect("ws://replacement.example/ws");
+                Assert.That(factory.LastTransport.IsAlive, Is.True);
+                Assert.That(battle.State, Is.EqualTo(BattleSettlementState.Pending));
+
+                dispatcher.PumpAll();
+                battle.SetSessionState(OnlineSessionState.Ready, 2);
+                var replacement = factory.LastTransport;
+                Assert.That(Codec.TryDecode(
+                    replacement.SentPayloads.Single(), out _, out var secondSeq, out var secondBody), Is.True);
+                var secondRequest = CombatResultReq.Parser.ParseFrom(secondBody);
+                Assert.That(secondSeq, Is.Not.Zero.And.Not.EqualTo(firstSeq));
+                Assert.That(secondRequest.RunId, Is.EqualTo(firstRequest.RunId));
+            }
+            finally
+            {
+                battle.Dispose();
+                archive.Dispose();
+                controller.Dispose();
+                client.Dispose();
+                UnityEngine.Object.DestroyImmediate(settings);
+            }
+        }
+
+        [Test]
         public void SavedRunReleasesTheCoordinatorForTheNextBattle()
         {
             _coordinator.Settle(BattleRunOutcome.Victory, ResultData(), _ => { });

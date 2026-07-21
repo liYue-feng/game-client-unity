@@ -17,6 +17,8 @@ namespace Game.Tests.EditMode.Network.TestDoubles
 
         public Action<byte[]> SendAction { get; set; }
 
+        public Action ConnectAction { get; set; }
+
         public Exception SendException { get; set; }
 
         public int ConnectCalls { get; private set; }
@@ -28,6 +30,7 @@ namespace Game.Tests.EditMode.Network.TestDoubles
         public void ConnectAsync()
         {
             ConnectCalls++;
+            ConnectAction?.Invoke();
         }
 
         public void Send(byte[] payload)

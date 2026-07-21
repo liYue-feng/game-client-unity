@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using Game.Network;
 
@@ -11,10 +12,13 @@ namespace Game.Tests.EditMode.Network.TestDoubles
 
         public FakeWebSocketTransport LastTransport => _created.Count == 0 ? null : _created[_created.Count - 1];
 
+        public Action<FakeWebSocketTransport> CreateAction { get; set; }
+
         public IWebSocketTransport Create(string url)
         {
             var transport = new FakeWebSocketTransport();
             _created.Add(transport);
+            CreateAction?.Invoke(transport);
             return transport;
         }
     }

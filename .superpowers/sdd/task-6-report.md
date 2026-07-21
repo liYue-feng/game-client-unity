@@ -21,7 +21,7 @@ STATUS: COMPLETE
   - Owns the active combat sequence and cancels it before forced resend/retry.
   - Allocates a new transport sequence while retaining the same protobuf `run_id`.
   - Ignores late success and `ErrorResp` frames for the cancelled sequence and preserves archive-only retry after an accepted combat response.
-  - Treats only a canonical transport-termination failure on a no-longer-alive transport as recoverable; live-transport protocol, server, and business failures remain terminal.
+  - Treats only the network layer's exact transport-termination failure provenance as recoverable; live-transport protocol, server, and business failures remain terminal even when a replacement is already alive.
 - `Assets/Scripts/Network/NetworkClient.cs`
   - Associates pending requests with their accepting transport so termination drains only that generation's requests.
   - Exposes a narrow transport-termination failure classifier for session-owned combat recovery.
@@ -91,9 +91,22 @@ All Unity invocations used graphical batch mode: `-batchmode` was used, with no 
 10. Fresh `NetworkClientTests` verification after pending transport association.
     - XML: `Logs/task6-review-networkclient-final.xml`
     - Result: total 21, passed 21, failed 0, skipped 0.
+11. Synchronously alive replacement provenance RED.
+    - XML: `Logs/task6-review4-red.xml`
+    - Result: total 1, passed 0, failed 1, skipped 0.
+    - Expected failure: old combat became terminal because classification read the already-alive replacement transport.
+12. Replacement provenance GREEN plus actual-disconnect and terminal-`ErrorResp` counterexamples.
+    - XML: `Logs/task6-review4-green.xml`
+    - Result: total 3, passed 3, failed 0, skipped 0.
+13. Full Task 6 broad gate after the replacement provenance fix.
+    - XML: `Logs/task6-review4-broad.xml`
+    - Result: total 92, passed 92, failed 0, skipped 0.
+14. `NetworkClientTests` after the replacement provenance fix.
+    - XML: `Logs/task6-review4-networkclient.xml`
+    - Result: total 21, passed 21, failed 0, skipped 0.
 
 ## Self-Review Concerns
 
 - Task 7 still owns manager/payment/GM migration and removal of the temporary legacy transport APIs; this task did not modify or hide that debt.
 - Heartbeat deliberately has no request timer and permits only one unresolved request. Later cadence ticks wait for matching completion, cancellation, disconnect, replacement, or disposal.
-- Unity logs retain existing licensing/CDN timeout and malformed `.meta` GUID warnings; the corrective broad XML is 91/91 with no test failures.
+- Unity logs retain existing licensing/CDN timeout and malformed `.meta` GUID warnings; the latest corrective broad XML is 92/92 with no test failures.
