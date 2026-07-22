@@ -38,6 +38,18 @@ def _read_ledger(ledger_path: Path) -> dict:
     return json.loads(ledger_path.read_text(encoding="utf-8"), parse_float=Decimal)
 
 
+def _release_lock(lock_path: Path, deadline: float) -> None:
+    while True:
+        try:
+            os.rmdir(lock_path)
+        except PermissionError as error:
+            if time.monotonic() >= deadline:
+                raise BudgetError("timed out releasing budget lock") from error
+            time.sleep(_LOCK_RETRY_SECONDS)
+        else:
+            return
+
+
 @contextmanager
 def _transaction_lock(ledger_path: Path):
     """Serialize the read-check-write budget transaction across processes."""
@@ -46,17 +58,26 @@ def _transaction_lock(ledger_path: Path):
     while True:
         try:
             os.mkdir(lock_path)
-        except FileExistsError:
+        except (FileExistsError, PermissionError):
             if time.monotonic() >= deadline:
                 raise BudgetError("timed out waiting for budget lock")
             time.sleep(_LOCK_RETRY_SECONDS)
         else:
             break
 
+    transaction_error = None
     try:
         yield
+    except BaseException as error:
+        transaction_error = error
+        raise
     finally:
-        os.rmdir(lock_path)
+        try:
+            _release_lock(lock_path, deadline)
+        except BudgetError as error:
+            if transaction_error is None:
+                raise
+            transaction_error.add_note(f"budget lock cleanup failed: {error}")
 
 
 def reserve_budget(ledger_path: Path, operation_id: str, estimate_usd: Decimal) -> dict:

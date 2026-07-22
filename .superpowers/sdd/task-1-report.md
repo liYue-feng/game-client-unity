@@ -103,6 +103,38 @@ $env:PYTHONDONTWRITEBYTECODE='1'
 
 Results: focused budget suite `Ran 5 tests` / `OK`; complete art-tools suite `Ran 13 tests` / `OK`.
 
+## Windows PermissionError Contention Fix
+
+The lock directory solved stale reads, but a Windows re-review observed `PermissionError` while concurrent processes created or removed that directory. The original lock treated only `FileExistsError` as contention and released with one `os.rmdir` call, exposing raw `PermissionError` instead of the budget protocol's bounded retry behavior.
+
+RED command:
+
+```powershell
+$env:PYTHONDONTWRITEBYTECODE='1'
+& 'C:\Users\23906\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe' -m unittest tools.art.tests.test_imagegen_budget -v
+```
+
+Result before the fix: `Ran 8 tests` with three expected errors. Acquisition, release, and release-after-body-failure tests each exposed raw `PermissionError: lock directory is busy`.
+
+The lock now treats `PermissionError` as acquisition contention inside the same 10-second retry protocol. Release retries transient `PermissionError` through that deadline; a permanent cleanup failure raises `BudgetError` after a successful transaction, while a transaction failure remains the primary exception and records the cleanup failure as a note.
+
+GREEN commands:
+
+```powershell
+$env:PYTHONDONTWRITEBYTECODE='1'
+$python = 'C:\Users\23906\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe'
+$completed = 0
+foreach ($run in 1..20) {
+    $output = & $python -m unittest tools.art.tests.test_imagegen_budget -q 2>&1
+    if ($LASTEXITCODE -ne 0) { $output; throw "focused budget run $run failed" }
+    $completed += 1
+}
+"focused_runs=$completed tests_per_run=8 total_tests=$($completed * 8) result=OK"
+& $python -m unittest discover -s tools/art/tests -v
+```
+
+Results: 20 consecutive focused runs passed for `160/160` test executions; the complete art-tools suite passed `Ran 16 tests` / `OK`.
+
 ## Commits
 
 - Code, data, and tests: `b96d18cb288b84cdd8da8247663442fe0341b25e` (`build: add cost-guarded combat art pipeline`).

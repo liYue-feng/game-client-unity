@@ -75,6 +75,82 @@ class ReserveBudgetTests(unittest.TestCase):
             with self.assertRaisesRegex(BudgetError, "fractional digits"):
                 reserve_budget(ledger, "overflow", Decimal("20.004"))
 
+    def test_reserve_retries_transient_permission_error_while_acquiring_lock(self):
+        with tempfile.TemporaryDirectory() as directory:
+            ledger = Path(directory) / "budget.json"
+            ledger.write_text(
+                '{"hard_limit_usd":"20.00","reservations":[]}', encoding="utf-8"
+            )
+            original_mkdir = os.mkdir
+            attempts = 0
+
+            def mkdir_with_one_transient_permission_error(path):
+                nonlocal attempts
+                attempts += 1
+                if attempts == 1:
+                    raise PermissionError("lock directory is busy")
+                return original_mkdir(path)
+
+            with patch(
+                "tools.art.imagegen_budget.os.mkdir",
+                side_effect=mkdir_with_one_transient_permission_error,
+            ), patch("tools.art.imagegen_budget.time.sleep"):
+                reserve_budget(ledger, "permission-acquire", Decimal("0.02"))
+
+            self.assertEqual(attempts, 2)
+            self.assertFalse(ledger.with_name("budget.json.lock").exists())
+
+    def test_reserve_retries_transient_permission_error_while_releasing_lock(self):
+        with tempfile.TemporaryDirectory() as directory:
+            ledger = Path(directory) / "budget.json"
+            ledger.write_text(
+                '{"hard_limit_usd":"20.00","reservations":[]}', encoding="utf-8"
+            )
+            original_rmdir = os.rmdir
+            attempts = 0
+
+            def rmdir_with_one_transient_permission_error(path):
+                nonlocal attempts
+                attempts += 1
+                if attempts == 1:
+                    raise PermissionError("lock directory is busy")
+                return original_rmdir(path)
+
+            with patch(
+                "tools.art.imagegen_budget.os.rmdir",
+                side_effect=rmdir_with_one_transient_permission_error,
+            ), patch("tools.art.imagegen_budget.time.sleep"):
+                reserve_budget(ledger, "permission-release", Decimal("0.02"))
+
+            self.assertEqual(attempts, 2)
+            self.assertFalse(ledger.with_name("budget.json.lock").exists())
+
+    def test_release_retry_preserves_transaction_exception(self):
+        with tempfile.TemporaryDirectory() as directory:
+            ledger = Path(directory) / "budget.json"
+            ledger.write_text(
+                '{"hard_limit_usd":"20.00","reservations":[]}', encoding="utf-8"
+            )
+            original_rmdir = os.rmdir
+            attempts = 0
+
+            def rmdir_with_one_transient_permission_error(path):
+                nonlocal attempts
+                attempts += 1
+                if attempts == 1:
+                    raise PermissionError("lock directory is busy")
+                return original_rmdir(path)
+
+            with patch("tools.art.imagegen_budget._read_ledger", side_effect=RuntimeError("body failed")), patch(
+                "tools.art.imagegen_budget.os.rmdir",
+                side_effect=rmdir_with_one_transient_permission_error,
+            ), patch("tools.art.imagegen_budget.time.sleep"):
+                with self.assertRaisesRegex(RuntimeError, "body failed"):
+                    reserve_budget(ledger, "body-failure", Decimal("0.02"))
+
+            self.assertEqual(attempts, 2)
+            self.assertFalse(ledger.with_name("budget.json.lock").exists())
+
     def test_concurrent_reservations_preserve_hard_limit_and_clean_transaction_files(self):
         with tempfile.TemporaryDirectory() as directory:
             ledger = Path(directory) / "budget.json"
