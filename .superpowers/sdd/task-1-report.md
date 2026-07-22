@@ -11,6 +11,7 @@ Status: complete with operational concerns noted below.
 - `tools/art/render_combat_prompt.py`
 - `tools/art/build_combat_sheet.py`
 - `tools/art/validate_combat_art.py`
+- `tools/art/.gitignore`
 - `tools/art/tests/test_imagegen_budget.py`
 - `tools/art/tests/test_render_combat_prompt.py`
 - `tools/art/tests/test_build_combat_sheet.py`
@@ -77,6 +78,31 @@ Result: all succeeded; the generated JSON files parsed and the Task 1 diff had n
 - The validator rejects wrong dimensions, missing alpha, opaque corners, edge-touching alpha, identical consecutive frames, and forbidden filename tokens.
 - Independent read-only review found the sub-cent cap-bypass issue above; it was fixed with a RED-GREEN regression test before final verification.
 
+## Interprocess Serialization Fix
+
+An independent review found that `os.replace` only made the final file replacement atomic. It did not serialize the preceding ledger read, cap check, and temporary-file write, so parallel callers could approve the same remaining budget and race on `budget.json.tmp`.
+
+RED regression command:
+
+```powershell
+$env:PYTHONDONTWRITEBYTECODE='1'
+& 'C:\Users\23906\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe' -m unittest tools.art.tests.test_imagegen_budget -v
+```
+
+Result before the lock: `test_concurrent_reservations_preserve_hard_limit_and_clean_transaction_files` failed with `7 != 5` successful `$0.02` reservations against a ledger with `$19.90` already reserved.
+
+The fix uses an atomically created `budget.json.lock` directory with a 10-second bounded acquisition loop. It holds that lock across the complete read/check/write transaction and removes it in `finally`. The regression starts ten spawned workers against the `$19.90` ledger, proves exactly five successes and five `BudgetError` failures, confirms unique operation IDs and a final `$20.00` total, then verifies valid JSON with no leftover `.tmp` or `.lock` path.
+
+GREEN commands:
+
+```powershell
+$env:PYTHONDONTWRITEBYTECODE='1'
+& 'C:\Users\23906\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe' -m unittest tools.art.tests.test_imagegen_budget -v
+& 'C:\Users\23906\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe' -m unittest discover -s tools/art/tests -v
+```
+
+Results: focused budget suite `Ran 5 tests` / `OK`; complete art-tools suite `Ran 13 tests` / `OK`.
+
 ## Commits
 
 - Code, data, and tests: `b96d18cb288b84cdd8da8247663442fe0341b25e` (`build: add cost-guarded combat art pipeline`).
@@ -85,3 +111,4 @@ Result: all succeeded; the generated JSON files parsed and the Task 1 diff had n
 
 - The mandated dry-run helper printed that `OPENAI_API_KEY` is set, but did not print its value. It made no API call.
 - Python created untracked `tools/art/**/__pycache__` files during earlier verification. Workspace policy rejected their removal; they were intentionally excluded from staging and are not part of either Task 1 commit.
+- `tools/art/.gitignore` now ignores `__pycache__/` and `*.pyc`, so future local Python verification does not dirty the worktree with bytecode artifacts.

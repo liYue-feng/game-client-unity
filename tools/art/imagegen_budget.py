@@ -3,12 +3,18 @@
 import argparse
 import json
 import os
+import time
+from contextlib import contextmanager
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 
 class BudgetError(ValueError):
     """Raised when a budget reservation is invalid or exceeds its cap."""
+
+
+_LOCK_TIMEOUT_SECONDS = 10.0
+_LOCK_RETRY_SECONDS = 0.02
 
 
 def _money(value: object) -> Decimal:
@@ -32,6 +38,27 @@ def _read_ledger(ledger_path: Path) -> dict:
     return json.loads(ledger_path.read_text(encoding="utf-8"), parse_float=Decimal)
 
 
+@contextmanager
+def _transaction_lock(ledger_path: Path):
+    """Serialize the read-check-write budget transaction across processes."""
+    lock_path = ledger_path.with_name(f"{ledger_path.name}.lock")
+    deadline = time.monotonic() + _LOCK_TIMEOUT_SECONDS
+    while True:
+        try:
+            os.mkdir(lock_path)
+        except FileExistsError:
+            if time.monotonic() >= deadline:
+                raise BudgetError("timed out waiting for budget lock")
+            time.sleep(_LOCK_RETRY_SECONDS)
+        else:
+            break
+
+    try:
+        yield
+    finally:
+        os.rmdir(lock_path)
+
+
 def reserve_budget(ledger_path: Path, operation_id: str, estimate_usd: Decimal) -> dict:
     """Atomically add one operation reservation to a JSON budget ledger."""
     if not operation_id:
@@ -41,21 +68,22 @@ def reserve_budget(ledger_path: Path, operation_id: str, estimate_usd: Decimal) 
     if estimate <= 0:
         raise BudgetError("estimate_usd must be positive")
 
-    ledger = _read_ledger(ledger_path)
-    reservations = ledger.setdefault("reservations", [])
-    if any(reservation.get("operation_id") == operation_id for reservation in reservations):
-        raise BudgetError("duplicate operation_id")
+    with _transaction_lock(ledger_path):
+        ledger = _read_ledger(ledger_path)
+        reservations = ledger.setdefault("reservations", [])
+        if any(reservation.get("operation_id") == operation_id for reservation in reservations):
+            raise BudgetError("duplicate operation_id")
 
-    hard_limit = _money(ledger["hard_limit_usd"])
-    reserved = sum((_money(item["estimate_usd"]) for item in reservations), Decimal("0.00"))
-    if reserved + estimate > hard_limit:
-        raise BudgetError("hard limit exceeded")
+        hard_limit = _money(ledger["hard_limit_usd"])
+        reserved = sum((_money(item["estimate_usd"]) for item in reservations), Decimal("0.00"))
+        if reserved + estimate > hard_limit:
+            raise BudgetError("hard limit exceeded")
 
-    ledger["hard_limit_usd"] = _money_text(hard_limit)
-    reservations.append({"operation_id": operation_id, "estimate_usd": _money_text(estimate)})
-    temporary_path = ledger_path.with_name(f"{ledger_path.name}.tmp")
-    temporary_path.write_text(json.dumps(ledger, indent=2) + "\n", encoding="utf-8")
-    os.replace(temporary_path, ledger_path)
+        ledger["hard_limit_usd"] = _money_text(hard_limit)
+        reservations.append({"operation_id": operation_id, "estimate_usd": _money_text(estimate)})
+        temporary_path = ledger_path.with_name(f"{ledger_path.name}.tmp")
+        temporary_path.write_text(json.dumps(ledger, indent=2) + "\n", encoding="utf-8")
+        os.replace(temporary_path, ledger_path)
     return ledger
 
 
