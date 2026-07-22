@@ -106,6 +106,7 @@ Results: focused budget suite `Ran 5 tests` / `OK`; complete art-tools suite `Ra
 ## Commits
 
 - Code, data, and tests: `b96d18cb288b84cdd8da8247663442fe0341b25e` (`build: add cost-guarded combat art pipeline`).
+- Serialization fix, concurrent regression, and bytecode ignore rule: `c2268b7` (`fix: serialize imagegen budget reservations`).
 
 ## Concerns
 
