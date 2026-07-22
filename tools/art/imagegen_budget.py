@@ -73,8 +73,8 @@ def _transaction_lock(ledger_path: Path):
         raise
     finally:
         try:
-            _release_lock(lock_path, deadline)
-        except BudgetError as error:
+            _release_lock(lock_path, time.monotonic() + _LOCK_TIMEOUT_SECONDS)
+        except BaseException as error:
             if transaction_error is None:
                 raise
             transaction_error.add_note(f"budget lock cleanup failed: {error}")

@@ -135,10 +135,43 @@ foreach ($run in 1..20) {
 
 Results: 20 consecutive focused runs passed for `160/160` test executions; the complete art-tools suite passed `Ran 16 tests` / `OK`.
 
+## Final Lock Cleanup Correction
+
+A final review found that cleanup inherited the acquisition deadline, so a long transaction could leave no retry window for a transient release `PermissionError`. It also found that a non-`BudgetError` cleanup failure could mask the original transaction exception.
+
+RED command:
+
+```powershell
+$env:PYTHONDONTWRITEBYTECODE='1'
+& 'C:\Users\23906\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe' -m unittest tools.art.tests.test_imagegen_budget -v
+```
+
+Result before the correction: `Ran 10 tests` with two expected errors. A delayed transaction made the first release retry immediately time out, and `OSError: release failed` replaced `RuntimeError: body failed`.
+
+Cleanup now receives a fresh 10-second deadline. Any cleanup exception propagates after a successful transaction so a stale lock is not silent; when the transaction body already failed, that original exception remains primary and receives a `budget lock cleanup failed: ...` note. The focused tests deterministically cover the fresh deadline, a transient release retry, and permanent cleanup failure with preserved transaction semantics.
+
+GREEN commands:
+
+```powershell
+$env:PYTHONDONTWRITEBYTECODE='1'
+$python = 'C:\Users\23906\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe'
+$completed = 0
+foreach ($run in 1..20) {
+    $output = & $python -m unittest tools.art.tests.test_imagegen_budget -q 2>&1
+    if ($LASTEXITCODE -ne 0) { $output; throw "focused budget run $run failed" }
+    $completed += 1
+}
+"focused_runs=$completed tests_per_run=10 total_tests=$($completed * 10) result=OK"
+& $python -m unittest discover -s tools/art/tests -v
+```
+
+Results: 20 consecutive focused runs passed for `200/200` test executions; the complete art-tools suite passed `Ran 18 tests` / `OK`.
+
 ## Commits
 
 - Code, data, and tests: `b96d18cb288b84cdd8da8247663442fe0341b25e` (`build: add cost-guarded combat art pipeline`).
 - Serialization fix, concurrent regression, and bytecode ignore rule: `c2268b7` (`fix: serialize imagegen budget reservations`).
+- Windows contention retry and deterministic acquisition/release tests: `820beeb` (`fix: retry imagegen budget lock contention`).
 
 ## Concerns
 

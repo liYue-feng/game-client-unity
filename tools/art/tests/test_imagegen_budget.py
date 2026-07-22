@@ -151,6 +151,53 @@ class ReserveBudgetTests(unittest.TestCase):
             self.assertEqual(attempts, 2)
             self.assertFalse(ledger.with_name("budget.json.lock").exists())
 
+    def test_release_uses_a_fresh_deadline_after_a_delayed_transaction(self):
+        with tempfile.TemporaryDirectory() as directory:
+            ledger = Path(directory) / "budget.json"
+            ledger.write_text(
+                '{"hard_limit_usd":"20.00","reservations":[]}', encoding="utf-8"
+            )
+            original_rmdir = os.rmdir
+            attempts = 0
+
+            def rmdir_with_one_transient_permission_error(path):
+                nonlocal attempts
+                attempts += 1
+                if attempts == 1:
+                    raise PermissionError("lock directory is busy")
+                return original_rmdir(path)
+
+            with patch(
+                "tools.art.imagegen_budget.os.rmdir",
+                side_effect=rmdir_with_one_transient_permission_error,
+            ), patch("tools.art.imagegen_budget.time.monotonic", side_effect=[100.0, 120.0, 120.0]), patch(
+                "tools.art.imagegen_budget.time.sleep"
+            ):
+                reserve_budget(ledger, "fresh-release-deadline", Decimal("0.02"))
+
+            self.assertEqual(attempts, 2)
+            self.assertFalse(ledger.with_name("budget.json.lock").exists())
+
+    def test_permanent_cleanup_failure_preserves_and_annotates_transaction_exception(self):
+        with tempfile.TemporaryDirectory() as directory:
+            ledger = Path(directory) / "budget.json"
+            ledger.write_text(
+                '{"hard_limit_usd":"20.00","reservations":[]}', encoding="utf-8"
+            )
+
+            with patch("tools.art.imagegen_budget._read_ledger", side_effect=RuntimeError("body failed")), patch(
+                "tools.art.imagegen_budget.os.rmdir",
+                side_effect=OSError("release failed"),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "body failed") as captured:
+                    reserve_budget(ledger, "permanent-release-failure", Decimal("0.02"))
+
+            self.assertIn(
+                "budget lock cleanup failed: release failed",
+                captured.exception.__notes__,
+            )
+            self.assertTrue(ledger.with_name("budget.json.lock").exists())
+
     def test_concurrent_reservations_preserve_hard_limit_and_clean_transaction_files(self):
         with tempfile.TemporaryDirectory() as directory:
             ledger = Path(directory) / "budget.json"
