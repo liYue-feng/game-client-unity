@@ -1,70 +1,87 @@
-# Task 1 Report
+# Task 1 Report: Cost Guard, Prompt Catalog, and Sprite-Sheet Tooling
 
-STATUS: DONE_WITH_CONCERNS
+Status: complete with operational concerns noted below.
 
-## Changes
+## Changed Files
 
-Server worktree (`E:/Own_project/game-server-go/.worktrees/sequenced-protobuf-transport`):
+- `SourceArt/Generated/budget.json`
+- `SourceArt/Generated/manifest.json`
+- `SourceArt/Generated/prompt-catalog.json`
+- `tools/art/imagegen_budget.py`
+- `tools/art/render_combat_prompt.py`
+- `tools/art/build_combat_sheet.py`
+- `tools/art/validate_combat_art.py`
+- `tools/art/tests/test_imagegen_budget.py`
+- `tools/art/tests/test_render_combat_prompt.py`
+- `tools/art/tests/test_build_combat_sheet.py`
+- `tools/art/tests/test_validate_combat_art.py`
 
-- Moved the complete canonical schema to `proto/game.proto`.
-- Regenerated `internal/protocolpb/game.pb.go` locally with Go generator v1.36.11.
-- Converted `tools/protobuf/Generate-Protocol.ps1` to Go-only local generation.
-- Added canonical schema, sibling hash, generated-output, and legacy-name checks to `tools/protobuf/Generate-Protocol.Tests.ps1` and `Verify-Protocol.ps1`.
-- Updated `AGENTS.md`, `README.md`, and `CLAUDE.md` ownership/generation references.
-
-Client worktree (`E:/Own_project/game-client-unity/.worktrees/sequenced-protobuf-transport`):
-
-- Added byte-identical `proto/game.proto`.
-- Added local `tools/protobuf/Generate-Protocol.ps1` pinned to protoc 35.0 and Google.Protobuf 3.35.1.
-- Renamed generated staging/runtime outputs and metadata from `Messages.cs` to `Game.cs` and regenerated both copies.
-- Added canonical schema, sibling hash, CRLF-normalized output, generated-output, and legacy-name checks to `GeneratedProtocol.Tests.ps1` and `Verify-GeneratedProtocol.ps1`.
-- Updated `Assets/Scripts/Protocol/README.md` and `CLAUDE.md`.
-
-## RED
-
-Commands:
+## RED Evidence
 
 ```powershell
-Set-Location E:\Own_project\game-server-go
-powershell.exe -NoProfile -Command "Invoke-Pester -Script tools/protobuf/Generate-Protocol.Tests.ps1 -EnableExit"
-Set-Location E:\Own_project\game-client-unity
-powershell.exe -NoProfile -Command "Invoke-Pester -Script tools/protobuf/GeneratedProtocol.Tests.ps1 -EnableExit"
+& 'C:\Users\23906\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe' -m unittest tools.art.tests.test_imagegen_budget -v
 ```
 
-Both suites failed for the intended missing-feature reason: `proto/game.proto` did not exist. The server suite had 2 failing new contract tests and 5 existing passes; the client suite had 2 failing new contract tests and 7 existing passes.
+Result: failed as intended before implementation with `ModuleNotFoundError: No module named 'tools.art.imagegen_budget'`.
 
-## GREEN
+```powershell
+& 'C:\Users\23906\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe' -m unittest discover -s tools/art/tests -v
+```
 
-- Server Pester: `Passed: 7 Failed: 0`.
-- Client Pester: `Passed: 10 Failed: 0`.
-- `go test ./...`: all packages passed.
-- Server and client generators completed with `protoc=35.0`; client also reported the pinned Google.Protobuf source hash.
-- Both verifiers passed with explicit sibling roots and with automatic sibling discovery.
-- Legacy scan `rg -n "messages\.proto|messages\.pb\.go|Generated[/\\]Messages\.cs" . -g '!docs/superpowers/**'`: `NO_MATCHES` in both repositories.
-- `git diff --check` and staged diff checks passed.
+Result: failed as intended before tooling implementation with missing-module errors for `tools.art.build_combat_sheet`, `tools.art.render_combat_prompt`, and `tools.art.validate_combat_art`; the three existing budget tests passed.
+
+Independent review also exposed a cap-bypass regression: `Decimal("20.004")` was accepted against a `20.00` limit because the supplied amount was rounded before comparison. A test requiring `BudgetError` for sub-cent values failed before the fix, then passed after exact-cent validation was added.
+
+## GREEN Verification
+
+Prerequisite installed with the mandated bundled runtime:
+
+```powershell
+& 'C:\Users\23906\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe' -m pip install openai
+& 'C:\Users\23906\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe' -c "import openai, PIL; print(openai.__version__); print(PIL.__version__)"
+```
+
+Result: `openai 2.46.0`, `Pillow 12.2.0`; no key value was printed.
+
+Fresh final verification used the same mandated runtime with bytecode generation disabled:
+
+```powershell
+$env:PYTHONDONTWRITEBYTECODE='1'
+& 'C:\Users\23906\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe' -m unittest discover -s tools/art/tests -v
+```
+
+Result: `Ran 12 tests in 0.040s` and `OK`.
+
+```powershell
+$env:PYTHONDONTWRITEBYTECODE='1'
+& 'C:\Users\23906\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe' 'C:\Users\23906\.codex\skills\.system\imagegen\scripts\image_gen.py' generate --prompt 'cost guard dry run' --quality low --size 1024x1024 --out tmp/imagegen/dry-run.png --dry-run
+```
+
+Result: exited 0, printed the `gpt-image-2` generation payload for `tmp\\imagegen\\dry-run.png`, and made no API call.
+
+Additional checks:
+
+```powershell
+& 'C:\Users\23906\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe' -m py_compile tools/art/imagegen_budget.py tools/art/render_combat_prompt.py tools/art/build_combat_sheet.py tools/art/validate_combat_art.py
+& 'C:\Users\23906\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe' -m json.tool SourceArt/Generated/budget.json
+git diff --check
+```
+
+Result: all succeeded; the generated JSON files parsed and the Task 1 diff had no whitespace errors.
+
+## Self-Review
+
+- Budget reservations use `Decimal`, reject non-positive, duplicate, sub-cent, and cap-exceeding estimates, serialize fixed two-decimal strings, and write through `budget.json.tmp` with `os.replace`.
+- The renderer includes the catalog action plus every fixed prompt invariant.
+- The packer uses integer grid boundaries, chronological order, RGBA output, and a one-pixel transparent safety margin.
+- The validator rejects wrong dimensions, missing alpha, opaque corners, edge-touching alpha, identical consecutive frames, and forbidden filename tokens.
+- Independent read-only review found the sub-cent cap-bypass issue above; it was fixed with a RED-GREEN regression test before final verification.
 
 ## Commits
 
-- Server: `f83b1f7` (`build: localize canonical game protobuf`).
-- Client: amended from `9a819f5`; the final client SHA is the commit containing this report.
+- Code, data, and tests: `b96d18cb288b84cdd8da8247663442fe0341b25e` (`build: add cost-guarded combat art pipeline`).
 
-## Hashes and drift
+## Concerns
 
-- Server `proto/game.proto` SHA-256: `F874C64F1C0F121197DA1BE13A79FD88E6F6460ECE1172263C8EE360573BB2DE`.
-- Client `proto/game.proto` SHA-256: `F874C64F1C0F121197DA1BE13A79FD88E6F6460ECE1172263C8EE360573BB2DE`.
-- Server generated Go output SHA-256: `6494C141FB350030DEE6F6DF070693A7FC7FBFE98F823C4565F5A0ADF1855BC2`.
-- Client generated staging C# output SHA-256: `24CD58483339661D1CDCC4D45F4A39A50C7C25B592F9BD1EA6DD86EAC3C19F08`.
-- Staging/runtime `Game.cs` drift check passed using CRLF-only normalization.
-
-## Self-audit concerns
-
-- Unity Editor compilation was not run; Task 1 verification is limited to pinned protoc generation, Pester contracts, generated-output drift, and the server Go suite.
-- No independent review agent was available because all agent slots were occupied; the implementation received a rename-aware staged self-review and fresh verification.
-
-## Review fix: local toolchain ownership
-
-- Server commit: `b7b2bab` (`docs: clarify local protobuf toolchains`).
-- Updated only the server `README.md` toolchain paragraph: the server local generator validates `protoc 35.0` and `protoc-gen-go v1.36.11` and writes only Go; `Google.Protobuf 3.35.1` and NuGet input verification belong to the Unity local generator and cross-repository toolchain.
-- Verification command: `rg -n "服务端本地生成器|Google\.Protobuf 3\.35\.1|NuGet|protoc-gen-go v1\.36\.11" README.md`.
-- Verification result: one accurate match at server `README.md:155`.
-- Whitespace validation: `git diff --check` passed before commit.
+- The mandated dry-run helper printed that `OPENAI_API_KEY` is set, but did not print its value. It made no API call.
+- Python created untracked `tools/art/**/__pycache__` files during earlier verification. Workspace policy rejected their removal; they were intentionally excluded from staging and are not part of either Task 1 commit.
